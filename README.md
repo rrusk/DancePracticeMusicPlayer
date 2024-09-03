@@ -48,3 +48,6 @@ To run the app, make sure to run the kivy activate script and then use
 <pre>
 python main.py
 </pre>
+
+The GUI should look like this:
+![DancePracticeMusicPlayer](https://github.com/user-attachments/assets/acbf79a1-7773-416d-ae36-ef52d1183505)
