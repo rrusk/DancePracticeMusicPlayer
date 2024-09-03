@@ -71,6 +71,7 @@ class MyFileChooser(GridLayout):
         if selected:
             selected_dir = selected[0]
             if os.path.isdir(selected_dir):
+                self.music_player.set_music_dir(selected_dir)
                 self.music_player.update_playlist(selected_dir)
                 self.dismiss_popup()
 
@@ -182,7 +183,11 @@ class MusicPlayer(BoxLayout):
             with open(filename, 'r') as f:
                 config_data = json.load(f)
                 self.vol = config_data.get('volume', 1.0)
-                self.music_dir = config_data.get('music_dir', 'Music')
+                self.set_music_dir(config_data.get("music_dir", 'Music'))
+                #self.music_dir = config_data.get('music_dir', 'Music')
+
+    def set_music_dir(self,dir_name):
+        self.music_dir = dir_name
 
     def play_sound(self, instance=None):
         if not self.sound_player and self.playlist:
@@ -216,15 +221,6 @@ class MusicPlayer(BoxLayout):
             self.playing_position = 0
             self.progress_text = self.INIT_POS_DUR
 
-    def restart_playlist(self, instance=None):
-        if self.sound_player and self.sound_player.sound:
-            self.sound_player.sound.unload()
-        Clock.unschedule(self.update_progress)
-        self.progress_value = 0
-        self.progress_text = self.INIT_POS_DUR
-        self.playlist_idx = 0
-        self.song_title = self.INIT_SONG_TITLE
-        self.sound_player = SoundPlayer(self.playlist[0])
 
     def restart_sound(self, instance=None):
         if self.sound_player:
@@ -245,7 +241,6 @@ class MusicPlayer(BoxLayout):
         if self.sound_player and instance.collide_point(*touch.pos):
             self.playing_position = self.progress_bar.value
             self.sound_player.seek(self.playing_position)
-
 
     def update_progress(self, dt):
         if self.sound_player and self.sound_player.sound and self.sound_player.sound.state == 'play':         
@@ -288,14 +283,24 @@ class MusicPlayer(BoxLayout):
         popup.content = content
         popup.open()
 
+    def restart_playlist(self, instance=None):
+        if self.sound_player and self.sound_player.sound:
+            self.sound_player.sound.unload()
+        Clock.unschedule(self.update_progress)
+        self.progress_value = 0
+        self.progress_text = self.INIT_POS_DUR
+        self.playlist_idx = 0
+        self.song_title = self.INIT_SONG_TITLE
+        self.sound_player = SoundPlayer(self.playlist[0])
+        
     def update_playlist(self, directory, instance=None):
         self.playlist = []
         for dance in self.dances:
             self.playlist.extend(self.get_songs(directory, dance, self.num_selections))
         if self.playlist:
             self.sound_player = SoundPlayer(self.playlist[0])
-        self.display_playlist(self.playlist)
-        self.restart_playlist()
+            self.display_playlist(self.playlist)
+            self.restart_playlist()
 
     def display_playlist(self, playlist):
         self.button_grid.clear_widgets()
