@@ -71,7 +71,6 @@ class MyFileChooser(GridLayout):
         if selected:
             selected_dir = selected[0]
             if os.path.isdir(selected_dir):
-                print(f"Selected directory: {selected_dir}")
                 self.music_player.update_playlist(selected_dir)
                 self.dismiss_popup()
 
@@ -79,12 +78,13 @@ class MyFileChooser(GridLayout):
         self.popup.dismiss()
 
 class MusicPlayer(BoxLayout):
+    INIT_POS_DUR = '0:00 / 0:00'
     vol = NumericProperty(1.0)
     music_dir = StringProperty()
     sound_player = ObjectProperty(None)
     progress_max = NumericProperty(100)
     progress_value = NumericProperty(0)
-    progress_text = StringProperty('0:00 / 0:00')
+    progress_text = StringProperty(INIT_POS_DUR)
     song_title = StringProperty('Click on Play or Select Song Title Above')
     dances = ListProperty(['Waltz', 'Tango', 'VWSlow', 'VienneseWaltz', 'Foxtrot', 'Quickstep',
                            'WCS', 'Samba', 'ChaCha', 'Rumba', 'PasoDoble', 'JSlow', 'Jive'])
@@ -187,47 +187,41 @@ class MusicPlayer(BoxLayout):
         if not self.sound_player and self.playlist:
             self.sound_player = SoundPlayer(self.playlist[0])
         if self.sound_player:
-            if not self.sound_player.sound:
-                print("playing at", self.playing_position)
-                self.sound_player.seek(self.playing_position)
-                self.sound_player.play()
-            else:
-                print("resuming at", self.playing_position)
-                self.sound_player.seek(self.playing_position)
-                self.sound_player.play()
+            self.sound_player.seek(self.playing_position)
+            self.sound_player.play()
+            self.sound_player.set_volume(self.vol)
 
             # Set progress_max to the length of the song
             if self.sound_player.sound:
                 self.progress_max = round(self.sound_player.sound.length)
+                self.total_time = self.secs_to_time_str(time_sec=self.progress_max)
 
-            if self.update_progress:
+            if self.playing_position == 0:
                 Clock.unschedule(self.update_progress)
             Clock.schedule_interval(self.update_progress, 0.1)
             self.song_title = pathlib.Path(self.playlist[self.playlist_idx]).stem  # Update the song title here
-            print(f"Updating song title to: {self.song_title}")
 
     def pause_sound(self, instance=None):
         if self.sound_player and self.sound_player.sound and self.sound_player.sound.state == 'play':
             self.playing_position = self.sound_player.sound.get_pos()
-            print("playing position", self.playing_position)
             self.sound_player.sound.stop()
 
     def stop_sound(self, instance=None):
         if self.sound_player:
+            self.sound_player.stop()
             if self.sound_player.sound:
                 self.sound_player.sound.unload()
-            self.sound_player.stop()
+            #self.sound_player.stop()
             Clock.unschedule(self.update_progress)
             self.progress_value = 0
-            self.progress_text = '0:00 / 0:00'
+            self.progress_text = self.INIT_POS_DUR
 
     def restart_playlist(self, instance=None):
-        if self.sound_player:
-            if self.sound_player.sound:
-                self.sound_player.sound.unload()
+        if self.sound_player and self.sound_player.sound:
+            self.sound_player.sound.unload()
         Clock.unschedule(self.update_progress)
         self.progress_value = 0
-        self.progress_text = '0:00 / 0:00'
+        self.progress_text = self.INIT_POS_DUR
         self.playlist_idx = 0
         self.song_title = 'Click on Play or Select Song Title Above'
         self.sound_player = SoundPlayer(self.playlist[0])
@@ -252,19 +246,11 @@ class MusicPlayer(BoxLayout):
             self.sound_player.seek(self.progress_bar.value)
 
     def update_progress(self, dt):
-        #print(f"Updating2 song title to: {self.song_title}")
-        if self.sound_player and self.sound_player.sound:
-            if self.sound_player.sound.state == 'play':
-                #duration = self.sound_player.sound.length
+        if self.sound_player and self.sound_player.sound and self.sound_player.sound.state == 'play':         
                 position = self.sound_player.sound.get_pos()
-                #self.progress_max = round(duration)
                 self.progress_value = round(position)
-                #print("progress_max="+str(self.progress_max))
-                #print("progress_value="+str(self.progress_value))
-                total_time = self.secs_to_time_str(time_sec=self.progress_max) #duration)
                 current_time = self.secs_to_time_str(time_sec=position)
-                self.progress_text = f'{current_time} / {total_time}'
-                self.song_title = pathlib.Path(self.playlist[self.playlist_idx]).stem
+                self.progress_text = f'{current_time} / {self.total_time}'
                 if position >= self.song_max_playtime:
                     self.sound_player.set_volume(self.vol * (1 + (self.song_max_playtime - position) / self.fade_time))
                 if position >= self.progress_max - 1 or position > self.song_max_playtime + self.fade_time:
@@ -272,7 +258,6 @@ class MusicPlayer(BoxLayout):
                     self.playlist_idx += 1
                     if self.playlist_idx < len(self.playlist):
                         self.sound_player = SoundPlayer(self.playlist[self.playlist_idx])
-                        #self.song_title = pathlib.Path(self.playlist[self.playlist_idx]).stem
                         self.play_sound()
                         self.sound_player.set_volume(self.vol)
                     else:
@@ -283,7 +268,6 @@ class MusicPlayer(BoxLayout):
             self.sound_player.sound.unload()
         self.playlist_idx = index
         self.sound_player = SoundPlayer(self.playlist[self.playlist_idx])
-        self.sound_player.set_volume(self.vol)
         self.play_sound()
 
     def secs_to_time_str(self, time_sec):
@@ -309,7 +293,6 @@ class MusicPlayer(BoxLayout):
         if self.playlist:
             self.sound_player = SoundPlayer(self.playlist[0])
         self.display_playlist(self.playlist)
-        print(f"Updated playlist: {self.playlist}")
 
     def display_playlist(self, playlist):
         self.button_grid.clear_widgets()
@@ -318,9 +301,7 @@ class MusicPlayer(BoxLayout):
             btn.bind(on_press=lambda instance, i=i: self.on_song_button_press(i))
             self.button_grid.add_widget(btn)
 
-    def get_songs(self, directory, dance, num_selections):
-        music = []
-        num = 0
+    def adjust_num_selections(self, dance, num_selections):
         if dance in ("PasoDoble") and num_selections == 1:
             num_selections = 0
         elif dance in ("PasoDoble") and num_selections == 2:
@@ -333,6 +314,12 @@ class MusicPlayer(BoxLayout):
             num_selections -= 1
         elif dance in ('WCS') and num_selections > 2:
             num_selections = 2
+        return num_selections
+        
+    def get_songs(self, directory, dance, num_selections):
+        music = []
+        num = 0
+        num_selections = self.adjust_num_selections(dance, num_selections)
         subdir = os.path.join(directory, dance)
         if os.path.exists(subdir):
             for root, dirs, files in os.walk(subdir):
@@ -342,9 +329,6 @@ class MusicPlayer(BoxLayout):
             if music:
                 random.shuffle(music)
                 num = min(num_selections, len(music))
-                #if os.name == "nt":
-                #    music.insert(0, os.path.join(self.script_path, 'announce', dance + '.wav'))
-                #else:
                 music.insert(0, os.path.join(self.script_path, 'announce', dance + '.ogg'))
         return music[:num+1]
 
