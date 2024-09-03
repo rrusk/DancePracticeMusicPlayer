@@ -85,7 +85,7 @@ class MusicPlayer(BoxLayout):
     progress_max = NumericProperty(100)
     progress_value = NumericProperty(0)
     progress_text = StringProperty('0:00 / 0:00')
-    song_title = StringProperty('Song Title')
+    song_title = StringProperty('Click on Play or Select Song Title Above')
     dances = ListProperty(['Waltz', 'Tango', 'VWSlow', 'VienneseWaltz', 'Foxtrot', 'Quickstep',
                            'WCS', 'Samba', 'ChaCha', 'Rumba', 'PasoDoble', 'JSlow', 'Jive'])
     playlist = ListProperty([])
@@ -264,6 +264,11 @@ class MusicPlayer(BoxLayout):
                         #self.song_title = pathlib.Path(self.playlist[self.playlist_idx]).stem
                         self.play_sound()
                         self.sound_player.set_volume(self.vol)
+                    else:
+                        self.playlist_idx = 0
+                        self.stop_sound()
+                        self.song_title = 'Click on Play or Select Song Title Above'
+                        self.sound_player = SoundPlayer(self.playlist[0])
 
     def on_song_button_press(self, index):
         if self.sound_player.sound:
