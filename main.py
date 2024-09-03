@@ -79,13 +79,14 @@ class MyFileChooser(GridLayout):
 
 class MusicPlayer(BoxLayout):
     INIT_POS_DUR = '0:00 / 0:00'
+    INIT_SONG_TITLE = 'Click on Play or Select Song Title Above'
     vol = NumericProperty(1.0)
     music_dir = StringProperty()
     sound_player = ObjectProperty(None)
     progress_max = NumericProperty(100)
     progress_value = NumericProperty(0)
     progress_text = StringProperty(INIT_POS_DUR)
-    song_title = StringProperty('Click on Play or Select Song Title Above')
+    song_title = StringProperty(INIT_SONG_TITLE)
     dances = ListProperty(['Waltz', 'Tango', 'VWSlow', 'VienneseWaltz', 'Foxtrot', 'Quickstep',
                            'WCS', 'Samba', 'ChaCha', 'Rumba', 'PasoDoble', 'JSlow', 'Jive'])
     playlist = ListProperty([])
@@ -158,7 +159,7 @@ class MusicPlayer(BoxLayout):
         restart_button.bind(on_press=self.restart_sound)
         control_buttons.add_widget(restart_button)
 
-        practice_length_button = Spinner(text='60min', values=('60min','90min','120min'),size_hint=(None,None), size_hint_y=1)
+        practice_length_button = Spinner(text='S30 L30', values=('S30 L30','S45 L45','S60 L60'),size_hint=(None,None), size_hint_y=1)
         practice_length_button.bind(text=self.practice_length)
         control_buttons.add_widget(practice_length_button)
 
@@ -187,8 +188,8 @@ class MusicPlayer(BoxLayout):
         if not self.sound_player and self.playlist:
             self.sound_player = SoundPlayer(self.playlist[0])
         if self.sound_player:
-            self.sound_player.seek(self.playing_position)
             self.sound_player.play()
+
             self.sound_player.set_volume(self.vol)
 
             # Set progress_max to the length of the song
@@ -200,6 +201,7 @@ class MusicPlayer(BoxLayout):
                 Clock.unschedule(self.update_progress)
             Clock.schedule_interval(self.update_progress, 0.1)
             self.song_title = pathlib.Path(self.playlist[self.playlist_idx]).stem  # Update the song title here
+            self.sound_player.seek(self.playing_position)
 
     def pause_sound(self, instance=None):
         if self.sound_player and self.sound_player.sound and self.sound_player.sound.state == 'play':
@@ -209,11 +211,9 @@ class MusicPlayer(BoxLayout):
     def stop_sound(self, instance=None):
         if self.sound_player:
             self.sound_player.stop()
-            if self.sound_player.sound:
-                self.sound_player.sound.unload()
-            #self.sound_player.stop()
             Clock.unschedule(self.update_progress)
             self.progress_value = 0
+            self.playing_position = 0
             self.progress_text = self.INIT_POS_DUR
 
     def restart_playlist(self, instance=None):
@@ -223,7 +223,7 @@ class MusicPlayer(BoxLayout):
         self.progress_value = 0
         self.progress_text = self.INIT_POS_DUR
         self.playlist_idx = 0
-        self.song_title = 'Click on Play or Select Song Title Above'
+        self.song_title = self.INIT_SONG_TITLE
         self.sound_player = SoundPlayer(self.playlist[0])
 
     def restart_sound(self, instance=None):
@@ -243,17 +243,19 @@ class MusicPlayer(BoxLayout):
 
     def on_slider_move(self, instance, touch):
         if self.sound_player and instance.collide_point(*touch.pos):
-            self.sound_player.seek(self.progress_bar.value)
+            self.playing_position = self.progress_bar.value
+            self.sound_player.seek(self.playing_position)
+
 
     def update_progress(self, dt):
         if self.sound_player and self.sound_player.sound and self.sound_player.sound.state == 'play':         
-                position = self.sound_player.sound.get_pos()
-                self.progress_value = round(position)
-                current_time = self.secs_to_time_str(time_sec=position)
+                self.playing_position = self.sound_player.sound.get_pos()
+                self.progress_value = round(self.playing_position)
+                current_time = self.secs_to_time_str(time_sec=self.playing_position)
                 self.progress_text = f'{current_time} / {self.total_time}'
-                if position >= self.song_max_playtime:
-                    self.sound_player.set_volume(self.vol * (1 + (self.song_max_playtime - position) / self.fade_time))
-                if position >= self.progress_max - 1 or position > self.song_max_playtime + self.fade_time:
+                if self.playing_position >= self.song_max_playtime:
+                    self.sound_player.set_volume(self.vol * (1 + (self.song_max_playtime - self.playing_position) / self.fade_time))
+                if self.playing_position >= self.progress_max - 1 or self.playing_position > self.song_max_playtime + self.fade_time:
                     self.sound_player.sound.unload()
                     self.playlist_idx += 1
                     if self.playlist_idx < len(self.playlist):
@@ -293,6 +295,7 @@ class MusicPlayer(BoxLayout):
         if self.playlist:
             self.sound_player = SoundPlayer(self.playlist[0])
         self.display_playlist(self.playlist)
+        self.restart_playlist()
 
     def display_playlist(self, playlist):
         self.button_grid.clear_widgets()
@@ -333,11 +336,11 @@ class MusicPlayer(BoxLayout):
         return music[:num+1]
 
     def practice_length(self, spinner, text):
-        if text == '60min':
+        if text == 'S30 L30':
             self.num_selections = 2
-        elif text == '90min':
+        elif text == 'S45 S45':
             self.num_selections = 3
-        elif text == '120min':
+        elif text == 'S60 L60':
             self.num_selections = 4
         self.stop_sound()
         self.update_playlist(self.music_dir)
