@@ -221,6 +221,17 @@ class MusicPlayer(BoxLayout):
             self.progress_value = 0
             self.progress_text = '0:00 / 0:00'
 
+    def restart_playlist(self, instance=None):
+        if self.sound_player:
+            if self.sound_player.sound:
+                self.sound_player.sound.unload()
+        Clock.unschedule(self.update_progress)
+        self.progress_value = 0
+        self.progress_text = '0:00 / 0:00'
+        self.playlist_idx = 0
+        self.song_title = 'Click on Play or Select Song Title Above'
+        self.sound_player = SoundPlayer(self.playlist[0])
+
     def restart_sound(self, instance=None):
         if self.sound_player:
             self.sound_player.stop()
@@ -265,10 +276,7 @@ class MusicPlayer(BoxLayout):
                         self.play_sound()
                         self.sound_player.set_volume(self.vol)
                     else:
-                        self.playlist_idx = 0
-                        self.stop_sound()
-                        self.song_title = 'Click on Play or Select Song Title Above'
-                        self.sound_player = SoundPlayer(self.playlist[0])
+                        self.restart_playlist()
 
     def on_song_button_press(self, index):
         if self.sound_player.sound:

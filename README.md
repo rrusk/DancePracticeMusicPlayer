@@ -1,6 +1,11 @@
 # DancePracticeMusicPlayer
 Kivy App for playing dance practice music
 
+Git comes with Linux distributions.  For Windows, get Git for Windows at https://git-scm.com/download/win.  Then this repo can be downloaded using 
+<pre>
+git clone https://github.com/rrusk/DancePracticeMusicPlayer.git
+</pre>
+
 Instructions for installing Kivy are at https://kivy.org/doc/stable/gettingstarted/installation.html.  Python and pip need to be installed before installing kivy.
 
 Assuming this repo has been installed in $HOME/git/DancePracticeMusicPlayer, change to that directory.
@@ -16,7 +21,10 @@ For Ubuntu:
 For Windows:
 As above except you don't source the kivy activate script, instead enter on the command-line:
 <pre>
-kivy_venv\Scripts\activate
+ python -m pip install --upgrade pip setuptools virtualenv
+ python -m venv kivy_venv
+ kivy_venv\Scripts\activate
+ python -m pip install "kivy[base,media]" kivy_examples
 </pre>
 
 Modify config.json to point to the music folder.
