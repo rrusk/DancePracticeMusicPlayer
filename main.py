@@ -253,6 +253,7 @@ class MusicPlayer(BoxLayout):
                 if self.playing_position >= self.progress_max - 1 or self.playing_position > self.song_max_playtime + self.fade_time:
                     self.sound_player.sound.unload()
                     self.playlist_idx += 1
+                    self.playing_position = 0
                     if self.playlist_idx < len(self.playlist):
                         self.sound_player = SoundPlayer(self.playlist[self.playlist_idx])
                         self.play_sound()
@@ -263,6 +264,9 @@ class MusicPlayer(BoxLayout):
     def on_song_button_press(self, index):
         if self.sound_player.sound:
             self.sound_player.sound.unload()
+        self.progress_value = 0
+        self.playing_position = 0
+        self.progress_text = self.INIT_POS_DUR
         self.playlist_idx = index
         self.sound_player = SoundPlayer(self.playlist[self.playlist_idx])
         self.play_sound()
