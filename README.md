@@ -31,9 +31,9 @@ Modify config.json to point to the music folder.
 For instance, on the VBDS Windows computers, change the music_dir line to read
     "music_dir": "C:\\Users\\vbds_\\Music"
 
-The player assumes the following music organization:
+The player assumes the following music organization within the <i>music_dir</i> folder:
 <pre>
-$HOME/Music/
+music_dir/
 ├── ChaCha
 ├── Foxtrot
 ├── Jive
@@ -49,7 +49,9 @@ $HOME/Music/
 ├── Waltz
 └── WCS
 </pre>
-For instance, all Waltz selections are in the <i>$HOME/Music/Waltz</i> folder, etc.
+For instance, all Jive selections are in the <i>music_dir/Jive</i> folder,
+all Waltz selections are in the <i>music_dir/Waltz</i> folder, etc.
+The "Select Music" button on the lower right of the display can also but used to select the music folder.
 
 The musical selections are assumed to be at the correct tempo and to
 be of appropriate length (selections longer than 3m30s will fade out and end by 3m40s regardless of length).
