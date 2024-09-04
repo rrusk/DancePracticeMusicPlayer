@@ -100,6 +100,7 @@ class MusicPlayer(BoxLayout):
         super(MusicPlayer, self).__init__(**kwargs)
         self.sound_player = None
         self.playing_position = 0
+        self.total_time = 0
         self.load_config('config.json')
 
         self.orientation = 'vertical'
@@ -242,7 +243,7 @@ class MusicPlayer(BoxLayout):
             self.sound_player.seek(self.playing_position)
 
     def update_progress(self, dt):
-        if self.sound_player and self.sound_player.sound and self.sound_player.sound.state == 'play':         
+        if self.sound_player is not None and self.sound_player.sound is not None and self.sound_player.sound.state == 'play':         
             self.playing_position = self.sound_player.sound.get_pos()
             self.progress_value = round(self.playing_position)
             current_time = self.secs_to_time_str(time_sec=self.playing_position)
@@ -347,7 +348,7 @@ class MusicPlayer(BoxLayout):
     def practice_length(self, spinner, text):
         if text == 'S30 L30':
             self.num_selections = 2
-        elif text == 'S45 S45':
+        elif text == 'S45 L45':
             self.num_selections = 3
         elif text == 'S60 L60':
             self.num_selections = 4
