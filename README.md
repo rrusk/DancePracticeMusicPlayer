@@ -37,6 +37,7 @@ $HOME/Music/
 ├── ChaCha
 ├── Foxtrot
 ├── Jive
+├── JSlow
 ├── LineDance
 ├── PasoDoble
 ├── QuickStep
@@ -44,13 +45,15 @@ $HOME/Music/
 ├── Samba
 ├── Tango
 ├── VienneseWaltz
+├── VWSlow
 ├── Waltz
 └── WCS
 </pre>
+For instance, all Waltz selections are in the <i>Waltz</i> folder, etc.
 
 The musical selections are assumed to be at the correct tempo and to
-be of appropriate length.  The volume of the musical selections should
-be normalized.
+be of appropriate length (selections longer than 3m30s will fade out and end by 3m40s regardless of length).
+The volume of the musical selections should be normalized.
 
 To run the app, make sure to run the kivy activate script and then use
 <pre>
