@@ -15,9 +15,7 @@ from kivy.uix.button import Button
 from kivy.uix.label import Label
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.slider import Slider
-from kivy.core.window import Window
 from kivy.uix.spinner import Spinner
-
 
 class SoundPlayer:
     def __init__(self, music_file):
@@ -209,9 +207,10 @@ class MusicPlayer(BoxLayout):
             self.sound_player.seek(self.playing_position)
 
     def pause_sound(self, instance=None):
-        if self.sound_player and self.sound_player.sound and self.sound_player.sound.state == 'play':
+        if self.sound_player and self.sound_player.sound:
             self.playing_position = self.sound_player.sound.get_pos()
-            self.sound_player.sound.stop()
+            if self.sound_player.sound.state == 'play':
+                self.sound_player.sound.stop()
 
     def stop_sound(self, instance=None):
         if self.sound_player:
@@ -244,22 +243,22 @@ class MusicPlayer(BoxLayout):
 
     def update_progress(self, dt):
         if self.sound_player and self.sound_player.sound and self.sound_player.sound.state == 'play':         
-                self.playing_position = self.sound_player.sound.get_pos()
-                self.progress_value = round(self.playing_position)
-                current_time = self.secs_to_time_str(time_sec=self.playing_position)
-                self.progress_text = f'{current_time} / {self.total_time}'
-                if self.playing_position >= self.song_max_playtime:
-                    self.sound_player.set_volume(self.vol * (1 + (self.song_max_playtime - self.playing_position) / self.fade_time))
-                if self.playing_position >= self.progress_max - 1 or self.playing_position > self.song_max_playtime + self.fade_time:
-                    self.sound_player.sound.unload()
-                    self.playlist_idx += 1
-                    self.playing_position = 0
-                    if self.playlist_idx < len(self.playlist):
-                        self.sound_player = SoundPlayer(self.playlist[self.playlist_idx])
-                        self.play_sound()
-                        self.sound_player.set_volume(self.vol)
-                    else:
-                        self.restart_playlist()
+            self.playing_position = self.sound_player.sound.get_pos()
+            self.progress_value = round(self.playing_position)
+            current_time = self.secs_to_time_str(time_sec=self.playing_position)
+            self.progress_text = f'{current_time} / {self.total_time}'
+            if self.playing_position >= self.song_max_playtime:
+                self.sound_player.set_volume(self.vol * (1 + (self.song_max_playtime - self.playing_position) / self.fade_time))
+            if self.playing_position >= self.progress_max - 1 or self.playing_position > self.song_max_playtime + self.fade_time:
+                self.sound_player.sound.unload()
+                self.playlist_idx += 1
+                self.playing_position = 0
+                if self.playlist_idx < len(self.playlist):
+                    self.sound_player = SoundPlayer(self.playlist[self.playlist_idx])
+                    self.play_sound()
+                    self.sound_player.set_volume(self.vol)
+                else:
+                    self.restart_playlist()
 
     def on_song_button_press(self, index):
         if self.sound_player.sound:
@@ -292,6 +291,7 @@ class MusicPlayer(BoxLayout):
             self.sound_player.sound.unload()
         Clock.unschedule(self.update_progress)
         self.progress_value = 0
+        self.playing_position = 0
         self.progress_text = self.INIT_POS_DUR
         self.playlist_idx = 0
         self.song_title = self.INIT_SONG_TITLE
