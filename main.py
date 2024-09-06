@@ -198,8 +198,8 @@ class MusicPlayer(BoxLayout):
                 
     def pause_sound(self, instance=None):
         if self.sound and self.sound.state == 'play':
-                self.playing_position = self.sound.get_pos()
-                self.sound.stop()
+            self.playing_position = self.sound.get_pos()
+            self.sound.stop()
 
     def stop_sound(self, instance=None):
         if self.sound:
@@ -237,7 +237,7 @@ class MusicPlayer(BoxLayout):
             self.progress_value = round(self.playing_position)
             current_time = self.secs_to_time_str(time_sec=self.playing_position)
             self.progress_text = f'{current_time} / {self.total_time}'
-            if self.playing_position >= self.song_max_playtime:
+            if self.playing_position >= self.song_max_playtime and self.fade_time > 0:
                 self.sound.volume=self.sound.volume* (1 + self.schedule_interval*(self.song_max_playtime - self.playing_position) / self.fade_time)
             if self.playing_position >= self.progress_max - 1 or self.playing_position > self.song_max_playtime + self.fade_time:
                 self.sound.unload()
@@ -315,21 +315,25 @@ class MusicPlayer(BoxLayout):
             num_selections = 2
         return num_selections
         
+
     def get_songs(self, directory, dance, num_selections):
         music = []
-        num = 0
         num_selections = self.adjust_num_selections(dance, num_selections)
         subdir = os.path.join(directory, dance)
+        
         if os.path.exists(subdir):
             for root, dirs, files in os.walk(subdir):
                 for file in files:
                     if file.endswith(('.mp3', '.wav', '.ogg')):
                         music.append(os.path.join(root, file))
+            
             if music:
-                random.shuffle(music)
                 num = min(num_selections, len(music))
-                music.insert(0, os.path.join(self.script_path, 'announce', dance + '.ogg'))
-        return music[:num+1]
+                selected_songs = random.sample(music, num)
+                selected_songs.insert(0, os.path.join(self.script_path, 'announce', dance + '.ogg'))
+                return selected_songs
+        
+        return []
 
     def practice_length(self, spinner, text):
         if text == 'S30 L30':
