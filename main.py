@@ -2,6 +2,7 @@ from kivy.config import Config
 Config.set('input', 'mouse', 'mouse,multitouch_on_demand')
 
 import os
+import platform
 import pathlib
 import random
 import json
@@ -68,7 +69,7 @@ class MusicPlayer(BoxLayout):
     dances = ListProperty(['Waltz', 'Tango', 'VWSlow', 'VienneseWaltz', 'Foxtrot', 'Quickstep',
                            'WCS', 'Samba', 'ChaCha', 'Rumba', 'PasoDoble', 'JSlow', 'Jive'])
     playlist = ListProperty([])
-    playlist_idx = 0
+    playlist_idx = NumericProperty(0)
     num_selections = NumericProperty(2)
     song_max_playtime = 210  # music selections longer than 210 (3m30s) are faded out
     fade_time = 10 # 10s fade out
@@ -127,9 +128,10 @@ class MusicPlayer(BoxLayout):
         play_button.bind(on_press=self.play_sound)
         control_buttons.add_widget(play_button)
 
-        pause_button = Button(text="Pause")
-        pause_button.bind(on_press=self.pause_sound)
-        control_buttons.add_widget(pause_button)
+        if platform.system() != 'Windows':
+            pause_button = Button(text="Pause")
+            pause_button.bind(on_press=self.pause_sound)
+            control_buttons.add_widget(pause_button)
 
         stop_button = Button(text="Stop")
         stop_button.bind(on_press=self.stop_sound)
@@ -171,31 +173,32 @@ class MusicPlayer(BoxLayout):
 
     def play_sound(self, instance=None):
         if self.sound is None and self.playlist:
-            self.sound = SoundLoader.load(self.playlist[0])
+            self.sound = SoundLoader.load(self.playlist[self.playlist_idx])
             
         if self.sound:
-            self.playing_position = self.sound.get_pos()
+            if self.sound.state == 'play':
+                self.playing_position = self.sound.get_pos()
             if self.sound.state != 'stop':
                 self.sound.stop()
-                
+
             self.sound.volume=self.volume
 
-            if self.playing_position < 2:
-                Clock.unschedule(self.update_progress)
-                self.progress_max = round(self.sound.length)
-                self.total_time = self.secs_to_time_str(time_sec=self.progress_max)
-                self.song_title = pathlib.Path(self.playlist[self.playlist_idx]).stem  # Update the song title here
-                Clock.schedule_interval(self.update_progress, self.schedule_interval)
+            #if self.playing_position < 2:
+            Clock.unschedule(self.update_progress)
+            self.progress_max = round(self.sound.length)
+            self.total_time = self.secs_to_time_str(time_sec=self.progress_max)
+            self.song_title = pathlib.Path(self.playlist[self.playlist_idx]).stem  # Update the song title here
+            Clock.schedule_interval(self.update_progress, self.schedule_interval)
                 
-            if self.playing_position > 0:
-                self.sound.seek(self.playing_position)
-            self.sound.play()         
+            #if self.playing_position > 0:
+            self.sound.seek(self.playing_position)
+            self.sound.play()
 
+
+                
     def pause_sound(self, instance=None):
-        if self.sound:
-            #self.sound.pause()
-            self.playing_position = self.sound.get_pos()
-            if self.sound.state == 'play':
+        if self.sound and self.sound.state == 'play':
+                self.playing_position = self.sound.get_pos()
                 self.sound.stop()
 
     def stop_sound(self, instance=None):
@@ -206,7 +209,7 @@ class MusicPlayer(BoxLayout):
             self.progress_value = 0
             self.playing_position = 0
             self.progress_text = self.INIT_POS_DUR
-
+            self.sound = None
 
     def restart_sound(self, instance=None):
         if self.sound:
