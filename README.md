@@ -16,6 +16,7 @@ For Ubuntu:
  python3 -m venv kivy_venv
  source kivy_venv/bin/activate
  python -m pip install "kivy[base,media]" kivy_examples
+ python -m pip install tinytag # not part of kivy, used to read music ID3v2 tags
 </pre>
 
 For Windows:
@@ -25,6 +26,7 @@ As above except you don't source the kivy activate script, instead enter on the 
  python -m venv kivy_venv
  kivy_venv\Scripts\activate
  python -m pip install "kivy[base,media]" kivy_examples
+ python -m pip install tinytag
 </pre>
 
 Modify config.json to point to the music folder.
