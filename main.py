@@ -21,6 +21,8 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.slider import Slider
 from kivy.uix.spinner import Spinner
 
+from tinytag import TinyTag
+
 class MyFileChooser(GridLayout):
     def __init__(self, music_player, popup, **kwargs):
         super().__init__(**kwargs)
@@ -187,7 +189,8 @@ class MusicPlayer(BoxLayout):
             Clock.unschedule(self.update_progress)
             self.progress_max = round(self.sound.length)
             self.total_time = self.secs_to_time_str(time_sec=self.progress_max)
-            self.song_title = pathlib.Path(self.playlist[self.playlist_idx]).stem  # Update the song title here
+            self.song_title = self.song_label(self.playlist[self.playlist_idx])[:90]
+                #pathlib.Path(self.playlist[self.playlist_idx]).stem  # Update the song title here
             Clock.schedule_interval(self.update_progress, self.schedule_interval)
                 
             #if self.playing_position > 0:
@@ -296,9 +299,23 @@ class MusicPlayer(BoxLayout):
     def display_playlist(self, playlist):
         self.button_grid.clear_widgets()
         for i in range(len(self.playlist)):
-            btn = Button(text=pathlib.Path(self.playlist[i]).stem, size_hint_y=None, height=40)
+            #btn = Button(text=pathlib.Path(self.playlist[i]).stem, size_hint_y=None, height=40)
+            btn = Button(text=self.song_label(self.playlist[i]), size_hint_y=None, height=40)
             btn.bind(on_press=lambda instance, i=i: self.on_song_button_press(i))
             self.button_grid.add_widget(btn)
+
+    def song_label(self, selection) -> str:
+        label = pathlib.Path(selection).stem
+        tag = TinyTag.get(selection)
+        
+        if all([tag.title is None, tag.genre is None, tag.artist is None, tag.album is None]):
+            return label
+        title = tag.title if tag.title is not None else "Title Unspecified"
+        genre = tag.genre if tag.genre is not None else "Genre Unspecified"
+        artist = tag.artist if tag.artist is not None else "Artist Unspecified"
+        album = tag.album if tag.album is not None else "Album Unspecified"
+        
+        return title + ' / ' + genre + ' / ' + artist + ' / ' + album
 
     def adjust_num_selections(self, dance, num_selections):
         if dance in ("PasoDoble") and num_selections == 1:
