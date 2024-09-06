@@ -1,4 +1,5 @@
 {
 	"volume": 0.7,
-	"music_dir": "/home/rrusk/Music"
+	"music_dir": "/Users/vbds_/Music",
+	"song_max_playtime": 210
 }
