@@ -8,7 +8,7 @@ import random
 import json
 
 from kivy.app import App
-from kivy.properties import NumericProperty, StringProperty, ObjectProperty, ListProperty
+from kivy.properties import NumericProperty, StringProperty, ObjectProperty, ListProperty, DictProperty
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.core.audio import SoundLoader
@@ -68,11 +68,15 @@ class MusicPlayer(BoxLayout):
     progress_value = NumericProperty(0)
     progress_text = StringProperty(INIT_POS_DUR)
     song_title = StringProperty(INIT_SONG_TITLE)
-    #dances = ListProperty(['Waltz', 'Tango', 'VWSlow', 'VienneseWaltz', 'Foxtrot', 'Quickstep',
-    #                       'WCS', 'Samba', 'ChaCha', 'Rumba', 'PasoDoble', 'JSlow', 'Jive'])
-    dances = ListProperty(["Waltz", "JSlow", "Jive", "Rumba", "Foxtrot", "ChaCha", "Tango", 
-                           "Samba", "QuickStep", "VWSlow", "VienneseWaltz", "WCS", "LineDance"])
-    #dances = ListProperty(["LineDance"])
+
+    practice_dances = DictProperty({
+        "default": ['Waltz', 'Tango', 'VWSlow', 'VienneseWaltz', 'Foxtrot', 'Quickstep',
+                    'WCS', 'Samba', 'ChaCha', 'Rumba', 'PasoDoble', 'JSlow', 'Jive'],
+        "newcomer": ["Waltz", "JSlow", "Jive", "Rumba", "Foxtrot", "ChaCha", "Tango", 
+                     "Samba", "QuickStep", "VWSlow", "VienneseWaltz", "WCS"],
+        "linedance": ["LineDance"]
+    })
+      
     playlist = ListProperty([])
     playlist_idx = NumericProperty(0)
     num_selections = NumericProperty(2)
@@ -87,7 +91,9 @@ class MusicPlayer(BoxLayout):
         self.playing_position = 0
         self.total_time = 0
         self.schedule_interval = 0.1
+        
         self.load_config('config.json')
+        self.dances = self.get_dances(self.practice_dance_list_name)
 
         self.orientation = 'vertical'
 
@@ -171,10 +177,17 @@ class MusicPlayer(BoxLayout):
                 self.volume = config_data.get('volume', 1.0)
                 self.set_music_dir(config_data.get("music_dir", 'Music'))
                 self.song_max_playtime = config_data.get("song_max_playtime", 210)
+                self.practice_dance_list_name = config_data.get("practice_dances", 'default')
                 #self.music_dir = config_data.get('music_dir', 'Music')
 
     def set_music_dir(self,dir_name):
         self.music_dir = dir_name
+        
+    def get_dances(self, list_name):
+        try:
+            return self.practice_dances[list_name]
+        except KeyError:
+            return self.practice_dances["default"]
 
     def play_sound(self, instance=None):
         if self.sound is None and self.playlist:
