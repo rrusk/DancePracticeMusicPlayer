@@ -10,7 +10,7 @@ Instructions for installing Kivy are at https://kivy.org/doc/stable/gettingstart
 
 Assuming this repo has been installed in $HOME/git/DancePracticeMusicPlayer, change to that directory.
 
-For Ubuntu:
+For Ubuntu and MacOS:
 <pre>
  python3 -m pip install --upgrade pip setuptools virtualenv
  python3 -m venv kivy_venv
@@ -64,6 +64,8 @@ To run the app, make sure to run the kivy activate script and then use
 python main.py
 </pre>
 
-The GUI should look like this:
+The GUI should look like this on Linux and MacOS desktops:
 ![DancePracticeMusicPlayer](https://github.com/user-attachments/assets/6331954b-ee8d-4e10-a224-9ae9f672bb49)
+
+It looks the same on Windows desktops except that the "Pause" button is not present because of seek issues with GstStreamer.
 
