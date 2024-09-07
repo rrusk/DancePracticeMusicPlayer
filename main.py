@@ -8,7 +8,7 @@ import random
 import json
 
 from kivy.app import App
-from kivy.properties import NumericProperty, StringProperty, ObjectProperty, ListProperty, DictProperty
+from kivy.properties import NumericProperty, StringProperty, ObjectProperty, ListProperty, DictProperty, BooleanProperty
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.core.audio import SoundLoader
@@ -68,17 +68,20 @@ class MusicPlayer(BoxLayout):
     progress_value = NumericProperty(0)
     progress_text = StringProperty(INIT_POS_DUR)
     song_title = StringProperty(INIT_SONG_TITLE)
+    play_single_song = BooleanProperty(False)
+
 
     practice_dances = DictProperty({
         "default": ['Waltz', 'Tango', 'VWSlow', 'VienneseWaltz', 'Foxtrot', 'Quickstep',
                     'WCS', 'Samba', 'ChaCha', 'Rumba', 'PasoDoble', 'JSlow', 'Jive'],
         "newcomer": ["Waltz", "JSlow", "Jive", "Rumba", "Foxtrot", "ChaCha", "Tango", 
                      "Samba", "QuickStep", "VWSlow", "VienneseWaltz", "WCS"],
-        "linedance": ["LineDance"]
+        "LineDance": ["LineDance"]
     })
       
     playlist = ListProperty([])
     playlist_idx = NumericProperty(0)
+    dances = ListProperty([])
     num_selections = NumericProperty(2)
     song_max_playtime = 210  # music selections longer than 210 (3m30s) are faded out
     fade_time = 10 # 10s fade out
@@ -92,6 +95,7 @@ class MusicPlayer(BoxLayout):
         self.total_time = 0
         self.schedule_interval = 0.1
         
+        self.practice_dance_list_name = 'default'
         self.load_config('config.json')
         self.dances = self.get_dances(self.practice_dance_list_name)
 
@@ -152,7 +156,7 @@ class MusicPlayer(BoxLayout):
         restart_button.bind(on_press=self.restart_sound)
         control_buttons.add_widget(restart_button)
 
-        practice_length_button = Spinner(text='S30 L30', values=('S30 L30','S45 L45','S60 L60'),size_hint=(None,None), size_hint_y=1)
+        practice_length_button = Spinner(text='NC 60min', values=('60min','NC 60min','90min', 'NC 90min', '120min', 'NC 120min','LineDance'),size_hint=(None,None), size_hint_y=1)
         practice_length_button.bind(text=self.practice_length)
         control_buttons.add_widget(practice_length_button)
 
@@ -256,17 +260,18 @@ class MusicPlayer(BoxLayout):
             self.progress_value = round(self.playing_position)
             current_time = self.secs_to_time_str(time_sec=self.playing_position)
             self.progress_text = f'{current_time} / {self.total_time}'
-            if self.playing_position >= self.song_max_playtime and self.fade_time > 0:
-                self.sound.volume=self.sound.volume* (1 + self.schedule_interval*(self.song_max_playtime - self.playing_position) / self.fade_time)
-            if self.playing_position >= self.progress_max - 1 or self.playing_position > self.song_max_playtime + self.fade_time:
-                self.sound.unload()
-                self.playlist_idx += 1
-                self.playing_position = 0
-                if self.playlist_idx < len(self.playlist):
-                    self.sound = SoundLoader.load(self.playlist[self.playlist_idx])
-                    self.play_sound()
-                else:
-                    self.restart_playlist()
+            if not self.play_single_song:
+                if self.playing_position >= self.song_max_playtime and self.fade_time > 0:
+                    self.sound.volume=self.sound.volume* (1 + self.schedule_interval*(self.song_max_playtime - self.playing_position) / self.fade_time)
+                if self.playing_position >= self.progress_max - 1 or self.playing_position > self.song_max_playtime + self.fade_time:
+                    self.sound.unload()
+                    self.playlist_idx += 1
+                    self.playing_position = 0
+                    if self.playlist_idx < len(self.playlist):
+                        self.sound = SoundLoader.load(self.playlist[self.playlist_idx])
+                        self.play_sound()
+                    else:
+                        self.restart_playlist()
 
     def on_song_button_press(self, index):
         if self.sound:
@@ -373,12 +378,31 @@ class MusicPlayer(BoxLayout):
         return []
 
     def practice_length(self, spinner, text):
-        if text == 'S30 L30':
+        self.play_single_song = False
+        if text == '60min':
+            self.dances = self.get_dances('default')
             self.num_selections = 2
-        elif text == 'S45 L45':
+        elif text == 'NC 60min':
+            self.dances = self.get_dances('newcomer')
+            self.num_selections = 2       
+        elif text == '90 min':
+            self.dances = self.get_dances('default')
             self.num_selections = 3
-        elif text == 'S60 L60':
+        elif text == 'NC 90min':
+            self.dances = self.get_dances('newcomer')
+        elif text == '120min':
+            self.dances = self.get_dances('default')
             self.num_selections = 4
+        elif text == 'NC 120min':
+            self.dances = self.get_dances('newcomer')
+            self.num_selections = 4
+        elif text == 'LineDance':
+            self.play_single_song = True
+            self.dances = self.get_dances('LineDance')
+            self.num_selections = 100
+        else:
+            self.dances = self.get_dances('default')
+            self.num_selections = 2
         self.stop_sound()
         self.update_playlist(self.music_dir)
 
