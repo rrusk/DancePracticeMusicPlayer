@@ -208,6 +208,8 @@ class MusicPlayer(BoxLayout):
             #if self.playing_position < 2:
             Clock.unschedule(self.update_progress)
             self.progress_max = round(self.sound.length)
+            if not self.progress_max > 0:
+                self.progress_max = self.song_duration(self.playlist[self.playlist_idx])
             self.total_time = self.secs_to_time_str(time_sec=self.progress_max)
             self.song_title = self.song_label(self.playlist[self.playlist_idx])[:90]
                 #pathlib.Path(self.playlist[self.playlist_idx]).stem  # Update the song title here
@@ -325,6 +327,12 @@ class MusicPlayer(BoxLayout):
             btn.bind(on_press=lambda instance, i=i: self.on_song_button_press(i))
             self.button_grid.add_widget(btn)
 
+    def song_duration(self, selection):
+        label = pathlib.Path(selection).stem
+        tag = TinyTag.get(selection)
+        
+        return tag.duration if tag.duration is not None else 300
+    
     def song_label(self, selection) -> str:
         label = pathlib.Path(selection).stem
         tag = TinyTag.get(selection)
