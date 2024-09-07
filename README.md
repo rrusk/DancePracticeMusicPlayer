@@ -56,7 +56,9 @@ all Waltz selections are in the <i>music_dir/Waltz</i> folder, etc.
 The "Select Music" button on the lower right of the display can also but used to select the music folder.
 
 The musical selections are assumed to be at the correct tempo and to
-be of appropriate length (selections longer than 3m30s will fade out and end by 3m40s regardless of length).
+be of appropriate length.
+Selections longer than 3m30s will fade out and end by 3m40s (210 seconds) regardless of length
+though this can be adjusted by modifying "song_max_playtime" in config.json.
 The volume of the musical selections should be normalized.
 
 To run the app, make sure to run the kivy activate script and then use
