@@ -65,4 +65,5 @@ python main.py
 </pre>
 
 The GUI should look like this:
-![DancePracticeMusicPlayer](https://github.com/user-attachments/assets/f68a4d22-c84e-45d5-851e-5ad44d22c165)
+![DancePracticeMusicPlayer](https://github.com/user-attachments/assets/6331954b-ee8d-4e10-a224-9ae9f672bb49)
+
