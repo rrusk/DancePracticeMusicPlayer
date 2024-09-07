@@ -200,16 +200,15 @@ class MusicPlayer(BoxLayout):
         if self.sound:
             if self.sound.state == 'play':
                 self.playing_position = self.sound.get_pos()
-            if self.sound.state != 'stop':
+            if self.sound and self.sound.state != 'stop':
                 self.sound.stop()
-
             self.sound.volume=self.volume
 
             #if self.playing_position < 2:
             Clock.unschedule(self.update_progress)
             self.progress_max = round(self.sound.length)
             if not self.progress_max > 0:
-                self.progress_max = self.song_duration(self.playlist[self.playlist_idx])
+                self.progress_max = round(self.song_duration(self.playlist[self.playlist_idx]))
             self.total_time = self.secs_to_time_str(time_sec=self.progress_max)
             self.song_title = self.song_label(self.playlist[self.playlist_idx])[:90]
                 #pathlib.Path(self.playlist[self.playlist_idx]).stem  # Update the song title here
@@ -218,13 +217,13 @@ class MusicPlayer(BoxLayout):
             #if self.playing_position > 0:
             self.sound.seek(self.playing_position)
             self.sound.play()
-
-
                 
+    # pause_sound isn't working in Windows
     def pause_sound(self, instance=None):
         if self.sound and self.sound.state == 'play':
             self.playing_position = self.sound.get_pos()
-            self.sound.stop()
+            if self.sound:
+                self.sound.stop()
 
     def stop_sound(self, instance=None):
         if self.sound:
