@@ -68,8 +68,11 @@ class MusicPlayer(BoxLayout):
     progress_value = NumericProperty(0)
     progress_text = StringProperty(INIT_POS_DUR)
     song_title = StringProperty(INIT_SONG_TITLE)
-    dances = ListProperty(['Waltz', 'Tango', 'VWSlow', 'VienneseWaltz', 'Foxtrot', 'Quickstep',
-                           'WCS', 'Samba', 'ChaCha', 'Rumba', 'PasoDoble', 'JSlow', 'Jive'])
+    #dances = ListProperty(['Waltz', 'Tango', 'VWSlow', 'VienneseWaltz', 'Foxtrot', 'Quickstep',
+    #                       'WCS', 'Samba', 'ChaCha', 'Rumba', 'PasoDoble', 'JSlow', 'Jive'])
+    dances = ListProperty(["Waltz", "JSlow", "Jive", "Rumba", "Foxtrot", "ChaCha", "Tango", 
+                           "Samba", "QuickStep", "VWSlow", "VienneseWaltz", "WCS", "LineDance"])
+    #dances = ListProperty(["LineDance"])
     playlist = ListProperty([])
     playlist_idx = NumericProperty(0)
     num_selections = NumericProperty(2)
@@ -320,9 +323,9 @@ class MusicPlayer(BoxLayout):
     def adjust_num_selections(self, dance, num_selections):
         if dance in ("PasoDoble") and num_selections == 1:
             num_selections = 0
-        elif dance in ("PasoDoble") and num_selections == 2:
+        elif dance in ("PasoDoble") and num_selections in (2,3):
             num_selections = 1
-        elif dance in ("PasoDoble") and num_selections > 1:
+        elif dance in ("PasoDoble") and num_selections > 3:
             num_selections = 2
         elif dance in ("VWSlow", "JSlow") and num_selections > 1:
             num_selections = 1
@@ -330,9 +333,10 @@ class MusicPlayer(BoxLayout):
             num_selections -= 1
         elif dance in ('WCS') and num_selections > 2:
             num_selections = 2
+        elif dance in ('LineDance'):
+            num_selections = 100 # include all the line dances
         return num_selections
         
-
     def get_songs(self, directory, dance, num_selections):
         music = []
         num_selections = self.adjust_num_selections(dance, num_selections)
@@ -346,7 +350,10 @@ class MusicPlayer(BoxLayout):
             
             if music:
                 num = min(num_selections, len(music))
-                selected_songs = random.sample(music, num)
+                if dance != 'LineDance':
+                    selected_songs = random.sample(music, num)
+                else:
+                    selected_songs = sorted(music[:num+1])
                 selected_songs.insert(0, os.path.join(self.script_path, 'announce', dance + '.ogg'))
                 return selected_songs
         
