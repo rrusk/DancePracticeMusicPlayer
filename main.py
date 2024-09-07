@@ -327,9 +327,7 @@ class MusicPlayer(BoxLayout):
             self.button_grid.add_widget(btn)
 
     def song_duration(self, selection):
-        label = pathlib.Path(selection).stem
         tag = TinyTag.get(selection)
-        
         return tag.duration if tag.duration is not None else 300
     
     def song_label(self, selection) -> str:
