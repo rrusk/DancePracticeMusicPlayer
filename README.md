@@ -8,7 +8,9 @@ Kivy App for playing dance practice music
 creates a music player with features useful for dance practices that use a
 predetermined sequence of dances types. It automatically generates a
 playlist with an announcement of each dance type before those dance
-selections are played.
+selections are played.  The dance selections are chosen randomly from
+the available selections for each dance type so that each practice
+has a different playlist.
 
 The application is designed to play music files (MP3, WAV, OGG) from a
 selected directory. It has a user interface with buttons to play, pause,
@@ -110,7 +112,7 @@ The MusicPlayer class has several key features:
     > selected directory. The directory can be changed using the
     > \"Select Music\" button.
 
--   **Playlist**: The application creates a playlist of music files from
+-   **Playlist**: The application creates a randomized playlist of music files from
     > the selected directory. The playlist is displayed as a list of
     > buttons, each representing a song.
 
