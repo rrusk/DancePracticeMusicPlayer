@@ -85,7 +85,7 @@ To run the app, make sure to run the kivy activate script and then use
 python main.py
 </pre>
 
-The GUI should look like this on Linux and MacOS desktops:
+The GUI should look similar to this on Linux and MacOS desktops:
 ![DancePracticeMusicPlayer](https://github.com/user-attachments/assets/6331954b-ee8d-4e10-a224-9ae9f672bb49)
 
 It looks the same on Windows desktops except that the "Pause" button is not present because of seek issues with GstStreamer.
@@ -96,38 +96,25 @@ It looks the same on Windows desktops except that the "Pause" button is not pres
 
 The code defines two main classes: MyFileChooser and MusicPlayer.
 
-1.  MyFileChooser: This class creates a file chooser dialog that allows
-    > users to select a music directory. It inherits from
-    > Kivy\'s GridLayout class.
+1.  MyFileChooser: This class creates a file chooser dialog that allows users to select a music directory. It inherits from Kivy\'s GridLayout class.
 
-2.  MusicPlayer: This class is the main application class, which
-    > inherits from Kivy\'s BoxLayout class. It contains the music
-    > player\'s user interface and functionality.
+2.  MusicPlayer: This class is the main application class, which inherits from Kivy\'s BoxLayout class. It contains the music player\'s user interface and functionality.
 
 **MusicPlayer Class**
 
 The MusicPlayer class has several key features:
 
--   **Music Directory**: The application loads music files from a
-    > selected directory. The directory can be changed using the
-    > \"Select Music\" button.
+-   **Music Directory**: The application loads music files from a selected directory. The directory can be changed using the \"Select Music\" button.
 
--   **Playlist**: The application creates a randomized playlist of music files from
-    > the selected directory. The playlist is displayed as a list of
-    > buttons, each representing a song.
+-   **Playlist**: The application creates a randomized playlist of music files from the selected directory. The playlist is displayed as a list of buttons, each representing a song.
 
--   **Music Player Controls**: The application has buttons to play,
-    > pause, stop, and restart the music.
+-   **Music Player Controls**: The application has buttons to play, pause, stop, and restart the music.
 
--   **Volume Control**: The application has a volume slider to adjust
-    > the music volume.
+-   **Volume Control**: The application has a volume slider to adjust the music volume.
 
--   **Practice Length**: The application allows users to choose a
-    > practice length (e.g., 60 minutes, 90 minutes, etc.). This feature
-    > is used to adjust the number of songs played.
+-   **Practice Length**: The application allows users to choose a practice length (e.g., 60 minutes, 90 minutes, etc.). This feature is used to adjust the number of songs played.
 
--   **Song Information**: The application displays song information,
-    > such as the song title, artist, album, and genre.
+-   **Song Information**: The application displays song information, such as the song title, artist, album, and genre.
 
 **Key Methods**
 
@@ -141,11 +128,9 @@ Some key methods in the MusicPlayer class include:
 
 -   restart\_sound: Restarts the music from the beginning.
 
--   update\_progress: Updates the music progress bar and song
-    > information.
+-   update\_progress: Updates the music progress bar and song information.
 
--   update\_playlist: Updates the playlist when the music directory
-    > changes.
+-   update\_playlist: Updates the playlist when the music directory changes.
 
 -   display\_playlist: Displays the playlist as a list of buttons.
 
