@@ -203,18 +203,43 @@ class MusicPlayer(BoxLayout):
     #     self.dances = self.get_dances(self.practice_dance_list_name)
     
     def initial_config(self, file_path):
+        if file_path is None:
+            raise ValueError("file_path is None")
+        if not isinstance(file_path, str):
+            raise TypeError("file_path must be a string")
+        if not os.path.isfile(file_path):
+            raise FileNotFoundError(f"File {file_path} does not exist")
+        
         config = configparser.ConfigParser()
-        config.read(file_path)
+        try:
+            config.read(file_path)
+        except configparser.Error as e:
+            raise RuntimeError(f"Error parsing config file {file_path}: {e}")
         
         if not config.has_section('user'):
             raise RuntimeError('Config section "user" is missing')
         
         # Extract values
-        self.volume = float(config.get('user', 'volume'))
-        self.music_dir = config.get('user', 'music_dir')
-        self.song_max_playtime = int(config.get('user', 'song_max_playtime'))
-        self.practice_dance_list_name = config.get('user', 'practice_dances')   
-
+        try:
+            self.volume = config.getfloat('user', 'volume', fallback=0.7)
+        except ValueError as e:
+            raise RuntimeError(f"Error parsing config file {file_path}: {e}")
+        
+        try:
+            self.music_dir = config.get('user', 'music_dir', fallback='/Users/vbds_/Music')
+        except (configparser.Error, LookupError) as e:
+            raise RuntimeError(f"Error parsing config file {file_path}: {e}")
+        
+        try:
+            self.song_max_playtime = config.getint('user', 'song_max_playtime', fallback=210)
+        except ValueError as e:
+            raise RuntimeError(f"Error parsing config file {file_path}: {e}")
+        
+        try:
+            self.practice_dance_list_name = config.get('user', 'practice_dances', fallback='default')
+        except (configparser.Error, LookupError) as e:
+            raise RuntimeError(f"Error parsing config file {file_path}: {e}")
+   
     def set_music_dir(self,dir_name):
         self.music_dir = dir_name
         
