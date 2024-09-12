@@ -126,7 +126,7 @@ class MusicPlayer(BoxLayout):
         restart_button.bind(on_press=self.restart_sound)
         control_buttons.add_widget(restart_button)
 
-        settings_button = Button(text="Player Settings")
+        settings_button = Button(text="Music Settings")
         settings_button.bind(on_press=lambda instance: App.get_running_app().open_settings())
         control_buttons.add_widget(settings_button)
 
@@ -139,10 +139,7 @@ class MusicPlayer(BoxLayout):
 
         if not self.playlist and self.music_dir:
             self.update_playlist(self.music_dir)
-           
-    # def set_music_dir(self,dir_name):
-    #     self.music_dir = dir_name
-        
+                   
     def get_dances(self, list_name):
         try:
             return self.practice_dances[list_name]
@@ -160,17 +157,15 @@ class MusicPlayer(BoxLayout):
                 self.sound.stop()
             self.sound.volume=self.volume
 
-            #if self.playing_position < 2:
             Clock.unschedule(self.update_progress)
             self.progress_max = round(self.sound.length)
             if not self.progress_max > 0:
                 self.progress_max = round(self.song_duration(self.playlist[self.playlist_idx]))
             self.total_time = self.secs_to_time_str(time_sec=self.progress_max)
             self.song_title = self.song_label(self.playlist[self.playlist_idx])[:90]
-                #pathlib.Path(self.playlist[self.playlist_idx]).stem  # Update the song title here
+
             Clock.schedule_interval(self.update_progress, self.schedule_interval)
                 
-            #if self.playing_position > 0:
             self.sound.seek(self.playing_position)
             self.sound.play()
                 
@@ -242,10 +237,6 @@ class MusicPlayer(BoxLayout):
         minutes = int((time_sec % 3600) // 60)
         seconds = int(time_sec % 60)
         return f'{hours:02d}:{minutes:02d}:{seconds:02d}' if hours > 0 else f'{minutes:02d}:{seconds:02d}'
-
-    # def select_music_file(self, path, filename):
-    #     if filename:
-    #         self.sound = SoundLoader.load(filename[0])
 
     def restart_playlist(self, instance=None):
         if self.sound:
