@@ -2,7 +2,7 @@
     {
         "type": "numeric",
         "title": "Volume",
-        "desc": "Set the music volume",
+        "desc": "Set the music volume; range is 0.0 to 1.0",
         "section": "user",
         "key": "volume"
     },
@@ -16,14 +16,14 @@
     {
         "type": "numeric",
         "title": "Max Playtime",
-        "desc": "Set the maximum playtime for a song",
+        "desc": "Set the maximum playtime for a song in seconds",
         "section": "user",
         "key": "song_max_playtime"
     },
     {
         "type": "options",
         "title": "Practice Type",
-        "desc": "Choose the practice type/length. B=Beginner, NC=Newcomer",
+        "desc": "Choose the practice type/length. Un-prefixed times are dances played in competition order.  The prefix B (for beginner) includes only beginner dances.  The prefixes B and NC (for newcomer) modify the order of dances.",
         "section": "user",
         "key": "practice_type",
         "options": ["60min","NC 60min","B 60min","90min", "NC 90min", "120min", "NC 120min","LineDance"]

@@ -136,7 +136,7 @@ class MusicPlayer(BoxLayout):
         volume_and_controls.add_widget(controls)
 
         self.add_widget(volume_and_controls)
-
+        
         if not self.playlist and self.music_dir:
             self.update_playlist(self.music_dir)
                    
@@ -393,8 +393,10 @@ class MusicApp(App):
         if section == 'user':
             if key == 'volume':
                 try:
-                    self.root.volume = float(value)
-                    self.root.set_volume(None,self.root.volume)
+                    volume_value = float(value)
+                    self.root.volume = volume_value
+                    self.root.set_volume(None,volume_value)
+                    self.root.volume_slider.value = volume_value
                 except ValueError:
                     print("Error: volume value is not a float")
             elif key == 'music_dir':
