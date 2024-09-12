@@ -27,40 +27,6 @@ from kivy.config import ConfigParser
 
 from tinytag import TinyTag
 
-
-
-class MyFileChooser(GridLayout):
-    def __init__(self, music_player, popup, **kwargs):
-        super().__init__(**kwargs)
-        self.music_player = music_player
-        self.popup = popup
-        self.cols = 1
-        self.file_chooser = FileChooserListView(path=os.path.expanduser("~"), dirselect=True)
-        self.add_widget(self.file_chooser)
-
-        button_layout = BoxLayout(size_hint_y=None, height=50)
-        select_button = Button(text="Select Directory")
-        select_button.bind(on_press=self.select_directory)
-        button_layout.add_widget(select_button)
-
-        cancel_button = Button(text="Cancel")
-        cancel_button.bind(on_press=self.dismiss_popup)
-        button_layout.add_widget(cancel_button)
-
-        self.add_widget(button_layout)
-
-    def select_directory(self, instance):
-        selected = self.file_chooser.selection
-        if selected:
-            selected_dir = selected[0]
-            if os.path.isdir(selected_dir):
-                self.music_player.set_music_dir(selected_dir)
-                self.music_player.update_playlist(selected_dir)
-                self.dismiss_popup()
-
-    def dismiss_popup(self, *args):
-        self.popup.dismiss()
-
 class MusicPlayer(BoxLayout):
     INIT_POS_DUR = '0:00 / 0:00'
     INIT_SONG_TITLE = 'Click on Play or Select Song Title Above'
@@ -69,7 +35,7 @@ class MusicPlayer(BoxLayout):
     music_file = StringProperty(None)
     position = NumericProperty(0)
     volume= NumericProperty(0.7)
-    music_dir = StringProperty('Music')
+    music_dir = StringProperty('')
     progress_max = NumericProperty(100)
     progress_value = NumericProperty(0)
     progress_text = StringProperty(INIT_POS_DUR)
@@ -80,7 +46,7 @@ class MusicPlayer(BoxLayout):
     practice_dances = DictProperty({
         "default": ['Waltz', 'Tango', 'VWSlow', 'VienneseWaltz', 'Foxtrot', 'Quickstep',
                     'WCS', 'Samba', 'ChaCha', 'Rumba', 'PasoDoble', 'JSlow', 'Jive'],
-        "beginner": ["Waltz", "JSlow", "Rumba", "Foxtrot", "ChaCha", "Tango"],
+        "beginner": ["Waltz", "JSlow", "Jive", "Rumba", "Foxtrot", "ChaCha", "Tango"],
         "newcomer": ["Waltz", "JSlow", "Jive", "Rumba", "Foxtrot", "ChaCha", "Tango", 
                      "Samba", "QuickStep", "VWSlow", "VienneseWaltz", "WCS"],
         "LineDance": ["LineDance"]
@@ -89,7 +55,6 @@ class MusicPlayer(BoxLayout):
     playlist = ListProperty([])
     playlist_idx = NumericProperty(0)
     dances = ListProperty([])
-    practice_length = NumericProperty(60) # 60 minutes
     practice_type = StringProperty('60min')
     num_selections = NumericProperty(2)
     song_max_playtime = 210  # music selections longer than 210 (3m30s) are faded out
@@ -104,11 +69,6 @@ class MusicPlayer(BoxLayout):
         self.total_time = 0
         self.schedule_interval = 0.1
         
-        self.practice_dance_list_name = 'default'
-        #self.load_config('config.json')
-        #self.load_initial_config('settings.ini')
-        self.dances = self.get_dances(self.practice_dance_list_name)
-
         self.orientation = 'vertical'
 
         # Create ScrollView and GridLayout for playlist buttons
@@ -166,15 +126,7 @@ class MusicPlayer(BoxLayout):
         restart_button.bind(on_press=self.restart_sound)
         control_buttons.add_widget(restart_button)
 
-        practice_length_button = Spinner(text='NC 60min', values=('60min','NC 60min','90min', 'NC 90min', '120min', 'NC 120min','LineDance'),size_hint=(None,None), size_hint_y=1)
-        practice_length_button.bind(text=self.practice_length)
-        control_buttons.add_widget(practice_length_button)
-
-        select_music_button = Button(text="Select Music")
-        select_music_button.bind(on_press=self.open_file_manager)
-        control_buttons.add_widget(select_music_button)
-        
-        settings_button = Button(text="Settings")
+        settings_button = Button(text="Player Settings")
         settings_button.bind(on_press=lambda instance: App.get_running_app().open_settings())
         control_buttons.add_widget(settings_button)
 
@@ -187,61 +139,9 @@ class MusicPlayer(BoxLayout):
 
         if not self.playlist and self.music_dir:
             self.update_playlist(self.music_dir)
-        
-    # def load_config(self, filename):
-    #     if os.path.isfile(filename):
-    #         with open(filename, 'r') as f:
-    #             config_data = json.load(f)
-    #             self.volume = config_data.get('volume', 1.0)
-    #             self.set_music_dir(config_data.get("music_dir", 'Music'))
-    #             self.song_max_playtime = config_data.get("song_max_playtime", 210)
-    #             self.practice_dance_list_name = config_data.get("practice_dances", 'default')
-    #             #self.music_dir = config_data.get('music_dir', 'Music')
-    
-    # def load_config(self, config):
-    #     self.volume = config.getfloat('user', 'volume')
-    #     self.set_music_dir(config.get('user', 'music_dir'))
-    #     self.song_max_playtime = config.getint('user', 'song_max_playtime')
-    #     self.practice_dance_list_name = config.get('user', 'practice_dances')
-    #     self.dances = self.get_dances(self.practice_dance_list_name)
-    
-    def xload_initial_config(self, config_file_path):
-        """Load the initial configuration from a file.
-
-        Args:
-            config_file_path (str): The path to the configuration file.
-
-        Raises:
-            ValueError: If the config file path is None.
-            TypeError: If the config file path is not a string.
-            FileNotFoundError: If the config file does not exist.
-            RuntimeError: If there is an error parsing the config file.
-        """
-        if config_file_path is None:
-            raise ValueError("Config file path is None")
-
-        if not isinstance(config_file_path, str):
-            raise TypeError("Config file path must be a string")
-
-        if not os.path.isfile(config_file_path):
-            raise FileNotFoundError(f"Config file {config_file_path} does not exist")
-
-        config = configparser.ConfigParser()
-        try:
-            config.read(config_file_path)
-        except configparser.Error as e:
-            raise RuntimeError(f"Error parsing config file {config_file_path}: {e}")
-
-        if not config.has_section("user"):
-            raise RuntimeError('Config section "user" is missing')
-
-        self.volume = config.getfloat("user", "volume", fallback=0.7)
-        self.music_dir = config.get("user", "music_dir", fallback="/Users/vbds_/Music")
-        self.song_max_playtime = config.getint("user", "song_max_playtime", fallback=210)
-        self.practice_dance_list_name = config.get("user", "practice_dances", fallback="default")
-   
-    def set_music_dir(self,dir_name):
-        self.music_dir = dir_name
+           
+    # def set_music_dir(self,dir_name):
+    #     self.music_dir = dir_name
         
     def get_dances(self, list_name):
         try:
@@ -303,7 +203,6 @@ class MusicPlayer(BoxLayout):
             self.sound.volume = volume
 
     def update_volume_label(self, instance, value):
-        """Update the volume label text when self.volumechanges."""
         self.volume_label.text = f"Vol: {int(value * 100)}"
 
     def on_slider_move(self, instance, touch):
@@ -344,15 +243,9 @@ class MusicPlayer(BoxLayout):
         seconds = int(time_sec % 60)
         return f'{hours:02d}:{minutes:02d}:{seconds:02d}' if hours > 0 else f'{minutes:02d}:{seconds:02d}'
 
-    def select_music_file(self, path, filename):
-        if filename:
-            self.sound = SoundLoader.load(filename[0])
-
-    def open_file_manager(self, instance):
-        popup = Popup(title="Select Music Folder", size_hint=(0.9, 0.9))
-        content = MyFileChooser(music_player=self, popup=popup)
-        popup.content = content
-        popup.open()
+    # def select_music_file(self, path, filename):
+    #     if filename:
+    #         self.sound = SoundLoader.load(filename[0])
 
     def restart_playlist(self, instance=None):
         if self.sound:
@@ -438,7 +331,7 @@ class MusicPlayer(BoxLayout):
         
         return []
 
-    def practice_length(self, spinner, text):
+    def set_practice_type(self, spinner, text):
         self.play_single_song = False
         if text == '60min':
             self.dances = self.get_dances('default')
@@ -471,37 +364,34 @@ class MusicPlayer(BoxLayout):
         self.update_playlist(self.music_dir)
 
 class MusicApp(App):
+    default_music_dir = os.path.join(pathlib.Path.home(),"Music")
+    
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.config = ConfigParser()
 
+
     def build(self):
-        self.settings_cls = SettingsWithSpinner  # Ensure your settings class is properly set
+        self.settings_cls = SettingsWithSpinner
         self.root = MusicPlayer()
         return self.root
 
     def on_start(self):
-        # Initialize properties from config in on_start
         config = self.config
         user_section = 'user'
-
         if config.has_section(user_section):
-            self.root.volume = config.getfloat(user_section, 'volume', fallback=1.0)
-            self.root.music_dir = config.get(user_section, 'music_dir', fallback="/Users/vbds_/Music")
+            self.root.volume = config.getfloat(user_section, 'volume', fallback=0.7)
+            self.root.music_dir = config.get(user_section, 'music_dir', fallback=self.default_music_dir)
             self.root.song_max_playtime = config.getint(user_section, 'song_max_playtime', fallback=210)
-            self.root.practice_dance_list_name = config.get(user_section, 'practice_dances', fallback='default')
             self.root.practice_type = config.get(user_section, 'practice_type', fallback='60min')
         
-        # Update the playlist and load music based on initial settings
-        self.root.update_playlist(self.root.music_dir)
+        self.root.set_practice_type(None, self.root.practice_type)
 
     def build_config(self, config):
-        # Set default values for the 'user' section
         config.setdefaults('user', {
             'volume': 0.7,
-            'music_dir': '/Users/vbds_/Music',
+            'music_dir': self.default_music_dir,
             'song_max_playtime': 210,
-            'practice_dances': 'default',
             'practice_type': '60min'
         })
 
@@ -509,11 +399,11 @@ class MusicApp(App):
         settings.add_json_panel('Music Player Settings', self.config, 'settings.json')
 
     def on_config_change(self, config, section, key, value):
-        # Handle changes to the config
         if section == 'user':
             if key == 'volume':
                 try:
                     self.root.volume = float(value)
+                    self.root.set_volume(None,self.root.volume)
                 except ValueError:
                     print("Error: volume value is not a float")
             elif key == 'music_dir':
@@ -522,11 +412,8 @@ class MusicApp(App):
             elif key == 'song_max_playtime':
                 self.root.song_max_playtime = int(value)
             elif key == 'practice_type':
-                #self.root.practice_dance_list_name = value
-                #self.root.dances = self.root.get_dances(value)
-                #self.root.update_playlist(self.root.music_dir)
                 self.root.practice_type = value
-                self.root.practice_length(None, value)
+                self.root.set_practice_type(None, value)
                      
 if __name__ == '__main__':
     MusicApp().run()
