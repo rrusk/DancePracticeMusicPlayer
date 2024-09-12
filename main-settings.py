@@ -103,7 +103,7 @@ class MusicPlayer(BoxLayout):
         
         self.practice_dance_list_name = 'default'
         #self.load_config('config.json')
-        self.initial_config('settings.ini')
+        #self.load_initial_config('settings.ini')
         self.dances = self.get_dances(self.practice_dance_list_name)
 
         self.orientation = 'vertical'
@@ -202,43 +202,40 @@ class MusicPlayer(BoxLayout):
     #     self.practice_dance_list_name = config.get('user', 'practice_dances')
     #     self.dances = self.get_dances(self.practice_dance_list_name)
     
-    def initial_config(self, file_path):
-        if file_path is None:
-            raise ValueError("file_path is None")
-        if not isinstance(file_path, str):
-            raise TypeError("file_path must be a string")
-        if not os.path.isfile(file_path):
-            raise FileNotFoundError(f"File {file_path} does not exist")
-        
+    def load_initial_config(self, config_file_path):
+        """Load the initial configuration from a file.
+
+        Args:
+            config_file_path (str): The path to the configuration file.
+
+        Raises:
+            ValueError: If the config file path is None.
+            TypeError: If the config file path is not a string.
+            FileNotFoundError: If the config file does not exist.
+            RuntimeError: If there is an error parsing the config file.
+        """
+        if config_file_path is None:
+            raise ValueError("Config file path is None")
+
+        if not isinstance(config_file_path, str):
+            raise TypeError("Config file path must be a string")
+
+        if not os.path.isfile(config_file_path):
+            raise FileNotFoundError(f"Config file {config_file_path} does not exist")
+
         config = configparser.ConfigParser()
         try:
-            config.read(file_path)
+            config.read(config_file_path)
         except configparser.Error as e:
-            raise RuntimeError(f"Error parsing config file {file_path}: {e}")
-        
-        if not config.has_section('user'):
+            raise RuntimeError(f"Error parsing config file {config_file_path}: {e}")
+
+        if not config.has_section("user"):
             raise RuntimeError('Config section "user" is missing')
-        
-        # Extract values
-        try:
-            self.volume = config.getfloat('user', 'volume', fallback=0.7)
-        except ValueError as e:
-            raise RuntimeError(f"Error parsing config file {file_path}: {e}")
-        
-        try:
-            self.music_dir = config.get('user', 'music_dir', fallback='/Users/vbds_/Music')
-        except (configparser.Error, LookupError) as e:
-            raise RuntimeError(f"Error parsing config file {file_path}: {e}")
-        
-        try:
-            self.song_max_playtime = config.getint('user', 'song_max_playtime', fallback=210)
-        except ValueError as e:
-            raise RuntimeError(f"Error parsing config file {file_path}: {e}")
-        
-        try:
-            self.practice_dance_list_name = config.get('user', 'practice_dances', fallback='default')
-        except (configparser.Error, LookupError) as e:
-            raise RuntimeError(f"Error parsing config file {file_path}: {e}")
+
+        self.volume = config.getfloat("user", "volume", fallback=0.7)
+        self.music_dir = config.get("user", "music_dir", fallback="/Users/vbds_/Music")
+        self.song_max_playtime = config.getint("user", "song_max_playtime", fallback=210)
+        self.practice_dance_list_name = config.get("user", "practice_dances", fallback="default")
    
     def set_music_dir(self,dir_name):
         self.music_dir = dir_name
