@@ -166,3 +166,6 @@ cython_debug/
 
 # Kivy
 kivy_venv
+
+# Ignore Music Player settings initialization file
+music.ini
