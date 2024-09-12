@@ -68,7 +68,7 @@ class MusicPlayer(BoxLayout):
     sound = ObjectProperty(None, allownone=True)
     music_file = StringProperty(None)
     position = NumericProperty(0)
-    volume= NumericProperty(1.0)
+    volume= NumericProperty(0.7)
     music_dir = StringProperty('Music')
     progress_max = NumericProperty(100)
     progress_value = NumericProperty(0)
@@ -470,31 +470,29 @@ class MusicApp(App):
         self.config = ConfigParser()
 
     def build(self):
-        print(f'Config initialized in build: {self.config}')
-        if self.config is None:
-            raise RuntimeError('config is null in build()')
-
         self.settings_cls = SettingsWithSpinner  # Ensure your settings class is properly set
         self.root = MusicPlayer()
         return self.root
 
     def on_start(self):
-        # Now, self.root is initialized and you can safely call load_config()
-        if self.config is None:
-            raise RuntimeError('config is null in on_start()')
-        if self.root is None:
-            raise RuntimeError('root is null in on_start()')
-        if self.root:
-            self.root.volume = float(self.config.get('user', 'volume'))
-        if self.root:
-            self.root.music_dir= str(self.config.get('user', 'music_dir'))
-        self.load_config2()
+        # Initialize properties from config in on_start
+        config = self.config
+        user_section = 'user'
+
+        if config.has_section(user_section):
+            self.root.volume = config.getfloat(user_section, 'volume', fallback=1.0)
+            self.root.music_dir = config.get(user_section, 'music_dir', fallback="/Users/vbds_/Music")
+            self.root.song_max_playtime = config.getint(user_section, 'song_max_playtime', fallback=210)
+            self.root.practice_dance_list_name = config.get(user_section, 'practice_dances', fallback='default')
+        
+        # Update the playlist and load music based on initial settings
+        self.root.update_playlist(self.root.music_dir)
 
     def build_config(self, config):
         # Set default values for the 'user' section
         config.setdefaults('user', {
-            'volume': 1.0,
-            'music_dir': 'Music',
+            'volume': 0.7,
+            'music_dir': '/Users/vbds_/Music',
             'song_max_playtime': 210,
             'practice_dances': 'default'
         })
@@ -508,46 +506,18 @@ class MusicApp(App):
             if key == 'volume':
                 try:
                     self.root.volume = float(value)
-                except TypeError:
-                    print("Error: value is not a float")
+                except ValueError:
+                    print("Error: volume value is not a float")
             elif key == 'music_dir':
-                if value is not None:
-                    self.root.music_dir = str(value)
+                self.root.music_dir = value
+                self.root.update_playlist(value)
             elif key == 'song_max_playtime':
-                try:
-                    self.root.song_max_playtime = int(value)
-                except TypeError:
-                    print("Error: value is not an int")
+                self.root.song_max_playtime = int(value)
             elif key == 'practice_dances':
-                if value is not None:
-                    self.root.dances = self.root.get_dances(value)
-
-    def load_config2(self):
-        # Get the directory of the main Python file
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        config_file = os.path.join(script_dir, 'settings.ini')
-
-        if self.config is None:
-            raise RuntimeError('config is null in load_config()')
-        if self.root is None:
-            raise RuntimeError('root is null in load_config()')
-        print(f'Config file path: {config_file}')
-        print(f'File exists: {os.path.exists(config_file)}')
-
-        self.config.read(config_file)
-        print(f'Config sections: {self.config.sections()}')
-
-        # Load configuration values from the config object with error handling
-        if self.root:
-            try:
-                self.root.volume = float(self.config.get('user', 'volume', fallback=1.0))
-            except AttributeError:
-                print("Root widget has not been initialized yet.")
-            try:
-                self.root.music_dir= str(self.config.get('user', 'music_dir', fallback='/home/rrusk/Music'))
-            except TypeError:
-                print("Error: music_dir is not valid")
-
-                        
+                self.root.practice_dance_list_name = value
+                #self.root.dances = self.root.get_dances(value)
+                #self.root.update_playlist(self.root.music_dir)
+                self.root.practice_length(None, value)
+                     
 if __name__ == '__main__':
     MusicApp().run()
