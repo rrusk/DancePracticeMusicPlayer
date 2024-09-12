@@ -80,6 +80,7 @@ class MusicPlayer(BoxLayout):
     practice_dances = DictProperty({
         "default": ['Waltz', 'Tango', 'VWSlow', 'VienneseWaltz', 'Foxtrot', 'Quickstep',
                     'WCS', 'Samba', 'ChaCha', 'Rumba', 'PasoDoble', 'JSlow', 'Jive'],
+        "beginner": ["Waltz", "JSlow", "Rumba", "Foxtrot", "ChaCha", "Tango"],
         "newcomer": ["Waltz", "JSlow", "Jive", "Rumba", "Foxtrot", "ChaCha", "Tango", 
                      "Samba", "QuickStep", "VWSlow", "VienneseWaltz", "WCS"],
         "LineDance": ["LineDance"]
@@ -88,6 +89,8 @@ class MusicPlayer(BoxLayout):
     playlist = ListProperty([])
     playlist_idx = NumericProperty(0)
     dances = ListProperty([])
+    practice_length = NumericProperty(60) # 60 minutes
+    practice_type = StringProperty('60min')
     num_selections = NumericProperty(2)
     song_max_playtime = 210  # music selections longer than 210 (3m30s) are faded out
     fade_time = 10 # 10s fade out
@@ -202,7 +205,7 @@ class MusicPlayer(BoxLayout):
     #     self.practice_dance_list_name = config.get('user', 'practice_dances')
     #     self.dances = self.get_dances(self.practice_dance_list_name)
     
-    def load_initial_config(self, config_file_path):
+    def xload_initial_config(self, config_file_path):
         """Load the initial configuration from a file.
 
         Args:
@@ -440,6 +443,9 @@ class MusicPlayer(BoxLayout):
         if text == '60min':
             self.dances = self.get_dances('default')
             self.num_selections = 2
+        elif text == 'B 60min':
+            self.dances = self.get_dances('beginner')
+            self.num_selections = 2   
         elif text == 'NC 60min':
             self.dances = self.get_dances('newcomer')
             self.num_selections = 2       
@@ -484,6 +490,7 @@ class MusicApp(App):
             self.root.music_dir = config.get(user_section, 'music_dir', fallback="/Users/vbds_/Music")
             self.root.song_max_playtime = config.getint(user_section, 'song_max_playtime', fallback=210)
             self.root.practice_dance_list_name = config.get(user_section, 'practice_dances', fallback='default')
+            self.root.practice_type = config.get(user_section, 'practice_type', fallback='60min')
         
         # Update the playlist and load music based on initial settings
         self.root.update_playlist(self.root.music_dir)
@@ -494,7 +501,8 @@ class MusicApp(App):
             'volume': 0.7,
             'music_dir': '/Users/vbds_/Music',
             'song_max_playtime': 210,
-            'practice_dances': 'default'
+            'practice_dances': 'default',
+            'practice_type': '60min'
         })
 
     def build_settings(self, settings):
@@ -513,10 +521,11 @@ class MusicApp(App):
                 self.root.update_playlist(value)
             elif key == 'song_max_playtime':
                 self.root.song_max_playtime = int(value)
-            elif key == 'practice_dances':
-                self.root.practice_dance_list_name = value
+            elif key == 'practice_type':
+                #self.root.practice_dance_list_name = value
                 #self.root.dances = self.root.get_dances(value)
                 #self.root.update_playlist(self.root.music_dir)
+                self.root.practice_type = value
                 self.root.practice_length(None, value)
                      
 if __name__ == '__main__':

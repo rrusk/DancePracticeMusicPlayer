@@ -27,5 +27,21 @@
         "section": "user",
         "key": "practice_dances",
         "options": ["default", "newcomer", "LineDance"]
+    },
+    {
+        "type": "options",
+        "title": "Practice Length",
+        "desc": "Choose the practice length in min",
+        "section": "user",
+        "key": "practice_length",
+        "options": ["60", "90", "120"]
+    },
+    {
+        "type": "options",
+        "title": "Practice Type",
+        "desc": "Choose the practice Type. B=Beginner, NC=Newcomer",
+        "section": "user",
+        "key": "practice_type",
+        "options": ["60min","NC 60min","B 60min","90min", "NC 90min", "120min", "NC 120min","LineDance"]
     }
 ]
