@@ -1,0 +1,31 @@
+[
+    {
+        "type": "numeric",
+        "title": "Volume",
+        "desc": "Set the music volume",
+        "section": "user",
+        "key": "volume"
+    },
+    {
+        "type": "path",
+        "title": "Music Directory",
+        "desc": "Set the music directory",
+        "section": "user",
+        "key": "music_dir"
+    },
+    {
+        "type": "numeric",
+        "title": "Max Playtime",
+        "desc": "Set the maximum playtime for a song",
+        "section": "user",
+        "key": "song_max_playtime"
+    },
+    {
+        "type": "options",
+        "title": "Practice Dance List",
+        "desc": "Choose the practice dance list",
+        "section": "user",
+        "key": "practice_dances",
+        "options": ["default", "newcomer", "LineDance"]
+    }
+]
