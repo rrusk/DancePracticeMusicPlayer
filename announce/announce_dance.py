@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import gtts
 from gtts import gTTS
 dances = ["Waltz", "Tango", "VienneseWaltz", "Foxtrot", "QuickStep", "WCS",
               "ChaCha", "Samba", "Rumba", "Jive"]

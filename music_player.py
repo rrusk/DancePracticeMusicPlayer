@@ -49,7 +49,8 @@ class MusicPlayer(BoxLayout):
         "beginner": ["Waltz", "JSlow", "Jive", "Rumba", "Foxtrot", "ChaCha", "Tango"],
         "newcomer": ["Waltz", "JSlow", "Jive", "Rumba", "Foxtrot", "ChaCha", "Tango", 
                      "Samba", "QuickStep", "VWSlow", "VienneseWaltz", "WCS"],
-        "LineDance": ["LineDance"]
+        "LineDance": ["LineDance"],
+        "misc": ["AmericanRumba", "ArgentineTango", "Bolero", "DiscoFox", "Hustle", "LindyHop", "Mambo", "Merengue", "NC2Step", "Polka", "Salsa"]
     })
       
     playlist = ListProperty([])
@@ -347,6 +348,10 @@ class MusicPlayer(BoxLayout):
         elif text == 'LineDance':
             self.play_single_song = True
             self.dances = self.get_dances('LineDance')
+            self.num_selections = 100
+        elif text == 'Misc':
+            self.play_single_song = True
+            self.dances = self.get_dances('misc')
             self.num_selections = 100
         else:
             self.dances = self.get_dances('default')
