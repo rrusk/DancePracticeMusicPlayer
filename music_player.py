@@ -14,13 +14,10 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.core.audio import SoundLoader
 from kivy.clock import Clock
-from kivy.uix.popup import Popup
-from kivy.uix.filechooser import FileChooserListView
 from kivy.uix.button import Button
 from kivy.uix.label import Label
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.slider import Slider
-from kivy.uix.spinner import Spinner
 
 from kivy.uix.settings import SettingsWithSpinner
 from kivy.config import ConfigParser
@@ -34,7 +31,7 @@ class MusicPlayer(BoxLayout):
     sound = ObjectProperty(None, allownone=True)
     music_file = StringProperty(None)
     position = NumericProperty(0)
-    volume= NumericProperty(0.7)
+    volume = NumericProperty(0.7)
     music_dir = StringProperty('')
     progress_max = NumericProperty(100)
     progress_value = NumericProperty(0)
@@ -63,6 +60,9 @@ class MusicPlayer(BoxLayout):
 
     script_path = os.path.dirname(os.path.abspath(__file__))
 
+    current_button = None  # Track the currently playing song's button
+    song_buttons = []  # Store the buttons for all songs
+
     def __init__(self, **kwargs):
         super(MusicPlayer, self).__init__(**kwargs)
         self.sound = None
@@ -86,7 +86,7 @@ class MusicPlayer(BoxLayout):
         volume_layout = BoxLayout(orientation='horizontal', size_hint_x=0.20, padding=(10, 0))
         self.volume_slider = Slider(min=0.0, max=1.0, value=self.volume, orientation='vertical', size_hint_y=1, height=125)
         self.volume_slider.bind(value=self.set_volume)
-        self.volume_label = Label(text="Vol:" + str(int(100 * self.volume)), size_hint_x=1, width=30)
+        self.volume_label = Label(text="Vol: " + str(int(100 * self.volume))+'%', size_hint_x=1, width=30)
         volume_layout.add_widget(self.volume_label)
         volume_layout.add_widget(self.volume_slider)
         self.bind(volume=self.update_volume_label)
@@ -150,13 +150,13 @@ class MusicPlayer(BoxLayout):
     def play_sound(self, instance=None):
         if self.sound is None and self.playlist:
             self.sound = SoundLoader.load(self.playlist[self.playlist_idx])
-            
+
         if self.sound:
             if self.sound.state == 'play':
                 self.playing_position = self.sound.get_pos()
             if self.sound and self.sound.state != 'stop':
                 self.sound.stop()
-            self.sound.volume=self.volume
+            self.sound.volume = self.volume
 
             Clock.unschedule(self.update_progress)
             self.progress_max = round(self.sound.length)
@@ -165,6 +165,17 @@ class MusicPlayer(BoxLayout):
             self.total_time = self.secs_to_time_str(time_sec=self.progress_max)
             self.song_title = self.song_label(self.playlist[self.playlist_idx])[:90]
 
+            # Highlight the currently playing song's button
+            if self.current_button:
+                self.current_button.background_color = (1, 1, 1, 1)  # Reset the previous button to default
+
+            # Get the current button and change its background color
+            self.current_button = self.song_buttons[self.playlist_idx]
+            self.current_button.background_color = (0, 1, 1, 1)  # Highlight the button (RGB with opacity)
+
+            # Scroll to the current button to make sure it's visible
+            self.scrollview.scroll_to(self.current_button)
+        
             Clock.schedule_interval(self.update_progress, self.schedule_interval)
                 
             self.sound.seek(self.playing_position)
@@ -226,12 +237,25 @@ class MusicPlayer(BoxLayout):
                         self.restart_playlist()
 
     def on_song_button_press(self, index):
-        if self.sound:
+        if self.sound is None:
+            return
+
+        try:
             self.sound.unload()
+        except Exception as e:
+            print(f"Error unloading sound: {e}")
+
         self.playing_position = 0
         self.playlist_idx = index
         self.sound = SoundLoader.load(self.playlist[self.playlist_idx])
-        self.play_sound()
+        if self.sound is None:
+            print(f"Error loading sound for index {index}")
+            return
+
+        try:
+            self.play_sound()
+        except Exception as e:
+            print(f"Error playing sound: {e}")
 
     def secs_to_time_str(self, time_sec):
         hours = int(time_sec // 3600)
@@ -261,10 +285,12 @@ class MusicPlayer(BoxLayout):
 
     def display_playlist(self, playlist):
         self.button_grid.clear_widgets()
+        self.song_buttons = []  # Clear the buttons list
         for i in range(len(self.playlist)):
             #btn = Button(text=pathlib.Path(self.playlist[i]).stem, size_hint_y=None, height=40)
             btn = Button(text=self.song_label(self.playlist[i]), size_hint_y=None, height=40)
             btn.bind(on_press=lambda instance, i=i: self.on_song_button_press(i))
+            self.song_buttons.append(btn)  # Store the button in the list
             self.button_grid.add_widget(btn)
 
     def song_duration(self, selection):
@@ -350,7 +376,7 @@ class MusicPlayer(BoxLayout):
             self.dances = self.get_dances('LineDance')
             self.num_selections = 100
         elif text == 'Misc':
-            self.play_single_song = True
+            #self.play_single_song = True
             self.dances = self.get_dances('misc')
             self.num_selections = 100
         else:
