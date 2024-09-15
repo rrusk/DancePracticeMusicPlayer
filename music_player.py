@@ -42,7 +42,7 @@ class MusicPlayer(BoxLayout):
 
 
     practice_dances = DictProperty({
-        "default": ['Waltz', 'Tango', 'VWSlow', 'VienneseWaltz', 'Foxtrot', 'Quickstep',
+        "default": ['Waltz', 'Tango', 'VWSlow', 'VienneseWaltz', 'Foxtrot', 'QuickStep',
                     'WCS', 'Samba', 'ChaCha', 'Rumba', 'PasoDoble', 'JSlow', 'Jive'],
         "beginner": ["Waltz", "JSlow", "Jive", "Rumba", "Foxtrot", "ChaCha", "Tango"],
         "newcomer": ["Waltz", "JSlow", "Jive", "Rumba", "Foxtrot", "ChaCha", "Tango", 
@@ -382,7 +382,7 @@ class MusicPlayer(BoxLayout):
         if os.path.exists(subdir):
             for root, dirs, files in os.walk(subdir):
                 for file in files:
-                    if file.endswith(('.mp3', '.wav', '.ogg')):
+                    if file.endswith(('.mp3', '.ogg', '.m4a', '.wav')):
                         music.append(os.path.join(root, file))
             
             if music:
