@@ -382,7 +382,7 @@ class MusicPlayer(BoxLayout):
         if os.path.exists(subdir):
             for root, dirs, files in os.walk(subdir):
                 for file in files:
-                    if file.endswith(('.mp3', '.ogg', '.m4a', '.wav')):
+                    if file.endswith(('.mp3', '.ogg', '.m4a', '.flac', '.wav')):
                         music.append(os.path.join(root, file))
             
             if music:
