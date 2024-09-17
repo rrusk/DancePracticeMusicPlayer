@@ -87,7 +87,7 @@ class MusicPlayer(BoxLayout):
         volume_layout = BoxLayout(orientation='horizontal', size_hint_x=0.20, padding=(10, 0))
         self.volume_slider = Slider(min=0.0, max=1.0, value=self.volume, orientation='vertical', size_hint_y=1, height=125)
         self.volume_slider.bind(value=self.set_volume)
-        self.volume_label = Label(text="Vol: " + str(int(100 * self.volume))+'%', size_hint_x=1, width=30)
+        self.volume_label = Label(text="Vol: " + str(int(100 * self.volume)) + "%", size_hint_x=1, width=30)
         volume_layout.add_widget(self.volume_label)
         volume_layout.add_widget(self.volume_slider)
         self.bind(volume=self.update_volume_label)
@@ -236,7 +236,7 @@ class MusicPlayer(BoxLayout):
             self.sound.volume = volume
 
     def update_volume_label(self, instance, value):
-        self.volume_label.text = f"Vol: {int(value * 100)}"
+        self.volume_label.text = f"Vol: {int(value * 100)}%"
         
     def show_error_popup(self, message):
         # Create a label that supports text wrapping
