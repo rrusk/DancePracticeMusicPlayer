@@ -319,6 +319,11 @@ class MusicPlayer(BoxLayout):
         self.progress_text = self.INIT_POS_DUR
         self.playlist_idx = 0
         self.song_title = self.INIT_SONG_TITLE
+        if hasattr(self, 'current_button') and self.current_button:
+            self.current_button.background_color = (1, 1, 1, 1)
+            self.current_button = self.song_buttons[self.playlist_idx]
+            self.current_button.background_color = (0, 1, 1, 1)
+            self.scrollview.scroll_to(self.current_button)
         self.sound = None
         #self.sound = SoundLoader.load(self.playlist[0])
         
