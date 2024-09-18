@@ -85,10 +85,8 @@ To run the app, make sure to run the kivy activate script and then use
 python main.py
 </pre>
 
-The GUI should look similar to this on Linux and MacOS desktops:
+The GUI should look similar to this on Linux, MacOS and Windows desktops:
 ![DancePracticeMusicPlayer](https://github.com/user-attachments/assets/6331954b-ee8d-4e10-a224-9ae9f672bb49)
-
-It looks the same on Windows desktops except that the "Pause" button is not present because of seek issues with GstStreamer.
 
 ## Here\'s a breakdown of the code:
 
@@ -122,7 +120,7 @@ Some key methods in the MusicPlayer class include:
 
 -   play\_sound: Plays the selected song.
 
--   pause\_sound: Pauses the music (not working on Windows).
+-   pause\_sound: Pauses the music.
 
 -   stop\_sound: Stops the music.
 

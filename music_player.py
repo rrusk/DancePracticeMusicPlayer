@@ -115,10 +115,10 @@ class MusicPlayer(BoxLayout):
         play_button.bind(on_press=self.play_sound)
         control_buttons.add_widget(play_button)
 
-        if platform.system() != 'Windows':
-            pause_button = Button(text="Pause")
-            pause_button.bind(on_press=self.pause_sound)
-            control_buttons.add_widget(pause_button)
+        #if platform.system() != 'Windows':
+        pause_button = Button(text="Pause")
+        pause_button.bind(on_press=self.pause_sound)
+        control_buttons.add_widget(pause_button)
 
         stop_button = Button(text="Stop")
         stop_button.bind(on_press=self.stop_sound)
@@ -195,9 +195,13 @@ class MusicPlayer(BoxLayout):
             self.scrollview.scroll_to(self.current_button)
         
             Clock.schedule_interval(self.update_progress, self.schedule_interval)
-                
-            self.sound.seek(self.playing_position)
-            self.sound.play()
+            
+            if platform.system() == 'Windows':
+                self.sound.play()
+                self.sound.seek(self.playing_position)
+            else:    
+                self.sound.seek(self.playing_position)
+                self.sound.play()
         else:
             # If sound couldn't be loaded, show an error popup and skip to the next song
             self.show_error_popup(f"Could not load song: {self.playlist[self.playlist_idx]}")
@@ -207,7 +211,6 @@ class MusicPlayer(BoxLayout):
             else:
                 self.restart_playlist()            
            
-    # pause_sound isn't working in Windows
     def pause_sound(self, instance=None):
         if self.sound and self.sound.state == 'play':
             self.playing_position = self.sound.get_pos()
