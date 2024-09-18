@@ -85,9 +85,9 @@ class MusicPlayer(BoxLayout):
 
         # Volume Slider
         volume_layout = BoxLayout(orientation='horizontal', size_hint_x=0.20, padding=(10, 0))
-        self.volume_slider = Slider(min=0.0, max=1.0, value=self.volume, orientation='vertical', size_hint_y=1, height=125)
+        self.volume_slider = Slider(min=0.0, max=1.0, value=self.volume, orientation='vertical', size_hint_y=1, height=125, value_track = True, value_track_color=(0.3, 0.8, 0.3,1))
         self.volume_slider.bind(value=self.set_volume)
-        self.volume_label = Label(text="Vol: " + str(int(100 * self.volume)) + "%", size_hint_x=1, width=30)
+        self.volume_label = Label(text="Vol: " + str(int(100 * self.volume)) + "%", size_hint_x=1, width=30, color=(0.3, 0.8, 0.3, 1))
         volume_layout.add_widget(self.volume_label)
         volume_layout.add_widget(self.volume_slider)
         self.bind(volume=self.update_volume_label)
@@ -96,39 +96,39 @@ class MusicPlayer(BoxLayout):
         controls = BoxLayout(orientation='vertical', height="100dp", padding=2)
 
         # progress bar with song title and position in song
-        self.song_title_label = Label(text=self.song_title)
+        self.song_title_label = Label(text=self.song_title, color=(0, 1, 0, 1))  # Green text
         self.bind(song_title=self.song_title_label.setter('text'))
         controls.add_widget(self.song_title_label)
         self.progress_bar = Slider(min=0, max=self.progress_max, value=self.progress_value, step=1,
-                                   cursor_size=(0, 0), value_track=True, value_track_width=4, size_hint_x=1)
+                           cursor_size=(0, 0), value_track=True, value_track_width=4, size_hint_x=1,
+                           value_track_color=(0.3, 0.8, 0.3, 1))
         self.bind(progress_max=self.progress_bar.setter('max'))
         self.bind(progress_value=self.progress_bar.setter('value'))
         self.progress_bar.bind(on_touch_up=self.on_slider_move)
         controls.add_widget(self.progress_bar)
-        self.progress_label = Label(text=self.progress_text)
+        self.progress_label = Label(text=self.progress_text, color=(0, 1, 0, 1))
         self.bind(progress_text=self.progress_label.setter('text'))
         controls.add_widget(self.progress_label)
 
         # control: play, pause, etc.
         control_buttons = BoxLayout(size_hint_y=None, height=50)
-        play_button = Button(text="Play")
+        play_button = Button(text="Play", background_color=(0.2, 0.6, 0.8, 1), color=(1, 1, 1, 1))
         play_button.bind(on_press=self.play_sound)
         control_buttons.add_widget(play_button)
 
-        #if platform.system() != 'Windows':
-        pause_button = Button(text="Pause")
+        pause_button = Button(text="Pause", background_color=(0.2, 0.6, 0.8, 1), color=(1, 1, 1, 1))
         pause_button.bind(on_press=self.pause_sound)
         control_buttons.add_widget(pause_button)
 
-        stop_button = Button(text="Stop")
+        stop_button = Button(text="Stop", background_color=(0.2, 0.6, 0.8, 1), color=(1, 1, 1, 1))
         stop_button.bind(on_press=self.stop_sound)
         control_buttons.add_widget(stop_button)
 
-        restart_button = Button(text="Restart")
+        restart_button = Button(text="Restart", background_color=(0.2, 0.6, 0.8, 1), color=(1, 1, 1, 1))
         restart_button.bind(on_press=self.restart_sound)
         control_buttons.add_widget(restart_button)
 
-        settings_button = Button(text="Music Settings")
+        settings_button = Button(text="Music Settings", background_color=(0.2, 0.6, 0.8, 1), color=(1, 1, 1, 1))
         settings_button.bind(on_press=lambda instance: App.get_running_app().open_settings())
         control_buttons.add_widget(settings_button)
 
@@ -245,13 +245,14 @@ class MusicPlayer(BoxLayout):
         # Create a label that supports text wrapping
         label = Label(text=message, 
                     text_size=(380, None),  # 380 is slightly smaller than the popup width
-                    size_hint_y=None)
+                    size_hint_y=None,
+                    color=(1,0,0,1)) # red text
 
         # Set the label height based on the content to ensure it adjusts to long text
         label.bind(texture_size=label.setter('size'))
 
         # Create a "Close" button
-        close_button = Button(text="Close", size_hint_y=None, height=40)
+        close_button = Button(text="Close", background_color=(0.7, 0.7, 0.7, 1), color=(0, 0, 0, 1))  # Gray button with black text
         
         # Create a layout to hold both the label and button
         layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
@@ -342,8 +343,9 @@ class MusicPlayer(BoxLayout):
         self.button_grid.clear_widgets()
         self.song_buttons = []  # Clear the buttons list
         for i in range(len(self.playlist)):
-            #btn = Button(text=pathlib.Path(selfstem.playlist[i])., size_hint_y=None, height=40)
-            btn = Button(text=self.song_label(self.playlist[i]), size_hint_y=None, height=40)
+            btn = Button(text=self.song_label(self.playlist[i]), size_hint_y=None, height=40,
+                        background_color=(0.5, 0.5, 0.5, 1), color=(1, 1, 1, 1))  # Dark gray background, white text
+
             btn.bind(on_press=lambda instance, i=i: self.on_song_button_press(i))
             self.song_buttons.append(btn)  # Store the button in the list
             self.button_grid.add_widget(btn)
