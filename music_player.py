@@ -141,10 +141,6 @@ class MusicPlayer(BoxLayout):
         
         if not self.playlist and self.music_dir:
             self.update_playlist(self.music_dir)
-        
-        #preload first selection to improve performance when Start is pressed    
-        if self.playlist:
-            self.sound = SoundLoader.load(self.playlist[0])
                    
     def get_dances(self, list_name):
         try:
