@@ -2,21 +2,21 @@
     {
         "type": "numeric",
         "title": "Volume",
-        "desc": "Set the music volume; range is 0.0 to 1.0",
+        "desc": "Set the music volume; range is 0.0 to 1.0.",
         "section": "user",
         "key": "volume"
     },
     {
         "type": "path",
         "title": "Music Directory",
-        "desc": "Set the music directory",
+        "desc": "Set the music directory.  The directory must have sub-folders containing the music for each dance included in the playlist.  For example, musical selections for the Waltz will be randomly selected from the Waltz sub-folder.",
         "section": "user",
         "key": "music_dir"
     },
     {
         "type": "numeric",
         "title": "Max Playtime",
-        "desc": "Set the maximum playtime for a song in seconds",
+        "desc": "Set the maximum playtime for a song in seconds.  The music fades out and stops after the maximum playtime.",
         "section": "user",
         "key": "song_max_playtime"
     },
