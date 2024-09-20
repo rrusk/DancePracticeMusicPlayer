@@ -251,7 +251,7 @@ class MusicPlayer(BoxLayout):
         label = Label(text=message, 
                     text_size=(380, None),  # 380 is slightly smaller than the popup width
                     size_hint_y=None,
-                    color=(1,0,0,1)) # red text
+                    color=(1,1,1,1)) # white text
 
         # Set the label height based on the content to ensure it adjusts to long text
         label.bind(texture_size=label.setter('size'))
