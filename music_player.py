@@ -32,6 +32,7 @@ from tinytag import TinyTag
 class MusicPlayer(BoxLayout):
     INIT_POS_DUR = '0:00 / 0:00'
     INIT_SONG_TITLE = 'Click on Play or Select Song Title Above'
+    INIT_MUSIC_SELECTION = 'A valid dance music directory is needed.  Click here or use Music Settings button'
 
     sound = ObjectProperty(None, allownone=True)
     music_file = StringProperty(None)
@@ -336,23 +337,29 @@ class MusicPlayer(BoxLayout):
         self.playlist = []
         for dance in self.dances:
             self.playlist.extend(self.get_songs(directory, dance, self.num_selections))
-        if self.playlist:
-            self.playlist_idx = 0
-            self.sound = None
-            #self.sound = SoundLoader.load(self.playlist[0])
-            self.display_playlist(self.playlist)
-            self.restart_playlist()
+        #if self.playlist:
+        self.playlist_idx = 0
+        self.sound = None
+        #self.sound = SoundLoader.load(self.playlist[0])
+        self.display_playlist(self.playlist)
+        self.restart_playlist()
 
     def display_playlist(self, playlist):
         self.button_grid.clear_widgets()
         self.song_buttons = []  # Clear the buttons list
-        for i in range(len(self.playlist)):
-            btn = Button(text=self.song_label(self.playlist[i]), size_hint_y=None, height=40,
-                        background_color=(0.5, 0.5, 0.5, 1), color=(1, 1, 1, 1))  # Dark gray background, white text
-
-            btn.bind(on_press=lambda instance, i=i: self.on_song_button_press(i))
+        if len(self.playlist) == 0:
+            btn = Button(text=self.INIT_MUSIC_SELECTION, size_hint_y=None, height=40,
+                         background_color=(1, 0, 0, 1), color=(1, 1, 1, 1))
+            btn.bind(on_press=lambda instance: App.get_running_app().open_settings())
             self.song_buttons.append(btn)  # Store the button in the list
             self.button_grid.add_widget(btn)
+        else:
+            for i in range(len(self.playlist)):
+                btn = Button(text=self.song_label(self.playlist[i]), size_hint_y=None, height=40,
+                            background_color=(0.5, 0.5, 0.5, 1), color=(1, 1, 1, 1))  # Dark gray background, white text
+                btn.bind(on_press=lambda instance, i=i: self.on_song_button_press(i))
+                self.song_buttons.append(btn)  # Store the button in the list
+                self.button_grid.add_widget(btn)
 
     def song_duration(self, selection):
         tag = TinyTag.get(selection)
