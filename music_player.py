@@ -196,9 +196,12 @@ class MusicPlayer(BoxLayout):
             self.current_button = self.song_buttons[self.playlist_idx]
             self.current_button.background_color = (0, 1, 1, 1)  # Highlight the button (RGB with opacity)
 
-            # Scroll to the current button to make sure it's visible
-            self.scrollview.scroll_to(self.current_button)
-        
+            # Scroll so the current button is visible
+            if self.playlist_idx < len(self.song_buttons)-2:
+                self.scrollview.scroll_to(self.song_buttons[self.playlist_idx+2])
+            elif self.playlist_idx < len(self.song_buttons)-1:
+                self.scrollview.scroll_to(self.song_buttons[self.playlist_idx+1])
+
             Clock.schedule_interval(self.update_progress, self.schedule_interval)
             
             if platform.system() == 'Windows':
@@ -412,7 +415,10 @@ class MusicPlayer(BoxLayout):
                     selected_songs = random.sample(music, num)
                 else:
                     selected_songs = sorted(music[:num+1])
-                selected_songs.insert(0, os.path.join(self.script_path, 'announce', dance + '.ogg'))
+                if os.path.isfile(os.path.join(self.script_path, 'announce', dance + '.ogg')):
+                    selected_songs.insert(0, os.path.join(self.script_path, 'announce', dance + '.ogg'))
+                else:
+                    selected_songs.insert(0, os.path.join(self.script_path, 'announce', 'Generic.ogg'))
                 return selected_songs
         
         return []
