@@ -7,6 +7,10 @@ import pathlib
 import random
 import json
 import configparser
+import sys
+if sys.platform=="win32":
+    import ctypes
+    ctypes.windll.user32.ShowWindow( ctypes.windll.kernel32.GetConsoleWindow(), 0 )
 
 from kivy.app import App
 from kivy.properties import NumericProperty, StringProperty, ObjectProperty, ListProperty, DictProperty, BooleanProperty
