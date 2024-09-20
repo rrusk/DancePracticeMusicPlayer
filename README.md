@@ -86,7 +86,7 @@ python main.py
 </pre>
 
 The GUI should look similar to this on Linux, MacOS and Windows desktops:
-![DancePracticeMusicPlayer](https://github.com/user-attachments/assets/6331954b-ee8d-4e10-a224-9ae9f672bb49)
+![music_player](https://github.com/user-attachments/assets/0c736912-6fe6-41d4-ac6c-246d9a616087)
 
 ## Here\'s a breakdown of the code:
 
