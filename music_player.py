@@ -33,6 +33,7 @@ class MusicPlayer(BoxLayout):
     INIT_POS_DUR = '0:00 / 0:00'
     INIT_SONG_TITLE = 'Click on Play or Select Song Title Above'
     INIT_MUSIC_SELECTION = 'A valid dance music directory is needed.  Click here or use Music Settings button'
+    SONG_BTN_BCKGRD = (0.5,0.5,0.5,1)
 
     sound = ObjectProperty(None, allownone=True)
     music_file = StringProperty(None)
@@ -329,7 +330,7 @@ class MusicPlayer(BoxLayout):
         self.playlist_idx = 0
         self.song_title = self.INIT_SONG_TITLE
         for btn in self.song_buttons:
-            btn.background_color = (0.5,0.5,0.5, 1)
+            btn.background_color = self.SONG_BTN_BCKGRD
         if hasattr(self, 'current_button') and self.current_button:
             #self.current_button.background_color = (1, 1, 1, 1)
             self.current_button = self.song_buttons[self.playlist_idx]
@@ -361,7 +362,7 @@ class MusicPlayer(BoxLayout):
         else:
             for i in range(len(self.playlist)):
                 btn = Button(text=self.song_label(self.playlist[i]), size_hint_y=None, height=40,
-                            background_color=(0.5, 0.5, 0.5, 1), color=(1, 1, 1, 1))  # Dark gray background, white text
+                            background_color=self.SONG_BTN_BCKGRD, color=(1, 1, 1, 1))  # Dark gray background, white text
                 btn.bind(on_press=lambda instance, i=i: self.on_song_button_press(i))
                 self.song_buttons.append(btn)  # Store the button in the list
                 self.button_grid.add_widget(btn)
