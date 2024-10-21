@@ -48,7 +48,7 @@ As above except you don't source the kivy activate script, instead enter on the 
  python -m pip install tinytag
 </pre>
 
-Modify config.json to point to the music folder.
+(Optional) Modify config.json to point to the music folder.
 For instance, on the VBDS Windows computers, change the music_dir line to read
     "music_dir": "C:\\Users\\vbds_\\Music"
 
