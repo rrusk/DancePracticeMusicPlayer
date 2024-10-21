@@ -50,7 +50,8 @@ As above except you don't source the kivy activate script, instead enter on the 
 
 (Optional) Modify config.json to point to the music folder.
 For instance, on the VBDS Windows computers, change the music_dir line to read
-    "music_dir": "C:\\Users\\vbds_\\Music"
+    "music_dir": "C:\\Users\\vbds_\\Music".
+The "Music Settings" button can also be used to navigate to the music directory.
 
 The player assumes the following music organization within the <i>music_dir</i> folder:
 <pre>
