@@ -162,9 +162,13 @@ class MusicPlayer(BoxLayout):
         stop_button.bind(on_press=self.stop_sound)
         control_buttons.add_widget(stop_button)
 
-        restart_button = Button(text="Restart", background_color=(0.2, 0.6, 0.8, 1), color=(1, 1, 1, 1))
+        restart_button = Button(text="Restart Song", background_color=(0.2, 0.6, 0.8, 1), color=(1, 1, 1, 1))
         restart_button.bind(on_press=self.restart_sound)
         control_buttons.add_widget(restart_button)
+        
+        playlist_button = Button(text="New Playlist", background_color=(0.2, 0.6, 0.8, 1), color=(1, 1, 1, 1))
+        playlist_button.bind(on_press=lambda instance: self.update_playlist(self.music_dir))
+        control_buttons.add_widget(playlist_button)
 
         settings_button = Button(text="Music Settings", background_color=(0.2, 0.6, 0.8, 1), color=(1, 1, 1, 1))
         settings_button.bind(on_press=lambda instance: App.get_running_app().open_settings())
@@ -372,6 +376,8 @@ class MusicPlayer(BoxLayout):
         #self.sound = SoundLoader.load(self.playlist[0])
         
     def update_playlist(self, directory, instance=None):
+        if self.sound:
+            self.sound.unload()
         self.playlist = []
         for dance in self.dances:
             self.playlist.extend(self.get_songs(directory, dance, self.num_selections))
