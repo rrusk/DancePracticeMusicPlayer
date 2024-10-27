@@ -501,7 +501,8 @@ class MusicPlayer(BoxLayout):
         self.update_playlist(self.music_dir)
 
 class MusicApp(App):
-    default_music_dir = os.path.join(pathlib.Path.home(),"Music")
+    home_dir = os.getenv("USERPROFILE") or os.getenv("HOME") or str(pathlib.Path.home())
+    default_music_dir = os.path.join(home_dir, "Music")
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
