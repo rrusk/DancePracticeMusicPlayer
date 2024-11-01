@@ -49,7 +49,7 @@ def find_files_with_similar_titles(folder_path, min_length):
 
 # Set up command-line argument parsing
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Find audio files with similar titles in a specified folder.")
+    parser = argparse.ArgumentParser(description="Find audio files with similar (but not identical) titles in a specified folder.")
     parser.add_argument("folder_path", type=str, nargs="?", help="Path to the folder containing audio files")
     parser.add_argument("--min_length", type=int, default=10, help="Minimum length of substring for titles to be considered similar")
 
