@@ -21,7 +21,7 @@ def find_files_with_same_title(folder_path):
                 # Extract metadata
                 tag = TinyTag.get(file_path)
                 if tag.title:  # Only consider files with a title tag
-                    title_to_files[tag.title].append(file_path)
+                    title_to_files[tag.title.lower()].append(file_path)
             except Exception as e:
                 print(f"Error reading {filename}: {e}")
 
@@ -30,7 +30,7 @@ def find_files_with_same_title(folder_path):
     for title, files in title_to_files.items():
         if len(files) > 1:  # More than one file with the same title
             duplicates_found = True
-            print(f"\nFiles with the title '{title}':")
+            print(f"\nFiles with the (case insensitive) title '{title}':")
             for file in files:
                 print(f" - {file}")
 
@@ -39,7 +39,7 @@ def find_files_with_same_title(folder_path):
 
 # Set up command-line argument parsing
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Find audio files with the same title in a specified folder.")
+    parser = argparse.ArgumentParser(description="Find audio files with the same (case insensitive) title in a specified folder.")
     parser.add_argument("folder_path", type=str, nargs="?", help="Path to the folder containing audio files")
 
     args = parser.parse_args()
