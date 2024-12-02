@@ -48,10 +48,9 @@ As above except you don't source the kivy activate script, instead enter on the 
  python -m pip install tinytag
 </pre>
 
-(Optional) Modify config.json to point to the music folder.
-For instance, on the VBDS Windows computers, change the music_dir line to read
-    "music_dir": "C:\\Users\\vbds_\\Music".
-The "Music Settings" button can also be used to navigate to the music directory.
+On initial startup, the player creates a default 'music.ini' configuration file.
+The "Music Settings" button can be used to modify the configuration file,
+including the location of the music directory.
 
 The player assumes the following music organization within the <i>music_dir</i> folder:
 <pre>
@@ -78,7 +77,7 @@ The "Select Music" button on the lower right of the display can also but used to
 The musical selections are assumed to be at the correct tempo and to
 be of appropriate length.
 Selections longer than 3m30s will fade out and end by 3m40s (210 seconds) regardless of length
-though this can be adjusted by modifying "song_max_playtime" in config.json.
+though this can be adjusted by modifying "song_max_playtime" in the music settings.
 The volume of the musical selections should be normalized.
 
 To run the app, make sure to run the kivy activate script and then use
@@ -136,8 +135,8 @@ Some key methods in the MusicPlayer class include:
 **Config File**
 
 The application loads configuration data from a JSON file
-named config.json. The configuration data includes the music directory,
-volume, and practice length.
+named 'music.ini'. The configuration data includes the music directory,
+volume, maximum song playtime and practice type.
 
 **Practice Dances**
 
