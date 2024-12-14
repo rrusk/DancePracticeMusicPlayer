@@ -72,7 +72,7 @@ music_dir/
 </pre>
 For instance, all Jive selections are in the <i>music_dir/Jive</i> folder,
 all Waltz selections are in the <i>music_dir/Waltz</i> folder, etc.
-The "Select Music" button on the lower right of the display can also but used to select the music folder.
+The "Music Settings" button on the lower right of the display can also but used to select the music folder.
 
 The musical selections are assumed to be at the correct tempo and to
 be of appropriate length.
@@ -102,7 +102,7 @@ The code defines two main classes: MyFileChooser and MusicPlayer.
 
 The MusicPlayer class has several key features:
 
--   **Music Directory**: The application loads music files from a selected directory. The directory can be changed using the \"Select Music\" button.
+-   **Music Directory**: The application loads music files from a selected directory. The directory can be changed using the \"Music Settings\" button.
 
 -   **Playlist**: The application creates a randomized playlist of music files from the selected directory. The playlist is displayed as a list of buttons, each representing a song.
 
