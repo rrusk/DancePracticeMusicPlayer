@@ -82,7 +82,7 @@ The volume of the musical selections should be normalized.
 
 To run the app, make sure to run the kivy activate script and then use
 <pre>
-python main.py
+python music_player.py
 </pre>
 
 The GUI should look similar to this on Linux, MacOS and Windows desktops:
