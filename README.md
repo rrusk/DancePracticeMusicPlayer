@@ -25,7 +25,7 @@ Git comes with Linux distributions.  For Windows, get Git for Windows at https:/
 git clone https://github.com/rrusk/DancePracticeMusicPlayer.git
 </pre>
 
-Instructions for installing Kivy are at https://kivy.org/doc/stable/gettingstarted/installation.html.  Python and pip need to be installed before installing kivy.
+Instructions for installing Kivy are at https://kivy.org/doc/stable/gettingstarted/installation.html.  Python and pip need to be installed before installing kivy.  For Windows, use Python 3.12.8 until issues with Kivy on 3.13.x are resolved.
 
 Assuming this repo has been installed in $HOME/git/DancePracticeMusicPlayer, change to that directory.
 
