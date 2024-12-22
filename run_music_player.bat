@@ -19,4 +19,4 @@ call activate
 cd /d %MUSIC_PLAYER_PATH%
 python music_player.py
 :: pause shows startup errors if they occur
-pause
+:: pause

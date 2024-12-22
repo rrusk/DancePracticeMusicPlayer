@@ -10,7 +10,6 @@ import configparser
 import sys
 if sys.platform=="win32":
     import ctypes
-    ctypes.windll.user32.ShowWindow( ctypes.windll.kernel32.GetConsoleWindow(), 0 )
 
 from kivy.app import App
 from kivy.properties import NumericProperty, StringProperty, ObjectProperty, ListProperty, DictProperty, BooleanProperty
@@ -524,6 +523,8 @@ class MusicApp(App):
             self.root.practice_type = config.get(user_section, 'practice_type', fallback='60min')
         
         self.root.set_practice_type(None, self.root.practice_type)
+        if sys.platform == "win32":
+            ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 0)
 
     def build_config(self, config):
         config.setdefaults('user', {
