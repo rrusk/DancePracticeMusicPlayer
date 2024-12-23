@@ -524,6 +524,9 @@ class MusicApp(App):
         
         self.root.set_practice_type(None, self.root.practice_type)
         if sys.platform == "win32":
+            Clock.schedule_once(self.close_console, 1)
+
+    def close_console(self, dt):
             ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 0)
 
     def build_config(self, config):
