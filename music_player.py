@@ -1,4 +1,5 @@
 from kivy.config import Config
+
 Config.set('input', 'mouse', 'mouse,multitouch_on_demand')
 
 import os
@@ -7,7 +8,8 @@ import pathlib
 import random
 import json
 import sys
-if sys.platform=="win32":
+
+if sys.platform == "win32":
     import ctypes
 
 from kivy.app import App
@@ -27,11 +29,12 @@ from kivy.config import ConfigParser
 
 from tinytag import TinyTag
 
+
 class MusicPlayer(BoxLayout):
     INIT_POS_DUR = '0:00 / 0:00'
     INIT_SONG_TITLE = 'Click on Play or Select Song Title Above'
     INIT_MUSIC_SELECTION = 'A valid dance music directory is needed.  Click here or use Music Settings button'
-    SONG_BTN_BCKGRD = (0.5,0.5,0.5,1)
+    SONG_BTN_BCKGRD = (0.5, 0.5, 0.5, 1)
 
     sound = ObjectProperty(None, allownone=True)
     music_file = StringProperty(None)
@@ -44,15 +47,15 @@ class MusicPlayer(BoxLayout):
     song_title = StringProperty(INIT_SONG_TITLE)
     play_single_song = BooleanProperty(False)
 
-
     practice_dances = DictProperty({
         "default": ['Waltz', 'Tango', 'VWSlow', 'VienneseWaltz', 'Foxtrot', 'QuickStep',
                     'WCS', 'Samba', 'ChaCha', 'Rumba', 'PasoDoble', 'JSlow', 'Jive'],
         "beginner": ["Waltz", "JSlow", "Jive", "Rumba", "Foxtrot", "ChaCha", "Tango"],
-        "newcomer": ["Waltz", "JSlow", "Jive", "Rumba", "Foxtrot", "ChaCha", "Tango", 
+        "newcomer": ["Waltz", "JSlow", "Jive", "Rumba", "Foxtrot", "ChaCha", "Tango",
                      "Samba", "QuickStep", "VWSlow", "VienneseWaltz", "WCS"],
         "LineDance": ["LineDance"],
-        "misc": ["AmericanRumba", "ArgentineTango", "Bolero", "DiscoFox", "Hustle", "LindyHop", "Mambo", "Merengue", "NC2Step", "Polka", "Salsa"]
+        "misc": ["AmericanRumba", "ArgentineTango", "Bolero", "DiscoFox", "Hustle", "LindyHop", "Mambo", "Merengue",
+                 "NC2Step", "Polka", "Salsa"]
     })
 
     playlist = ListProperty([])
@@ -61,7 +64,7 @@ class MusicPlayer(BoxLayout):
     practice_type = StringProperty('60min')
     num_selections = NumericProperty(2)
     song_max_playtime = 210  # music selections longer than 210 (3m30s) are faded out
-    fade_time = 10 # 10s fade out
+    fade_time = 10  # 10s fade out
 
     settings_json = [
         {
@@ -91,7 +94,7 @@ class MusicPlayer(BoxLayout):
             "desc": "Choose the practice type/length. Un-prefixed times are dances played in competition order.  The prefix B (for beginner) includes only beginner dances.  The prefixes B and NC (for newcomer) modify the order of dances.",
             "section": "user",
             "key": "practice_type",
-            "options": ["60min","NC 60min","B 60min","90min", "NC 90min", "120min", "NC 120min","LineDance","Misc"]
+            "options": ["60min", "NC 60min", "B 60min", "90min", "NC 90min", "120min", "NC 120min", "LineDance", "Misc"]
         }
     ]
 
@@ -106,7 +109,7 @@ class MusicPlayer(BoxLayout):
         self.playing_position = 0
         self.total_time = 0
         self.schedule_interval = 0.1
-        
+
         self.orientation = 'vertical'
 
         # Create ScrollView and GridLayout for playlist buttons
@@ -121,9 +124,11 @@ class MusicPlayer(BoxLayout):
 
         # Volume Slider
         volume_layout = BoxLayout(orientation='horizontal', size_hint_x=0.20, padding=(10, 0))
-        self.volume_slider = Slider(min=0.0, max=1.0, value=self.volume, orientation='vertical', size_hint_y=1, height=125, value_track = True, value_track_color=(0.3, 0.8, 0.3,1))
+        self.volume_slider = Slider(min=0.0, max=1.0, value=self.volume, orientation='vertical', size_hint_y=1,
+                                    height=125, value_track=True, value_track_color=(0.3, 0.8, 0.3, 1))
         self.volume_slider.bind(value=self.set_volume)
-        self.volume_label = Label(text="Vol: " + str(int(100 * self.volume)) + "%", size_hint_x=1, width=30, color=(0.3, 0.8, 0.3, 1))
+        self.volume_label = Label(text="Vol: " + str(int(100 * self.volume)) + "%", size_hint_x=1, width=30,
+                                  color=(0.3, 0.8, 0.3, 1))
         volume_layout.add_widget(self.volume_label)
         volume_layout.add_widget(self.volume_slider)
         self.bind(volume=self.update_volume_label)
@@ -136,8 +141,8 @@ class MusicPlayer(BoxLayout):
         self.bind(song_title=self.song_title_label.setter('text'))
         controls.add_widget(self.song_title_label)
         self.progress_bar = Slider(min=0, max=self.progress_max, value=self.progress_value, step=1,
-                           cursor_size=(0, 0), value_track=True, value_track_width=4, size_hint_x=1,
-                           value_track_color=(0.3, 0.8, 0.3, 1))
+                                   cursor_size=(0, 0), value_track=True, value_track_width=4, size_hint_x=1,
+                                   value_track_color=(0.3, 0.8, 0.3, 1))
         self.bind(progress_max=self.progress_bar.setter('max'))
         self.bind(progress_value=self.progress_bar.setter('value'))
         self.progress_bar.bind(on_touch_up=self.on_slider_move)
@@ -163,7 +168,7 @@ class MusicPlayer(BoxLayout):
         restart_button = Button(text="Restart Song", background_color=(0.2, 0.6, 0.8, 1), color=(1, 1, 1, 1))
         restart_button.bind(on_press=self.restart_sound)
         control_buttons.add_widget(restart_button)
-        
+
         playlist_button = Button(text="New Playlist", background_color=(0.2, 0.6, 0.8, 1), color=(1, 1, 1, 1))
         playlist_button.bind(on_press=lambda instance: self.update_playlist(self.music_dir))
         control_buttons.add_widget(playlist_button)
@@ -201,7 +206,7 @@ class MusicPlayer(BoxLayout):
                 if self.playlist_idx < len(self.playlist):
                     self.play_sound()  # Try playing the next song
                 return
-        
+
         # Load and play the song if the file exists
         if self.sound is None and self.playlist:
             self.sound = SoundLoader.load(self.playlist[self.playlist_idx])
@@ -231,10 +236,10 @@ class MusicPlayer(BoxLayout):
             self.current_button.background_color = (0, 1, 1, 1)  # Highlight the button (RGB with opacity)
 
             # Scroll so the current button is visible
-            if self.playlist_idx < len(self.song_buttons)-2:
-                self.scrollview.scroll_to(self.song_buttons[self.playlist_idx+2])
-            elif self.playlist_idx < len(self.song_buttons)-1:
-                self.scrollview.scroll_to(self.song_buttons[self.playlist_idx+1])
+            if self.playlist_idx < len(self.song_buttons) - 2:
+                self.scrollview.scroll_to(self.song_buttons[self.playlist_idx + 2])
+            elif self.playlist_idx < len(self.song_buttons) - 1:
+                self.scrollview.scroll_to(self.song_buttons[self.playlist_idx + 1])
 
             Clock.schedule_interval(self.update_progress, self.schedule_interval)
 
@@ -251,7 +256,7 @@ class MusicPlayer(BoxLayout):
             if self.playlist_idx < len(self.playlist):
                 self.play_sound()
             else:
-                self.restart_playlist()            
+                self.restart_playlist()
 
     def pause_sound(self, instance=None):
         if self.sound and self.sound.state == 'play':
@@ -276,25 +281,26 @@ class MusicPlayer(BoxLayout):
             self.sound.play()
 
     def set_volume(self, slider, volume):
-        self.volume= volume
+        self.volume = volume
         if self.sound:
             self.sound.volume = volume
 
     def update_volume_label(self, instance, value):
         self.volume_label.text = f"Vol: {int(value * 100)}%"
-        
+
     def show_error_popup(self, message):
         # Create a label that supports text wrapping
-        label = Label(text=message, 
-                    text_size=(380, None),  # 380 is slightly smaller than the popup width
-                    size_hint_y=None,
-                    color=(1,1,1,1)) # white text
+        label = Label(text=message,
+                      text_size=(380, None),  # 380 is slightly smaller than the popup width
+                      size_hint_y=None,
+                      color=(1, 1, 1, 1))  # white text
 
         # Set the label height based on the content to ensure it adjusts to long text
         label.bind(texture_size=label.setter('size'))
 
         # Create a "Close" button
-        close_button = Button(text="Close", background_color=(0.7, 0.7, 0.7, 1), color=(0, 0, 0, 1))  # Gray button with black text
+        close_button = Button(text="Close", background_color=(0.7, 0.7, 0.7, 1),
+                              color=(0, 0, 0, 1))  # Gray button with black text
 
         # Create a layout to hold both the label and button
         layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
@@ -302,10 +308,10 @@ class MusicPlayer(BoxLayout):
         layout.add_widget(close_button)
 
         # Create the popup
-        popup = Popup(title="Error", 
-                    content=layout, 
-                    size_hint=(None, None), 
-                    size=(400, 200))
+        popup = Popup(title="Error",
+                      content=layout,
+                      size_hint=(None, None),
+                      size=(400, 200))
 
         # Bind the close button to dismiss the popup
         close_button.bind(on_press=popup.dismiss)
@@ -313,27 +319,27 @@ class MusicPlayer(BoxLayout):
         # Open the popup
         popup.open()
 
-
     def on_slider_move(self, instance, touch):
         if self.sound and instance.collide_point(*touch.pos):
             self.playing_position = self.progress_bar.value
             self.sound.seek(self.playing_position)
 
     def update_progress(self, dt):
-        if self.sound is not None and self.sound.state == 'play':         
+        if self.sound is not None and self.sound.state == 'play':
             self.playing_position = self.sound.get_pos()
             self.progress_value = round(self.playing_position)
             current_time = self.secs_to_time_str(time_sec=self.playing_position)
             self.progress_text = f'{current_time} / {self.total_time}'
             if not self.play_single_song:
                 if self.playing_position >= self.song_max_playtime and self.fade_time > 0:
-                    self.sound.volume=self.sound.volume* (1 + self.schedule_interval*(self.song_max_playtime - self.playing_position) / self.fade_time)
+                    self.sound.volume = self.sound.volume * (1 + self.schedule_interval * (
+                            self.song_max_playtime - self.playing_position) / self.fade_time)
                 if self.playing_position >= self.progress_max - 1 or self.playing_position > self.song_max_playtime + self.fade_time:
                     self.sound.unload()
                     self.playlist_idx += 1
                     self.playing_position = 0
                     if self.playlist_idx < len(self.playlist):
-                        self.sound  = None
+                        self.sound = None
                         self.play_sound()
                     else:
                         self.restart_playlist()
@@ -393,7 +399,8 @@ class MusicPlayer(BoxLayout):
         else:
             for i in range(len(self.playlist)):
                 btn = Button(text=self.song_label(self.playlist[i]), size_hint_y=None, height=40,
-                            background_color=self.SONG_BTN_BCKGRD, color=(1, 1, 1, 1))  # Dark gray background, white text
+                             background_color=self.SONG_BTN_BCKGRD,
+                             color=(1, 1, 1, 1))  # Dark gray background, white text
                 btn.bind(on_press=lambda instance, i=i: self.on_song_button_press(i))
                 self.song_buttons.append(btn)  # Store the button in the list
                 self.button_grid.add_widget(btn)
@@ -418,7 +425,7 @@ class MusicPlayer(BoxLayout):
     def adjust_num_selections(self, dance, num_selections):
         if dance in ("PasoDoble") and num_selections == 1:
             num_selections = 0
-        elif dance in ("PasoDoble") and num_selections in (2,3):
+        elif dance in ("PasoDoble") and num_selections in (2, 3):
             num_selections = 1
         elif dance in ("PasoDoble") and num_selections > 3:
             num_selections = 2
@@ -429,7 +436,7 @@ class MusicPlayer(BoxLayout):
         elif dance in ('WCS') and num_selections > 2:
             num_selections = 2
         elif dance in ('LineDance'):
-            num_selections = 100 # include all the line dances
+            num_selections = 100  # include all the line dances
         return num_selections
 
     def get_songs(self, directory, dance, num_selections):
@@ -448,7 +455,7 @@ class MusicPlayer(BoxLayout):
                 if dance != 'LineDance':
                     selected_songs = random.sample(music, num)
                 else:
-                    selected_songs = sorted(music[:num+1])
+                    selected_songs = sorted(music[:num + 1])
                 if os.path.isfile(os.path.join(self.script_path, 'announce', dance + '.ogg')):
                     selected_songs.insert(0, os.path.join(self.script_path, 'announce', dance + '.ogg'))
                 else:
@@ -464,10 +471,10 @@ class MusicPlayer(BoxLayout):
             self.num_selections = 2
         elif text == 'B 60min':
             self.dances = self.get_dances('beginner')
-            self.num_selections = 2   
+            self.num_selections = 2
         elif text == 'NC 60min':
             self.dances = self.get_dances('newcomer')
-            self.num_selections = 2       
+            self.num_selections = 2
         elif text == '90 min':
             self.dances = self.get_dances('default')
             self.num_selections = 3
@@ -493,6 +500,7 @@ class MusicPlayer(BoxLayout):
         self.stop_sound()
         self.update_playlist(self.music_dir)
 
+
 class MusicApp(App):
     home_dir = os.getenv("USERPROFILE") or os.getenv("HOME") or str(pathlib.Path.home())
     default_music_dir = os.path.join(home_dir, "Music")
@@ -500,7 +508,6 @@ class MusicApp(App):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.config = ConfigParser()
-
 
     def build(self):
         self.settings_cls = SettingsWithSpinner
@@ -515,7 +522,7 @@ class MusicApp(App):
             self.root.music_dir = config.get(user_section, 'music_dir', fallback=self.default_music_dir)
             self.root.song_max_playtime = config.getint(user_section, 'song_max_playtime', fallback=210)
             self.root.practice_type = config.get(user_section, 'practice_type', fallback='60min')
-        
+
         self.root.set_practice_type(None, self.root.practice_type)
         if sys.platform == "win32":
             Clock.schedule_once(self.close_console, 1)
@@ -551,7 +558,7 @@ class MusicApp(App):
                 try:
                     volume_value = float(value)
                     self.root.volume = volume_value
-                    self.root.set_volume(None,volume_value)
+                    self.root.set_volume(None, volume_value)
                     self.root.volume_slider.value = volume_value
                 except ValueError:
                     print("Error: volume value is not a float")
@@ -563,6 +570,7 @@ class MusicApp(App):
             elif key == 'practice_type':
                 self.root.practice_type = value
                 self.root.set_practice_type(None, value)
+
 
 if __name__ == '__main__':
     MusicApp().run()
