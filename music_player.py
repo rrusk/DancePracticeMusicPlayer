@@ -1,16 +1,9 @@
-from kivy.config import Config
-
-Config.set('input', 'mouse', 'mouse,multitouch_on_demand')
-
 import os
 import platform
 import pathlib
 import random
 import json
 import sys
-
-if sys.platform == "win32":
-    import ctypes
 
 from kivy.app import App
 from kivy.properties import NumericProperty, StringProperty, ObjectProperty, ListProperty, DictProperty, BooleanProperty
@@ -23,11 +16,16 @@ from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.slider import Slider
-
 from kivy.uix.settings import SettingsWithSpinner
 from kivy.config import ConfigParser
+from kivy.config import Config
 
 from tinytag import TinyTag
+
+Config.set('input', 'mouse', 'mouse,multitouch_on_demand')
+
+if sys.platform == "win32":
+    import ctypes
 
 
 class MusicPlayer(BoxLayout):
@@ -77,21 +75,26 @@ class MusicPlayer(BoxLayout):
         {
             "type": "path",
             "title": "Music Directory",
-            "desc": "Set the music directory.  The directory must have sub-folders containing the music for each dance included in the playlist.  For example, musical selections for the Waltz will be randomly selected from the Waltz sub-folder.",
+            "desc": "Set the music directory.  The directory must have sub-folders containing the music for each "
+                    "dance included in the playlist.  For example, musical selections for the Waltz will be randomly "
+                    "selected from the Waltz sub-folder.",
             "section": "user",
             "key": "music_dir"
         },
         {
             "type": "numeric",
             "title": "Max Playtime",
-            "desc": "Set the maximum playtime for a song in seconds.  The music fades out and stops after the maximum playtime.",
+            "desc": "Set the maximum playtime for a song in seconds.  The music fades out and stops after the maximum "
+                    "playtime.",
             "section": "user",
             "key": "song_max_playtime"
         },
         {
             "type": "options",
             "title": "Practice Type",
-            "desc": "Choose the practice type/length. Un-prefixed times are dances played in competition order.  The prefix B (for beginner) includes only beginner dances.  The prefixes B and NC (for newcomer) modify the order of dances.",
+            "desc": "Choose the practice type/length. Un-prefixed times are dances played in competition order.  The "
+                    "prefix B (for beginner) includes only beginner dances.  The prefixes B and NC (for newcomer) "
+                    "modify the order of dances.",
             "section": "user",
             "key": "practice_type",
             "options": ["60min", "NC 60min", "B 60min", "90min", "NC 90min", "120min", "NC 120min", "LineDance", "Misc"]
@@ -381,7 +384,6 @@ class MusicPlayer(BoxLayout):
         self.playlist = []
         for dance in self.dances:
             self.playlist.extend(self.get_songs(directory, dance, self.num_selections))
-        #if self.playlist:
         self.playlist_idx = 0
         self.sound = None
         self.display_playlist(self.playlist)
@@ -423,19 +425,19 @@ class MusicPlayer(BoxLayout):
         return title + ' / ' + genre + ' / ' + artist + ' / ' + album
 
     def adjust_num_selections(self, dance, num_selections):
-        if dance in ("PasoDoble") and num_selections == 1:
+        if dance in "PasoDoble" and num_selections == 1:
             num_selections = 0
-        elif dance in ("PasoDoble") and num_selections in (2, 3):
+        elif dance in "PasoDoble" and num_selections in (2, 3):
             num_selections = 1
-        elif dance in ("PasoDoble") and num_selections > 3:
+        elif dance in "PasoDoble" and num_selections > 3:
             num_selections = 2
         elif dance in ("VWSlow", "JSlow") and num_selections > 1:
             num_selections = 1
         elif dance in ('VienneseWaltz', 'Jive') and num_selections > 1:
             num_selections -= 1
-        elif dance in ('WCS') and num_selections > 2:
+        elif dance in 'WCS' and num_selections > 2:
             num_selections = 2
-        elif dance in ('LineDance'):
+        elif dance in 'LineDance':
             num_selections = 100  # include all the line dances
         return num_selections
 
