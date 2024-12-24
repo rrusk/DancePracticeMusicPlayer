@@ -527,7 +527,13 @@ class MusicApp(App):
             Clock.schedule_once(self.close_console, 1)
 
     def close_console(self, dt):
-            ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 0)
+        ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 0)
+        # The following code is a workaround for gstreamer starting very slowly because
+        # of missing dlls.  Without it, there is a noticeable delay playing the first
+        # selection in the playlist.  We can't fix that so deal with it during startup.
+        self.root.sound = SoundLoader.load(self.root.playlist[self.root.playlist_idx])
+        self.root.sound.play()
+        self.root.sound.stop()
 
     def build_config(self, config):
         config.setdefaults('user', {
