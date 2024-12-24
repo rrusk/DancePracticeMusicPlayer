@@ -531,9 +531,14 @@ class MusicApp(App):
         # The following code is a workaround for gstreamer starting very slowly because
         # of missing dlls.  Without it, there is a noticeable delay playing the first
         # selection in the playlist.  We can't fix that so deal with it during startup.
-        self.root.sound = SoundLoader.load(self.root.playlist[self.root.playlist_idx])
-        self.root.sound.play()
-        self.root.sound.stop()
+        try:
+            if self.root and self.root.playlist and self.root.playlist_idx is not None:
+                self.root.sound = SoundLoader.load(self.root.playlist[self.root.playlist_idx])
+                if self.root.sound:
+                    self.root.sound.play()
+                    self.root.sound.stop()
+        except Exception as e:
+            print(f"Error in close_console: {e}")
 
     def build_config(self, config):
         config.setdefaults('user', {
