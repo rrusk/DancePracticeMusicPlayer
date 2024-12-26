@@ -34,7 +34,7 @@ For Ubuntu and MacOS:
  python3 -m pip install --upgrade pip setuptools virtualenv
  python3 -m venv kivy_venv
  source kivy_venv/bin/activate
- python -m pip install "kivy[base,media]" kivy_examples
+ python -m pip install "kivy[base,media]"==2.3.0 kivy_examples==2.3.0
  python -m pip install tinytag # not part of kivy, used to read music ID3v2 tags
 </pre>
 
