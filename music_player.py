@@ -1,6 +1,3 @@
-from kivy.config import Config
-Config.set('input', 'mouse', 'mouse,multitouch_on_demand')
-
 import os
 import platform
 import pathlib
@@ -21,10 +18,11 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.slider import Slider
 from kivy.uix.settings import SettingsWithSpinner
 from kivy.config import ConfigParser
+from kivy.config import Config
 
 from tinytag import TinyTag
 
-
+Config.set('input', 'mouse', 'mouse,multitouch_on_demand')
 
 if sys.platform == "win32":
     import ctypes
