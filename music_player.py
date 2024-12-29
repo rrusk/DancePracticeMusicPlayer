@@ -477,7 +477,7 @@ class MusicPlayer(BoxLayout):
         elif text == 'NC 60min':
             self.dances = self.get_dances('newcomer')
             self.num_selections = 2
-        elif text == '90 min':
+        elif text == '90min':
             self.dances = self.get_dances('default')
             self.num_selections = 3
         elif text == 'NC 90min':
