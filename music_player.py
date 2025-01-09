@@ -156,13 +156,10 @@ class MusicPlayer(BoxLayout):
 
         # control: play, pause, etc.
         control_buttons = BoxLayout(size_hint_y=None, height=50)
-        play_button = Button(text="Play", background_color=(0.2, 0.6, 0.8, 1), color=(1, 1, 1, 1))
-        play_button.bind(on_press=self.play_sound)
-        control_buttons.add_widget(play_button)
 
-        pause_button = Button(text="Pause", background_color=(0.2, 0.6, 0.8, 1), color=(1, 1, 1, 1))
-        pause_button.bind(on_press=self.pause_sound)
-        control_buttons.add_widget(pause_button)
+        self.play_pause_button = Button(text="Play", background_color=(0.2, 0.6, 0.8, 1), color=(1, 1, 1, 1))
+        self.play_pause_button.bind(on_press=self.toggle_play_pause)  # Bind to the toggle_play_pause method
+        control_buttons.add_widget(self.play_pause_button)
 
         stop_button = Button(text="Stop", background_color=(0.2, 0.6, 0.8, 1), color=(1, 1, 1, 1))
         stop_button.bind(on_press=self.stop_sound)
@@ -195,6 +192,18 @@ class MusicPlayer(BoxLayout):
             return self.practice_dances[list_name]
         except KeyError:
             return self.practice_dances["default"]
+        
+    def toggle_play_pause(self, instance):
+        if self.sound:
+            if self.sound.state == 'play':
+                self.pause_sound()
+                #instance.text = "Play"
+            else:
+                self.play_sound()
+                #instance.text = "Pause"
+        else:
+            self.play_sound()
+            #instance.text = "Pause"
 
     def play_sound(self, instance=None):
         # Check if there are songs in the playlist
@@ -252,6 +261,10 @@ class MusicPlayer(BoxLayout):
             else:
                 self.sound.seek(self.playing_position)
                 self.sound.play()
+
+            # Update the Play/Pause button text to "Pause"
+            if hasattr(self, 'play_pause_button'):
+                self.play_pause_button.text = "Pause"
         else:
             # If sound couldn't be loaded, show an error popup and skip to the next song
             self.show_error_popup(f"Could not load song: {self.playlist[self.playlist_idx]}")
@@ -267,6 +280,10 @@ class MusicPlayer(BoxLayout):
             if self.sound:
                 self.sound.stop()
 
+            # Update the Play/Pause button text to "Play"
+            if hasattr(self, 'play_pause_button'):
+                self.play_pause_button.text = "Play"
+
     def stop_sound(self, instance=None):
         if self.sound:
             self.sound.stop()
@@ -276,12 +293,16 @@ class MusicPlayer(BoxLayout):
             self.playing_position = 0
             self.progress_text = self.INIT_POS_DUR
             self.sound = None
+            if hasattr(self, 'play_pause_button'):
+                self.play_pause_button.text = "Play"
 
     def restart_sound(self, instance=None):
         if self.sound:
             self.sound.stop()
             self.playing_position = 0
             self.sound.play()
+            if hasattr(self, 'play_pause_button'):
+                self.play_pause_button.text = "Pause"
 
     def set_volume(self, slider, volume):
         self.volume = volume
@@ -354,6 +375,9 @@ class MusicPlayer(BoxLayout):
         self.playlist_idx = index
         self.sound = None
         self.play_sound()
+        # Update the Play/Pause button text to "Pause"
+        if hasattr(self, 'play_pause_button'):
+            self.play_pause_button.text = "Pause"
 
     def secs_to_time_str(self, time_sec):
         hours = int(time_sec // 3600)
