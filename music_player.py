@@ -4,6 +4,7 @@ import pathlib
 import random
 import json
 import sys
+import time
 
 from kivy.app import App
 from kivy.properties import NumericProperty, StringProperty, ObjectProperty, ListProperty, DictProperty, BooleanProperty
@@ -259,6 +260,7 @@ class MusicPlayer(BoxLayout):
             Clock.schedule_interval(self.update_progress, self.schedule_interval)
 
             if platform.system() == 'Windows':
+                time.sleep(0.1) # hack to prevent losing position in the music
                 self.sound.play()
                 self.sound.seek(self.playing_position)
             else:
