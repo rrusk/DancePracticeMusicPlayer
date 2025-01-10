@@ -156,15 +156,27 @@ class MusicPlayer(BoxLayout):
 
         # control: play, pause, etc.
         control_buttons = BoxLayout(size_hint_y=None, height=50)
-        play_button = Button(text="Play", background_color=(0.2, 0.6, 0.8, 1), color=(1, 1, 1, 1))
+        play_button = Button(
+            background_normal="icons/media-playback-start.png",  # Path to the Play icon image
+            size_hint=(None, None),
+            size=(50, 50)
+        )
         play_button.bind(on_press=self.play_sound)
         control_buttons.add_widget(play_button)
 
-        pause_button = Button(text="Pause", background_color=(0.2, 0.6, 0.8, 1), color=(1, 1, 1, 1))
+        pause_button = Button(
+            background_normal="icons/media-playback-pause.png",
+            size_hint=(None, None),
+            size=(50, 50)
+        )
         pause_button.bind(on_press=self.pause_sound)
         control_buttons.add_widget(pause_button)
 
-        stop_button = Button(text="Stop", background_color=(0.2, 0.6, 0.8, 1), color=(1, 1, 1, 1))
+        stop_button = Button(
+            background_normal="icons/media-playback-stop.png",
+            size_hint=(None, None),
+            size=(50, 50)
+        )
         stop_button.bind(on_press=self.stop_sound)
         control_buttons.add_widget(stop_button)
 
