@@ -156,9 +156,9 @@ class MusicPlayer(BoxLayout):
         controls.add_widget(self.progress_label)
 
         # control: play, pause, etc.
-        control_buttons = BoxLayout(size_hint_y=None, height=50)
+        control_buttons = BoxLayout(size_hint_y=None, height=50, spacing=3)
         play_button = Button(
-            background_normal="icons/media-playback-start.png",  # Path to the Play icon image
+            background_normal="icons/play.png",  # Path to the Play icon image
             size_hint=(None, None),
             size=(50, 50)
         )
@@ -166,7 +166,7 @@ class MusicPlayer(BoxLayout):
         control_buttons.add_widget(play_button)
 
         pause_button = Button(
-            background_normal="icons/media-playback-pause.png",
+            background_normal="icons/pause.png",
             size_hint=(None, None),
             size=(50, 50)
         )
@@ -174,14 +174,18 @@ class MusicPlayer(BoxLayout):
         control_buttons.add_widget(pause_button)
 
         stop_button = Button(
-            background_normal="icons/media-playback-stop.png",
+            background_normal="icons/stop.png",
             size_hint=(None, None),
             size=(50, 50)
         )
         stop_button.bind(on_press=self.stop_sound)
         control_buttons.add_widget(stop_button)
 
-        restart_button = Button(text="Restart Song", background_color=(0.2, 0.6, 0.8, 1), color=(1, 1, 1, 1))
+        restart_button = Button(  #text="Restart Song", background_color=(0.2, 0.6, 0.8, 1), color=(1, 1, 1, 1))
+            background_normal="icons/replay.png",
+            size_hint=(None, None),
+            size=(50, 50)
+        )
         restart_button.bind(on_press=self.restart_sound)
         control_buttons.add_widget(restart_button)
 
