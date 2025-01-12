@@ -7,7 +7,7 @@ Kivy App for playing dance practice music
 *DancePracticeMusicPlayer* is a Kivy application written in Python that
 creates a music player with features useful for dance practices that use a
 predetermined sequence of dances types. It automatically generates a
-playlist with an announcement of each dance type before those dance
+playlist with a spoken announcement of each dance type before those dance
 selections are played.  The dance selections are chosen randomly from
 the available selections for each dance type so that each practice
 has a different playlist.
@@ -87,6 +87,15 @@ python music_player.py
 
 The GUI should look similar to this on Linux, MacOS and Windows desktops:
 ![music_player-202501121253](https://github.com/user-attachments/assets/945f7752-3132-4787-8954-595252907a2e)
+
+The three buttons with icons are used to play/pause, stop and replay the currently selected song.
+The scrollable playlist is also clickable and will play whichever song is selected in any order desired.
+The progress bar is also clickable and can be repositioned within the song.
+
+If a new playlist is desired, click on the "New Playlist" button and a different playlist using the
+currently selected practice type will be loaded.  The "Music Settings" button is used for further
+configuration.
+
 
 ## Here\'s a breakdown of the code:
 

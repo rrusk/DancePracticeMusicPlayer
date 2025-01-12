@@ -31,7 +31,7 @@ if sys.platform == "win32":
 
 class MusicPlayer(BoxLayout):
     INIT_POS_DUR = '0:00 / 0:00'
-    INIT_SONG_TITLE = 'Click on Play or Select Song Title Above'
+    INIT_SONG_TITLE = 'Click on the Play icon or Select Song Title Above'
     INIT_MUSIC_SELECTION = 'A valid dance music directory is needed.  Click here or use Music Settings button'
     SONG_BTN_BCKGRD = (0.5, 0.5, 0.5, 1)
 
