@@ -86,7 +86,7 @@ python music_player.py
 </pre>
 
 The GUI should look similar to this on Linux, MacOS and Windows desktops:
-![music-player-2024-12-23 21-32-24](https://github.com/user-attachments/assets/17edf1cc-60c4-4487-8670-7a9dfca8e8e7)
+![music_player-202501121253](https://github.com/user-attachments/assets/945f7752-3132-4787-8954-595252907a2e)
 
 ## Here\'s a breakdown of the code:
 
