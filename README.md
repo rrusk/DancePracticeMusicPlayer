@@ -95,6 +95,7 @@ The progress bar is also clickable and can be repositioned within the song.
 If a new playlist is desired, click on the "New Playlist" button and a different playlist using the
 currently selected practice type will be loaded.  The "Music Settings" button is used for further
 configuration.
+![MusicPlayerSettings](https://github.com/user-attachments/assets/bc30ff80-c87d-41fd-9d76-fc6a23436ef6)
 
 
 ## Here\'s a breakdown of the code:
