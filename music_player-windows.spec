@@ -6,7 +6,7 @@ a = Analysis(
     ['music_player.py'],
     pathex=[],
     binaries=[],
-    datas=[('announce','announce')],
+    datas=[('announce','announce'),('icons','icons')],
     hiddenimports=['win32timezone'],
     hookspath=[],
     hooksconfig={},
@@ -35,7 +35,7 @@ exe = EXE(
     entitlements_file=None,
 )
 coll = COLLECT(
-    exe, 
+    exe,
     a.binaries,
     a.zipfiles,
     a.datas,
