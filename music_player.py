@@ -160,7 +160,7 @@ class MusicPlayer(BoxLayout):
 
         # Toggle Play/Pause button
         self.play_pause_button = Button(
-            background_normal="icons/play.png",  # Initially set to Play icon
+            background_normal=os.path.join(self.script_path, 'icons','play.png'),  # Initially set to Play icon
             size_hint=(None, None),
             size=(50, 50)
         )
@@ -168,7 +168,7 @@ class MusicPlayer(BoxLayout):
         control_buttons.add_widget(self.play_pause_button)
 
         stop_button = Button(
-            background_normal="icons/stop.png",
+            background_normal=os.path.join(self.script_path, 'icons','stop.png'),
             size_hint=(None, None),
             size=(50, 50)
         )
@@ -176,7 +176,7 @@ class MusicPlayer(BoxLayout):
         control_buttons.add_widget(stop_button)
 
         restart_button = Button(  #text="Restart Song", background_color=(0.2, 0.6, 0.8, 1), color=(1, 1, 1, 1))
-            background_normal="icons/replay.png",
+            background_normal=os.path.join(self.script_path, 'icons','replay.png'),
             size_hint=(None, None),
             size=(50, 50)
         )
@@ -276,7 +276,7 @@ class MusicPlayer(BoxLayout):
 
             # Update the Play/Pause button text to "Pause"
             if hasattr(self, 'play_pause_button'):
-                self.play_pause_button.background_normal = "icons/pause.png"  # Switch to Pause icon
+                self.play_pause_button.background_normal = os.path.join(self.script_path, 'icons', 'pause.png')  # Switch to Pause icon
         else:
             # If sound couldn't be loaded, show an error popup and skip to the next song
             self.show_error_popup(f"Could not load song: {self.playlist[self.playlist_idx]}")
@@ -294,7 +294,7 @@ class MusicPlayer(BoxLayout):
 
             # Update the Play/Pause button text to "Play"
             if hasattr(self, 'play_pause_button'):
-                self.play_pause_button.background_normal = "icons/play.png"
+                self.play_pause_button.background_normal = os.path.join(self.script_path, 'icons', 'play.png')
 
     def stop_sound(self, instance=None):
         if self.sound:
@@ -306,7 +306,7 @@ class MusicPlayer(BoxLayout):
             self.progress_text = self.INIT_POS_DUR
             self.sound = None
             if hasattr(self, 'play_pause_button'):
-                self.play_pause_button.background_normal = "icons/play.png"
+                self.play_pause_button.background_normal = os.path.join(self.script_path, 'icons', 'play.png')
 
     def restart_sound(self, instance=None):
         if self.sound:
@@ -314,7 +314,7 @@ class MusicPlayer(BoxLayout):
             self.playing_position = 0
             self.sound.play()
             if hasattr(self, 'play_pause_button'):
-                self.play_pause_button.background_normal = "icons/pause.png"
+                self.play_pause_button.background_normal = os.path.join(self.script_path, 'icons', 'pause.png')
 
     def set_volume(self, slider, volume):
         self.volume = volume
@@ -389,7 +389,7 @@ class MusicPlayer(BoxLayout):
         self.play_sound()
         # Update the Play/Pause button text to "Pause"
         if hasattr(self, 'play_pause_button'):
-            self.play_pause_button.background_normal = "icons/pause.png"
+            self.play_pause_button.background_normal = os.path.join(self.script_path, 'icons', 'pause.png')
 
     def secs_to_time_str(self, time_sec):
         hours = int(time_sec // 3600)
