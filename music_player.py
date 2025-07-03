@@ -371,11 +371,17 @@ class MusicPlayer(BoxLayout):
             self.progress_value = round(self.playing_position)
             current_time = self.secs_to_time_str(time_sec=self.playing_position)
             self.progress_text = f'{current_time} / {self.total_time}'
+
             if not self.play_single_song:
+                # Fade out volume near the end of the song
                 if self.playing_position >= self.song_max_playtime and self.fade_time > 0:
-                    self.sound.volume = self.sound.volume * (1 + self.schedule_interval * (
+                    fade_factor = max(0, 1 + self.schedule_interval * (
                             self.song_max_playtime - self.playing_position) / self.fade_time)
-                if self.playing_position >= self.progress_max - 1 or self.playing_position > self.song_max_playtime + self.fade_time:
+                    self.sound.volume = self.sound.volume * fade_factor
+
+                # Advance to next song if finished or exceeded playtime
+                if (self.playing_position >= self.progress_max - 1 or
+                        self.playing_position > self.song_max_playtime + self.fade_time):
                     self.sound.unload()
                     self.playlist_idx += 1
                     self.playing_position = 0
