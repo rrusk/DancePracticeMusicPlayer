@@ -53,8 +53,8 @@ class MusicPlayer(BoxLayout):
         "newcomer": ["Waltz", "JSlow", "Jive", "Rumba", "Foxtrot", "ChaCha", "Tango",
                      "Samba", "QuickStep", "VWSlow", "VienneseWaltz", "WCS"],
         "LineDance": ["LineDance"],
-        "misc": ["AmericanRumba", "ArgentineTango", "Bolero", "DiscoFox", "Hustle", "LindyHop", "Mambo", "Merengue",
-                 "NC2Step", "Polka", "Salsa"]
+        "misc": ["AmericanRumba", "ArgentineTango", "Bolero", "DiscoFox", "Hustle",
+                 "LindyHop", "Mambo", "Merengue", "NC2Step", "Polka", "Salsa"]
     })
 
     playlist = ListProperty([])
@@ -76,29 +76,30 @@ class MusicPlayer(BoxLayout):
         {
             "type": "path",
             "title": "Music Directory",
-            "desc": "Set the music directory.  The directory must have sub-folders containing the music for each "
-                    "dance included in the playlist.  For example, musical selections for the Waltz will be randomly "
-                    "selected from the Waltz sub-folder.",
+            "desc": "Set the music directory.  The directory must have sub-folders containing "
+                    "the music for each dance included in the playlist.  For example, musical "
+                    "selections for the Waltz will be randomly selected from the Waltz sub-folder.",
             "section": "user",
             "key": "music_dir"
         },
         {
             "type": "numeric",
             "title": "Max Playtime",
-            "desc": "Set the maximum playtime for a song in seconds.  The music fades out and stops after the maximum "
-                    "playtime.",
+            "desc": "Set the maximum playtime for a song in seconds.  The music fades out and "
+                    "stops after the maximum playtime.",
             "section": "user",
             "key": "song_max_playtime"
         },
         {
             "type": "options",
             "title": "Practice Type",
-            "desc": "Choose the practice type/length. Un-prefixed times are dances played in competition order.  The "
-                    "prefix B (for beginner) includes only beginner dances.  The prefixes B and NC (for newcomer) "
-                    "modify the order of dances.",
+            "desc": "Choose the practice type/length. Un-prefixed times are dances played in "
+                    "competition order.  The prefix B (for beginner) includes only beginner dances."
+                    " The prefixes B and NC (for newcomer) modify the order of dances.",
             "section": "user",
             "key": "practice_type",
-            "options": ["60min", "NC 60min", "B 60min", "90min", "NC 90min", "120min", "NC 120min", "LineDance", "Misc"]
+            "options": ["60min", "NC 60min", "B 60min", "90min", "NC 90min", "120min", "NC 120min",
+                        "LineDance", "Misc"]
         }
     ]
 
@@ -128,8 +129,9 @@ class MusicPlayer(BoxLayout):
 
         # Volume Slider
         volume_layout = BoxLayout(orientation='horizontal', size_hint_x=0.20, padding=(10, 0))
-        self.volume_slider = Slider(min=0.0, max=1.0, value=self.volume, orientation='vertical', size_hint_y=1,
-                                    height=125, value_track=True, value_track_color=(0.3, 0.8, 0.3, 1))
+        self.volume_slider = Slider(min=0.0, max=1.0, value=self.volume, orientation='vertical',
+                                    size_hint_y=1, height=125, value_track=True,
+                                    value_track_color=(0.3, 0.8, 0.3, 1))
         self.volume_slider.bind(value=self.set_volume)
         self.volume_label = Label(text="Vol: " + str(int(100 * self.volume)) + "%", size_hint_x=1, width=30,
                                   color=(0.3, 0.8, 0.3, 1))
@@ -160,7 +162,7 @@ class MusicPlayer(BoxLayout):
 
         # Toggle Play/Pause button
         self.play_pause_button = Button(
-            background_normal=os.path.join(self.script_path, 'icons','play.png'),  # Initially set to Play icon
+            background_normal=os.path.join(self.script_path, 'icons', 'play.png'),  # Initially set to Play icon
             size_hint=(None, None),
             size=(50, 50)
         )
@@ -168,15 +170,16 @@ class MusicPlayer(BoxLayout):
         control_buttons.add_widget(self.play_pause_button)
 
         stop_button = Button(
-            background_normal=os.path.join(self.script_path, 'icons','stop.png'),
+            background_normal=os.path.join(self.script_path, 'icons', 'stop.png'),
             size_hint=(None, None),
             size=(50, 50)
         )
         stop_button.bind(on_press=self.stop_sound)
         control_buttons.add_widget(stop_button)
 
-        restart_button = Button(  #text="Restart Song", background_color=(0.2, 0.6, 0.8, 1), color=(1, 1, 1, 1))
-            background_normal=os.path.join(self.script_path, 'icons','replay.png'),
+        restart_button = Button(
+            # text="Restart Song", background_color=(0.2, 0.6, 0.8, 1), color=(1, 1, 1, 1))
+            background_normal=os.path.join(self.script_path, 'icons', 'replay.png'),
             size_hint=(None, None),
             size=(50, 50)
         )
@@ -256,7 +259,7 @@ class MusicPlayer(BoxLayout):
 
             # Get the current button and change its background color
             self.current_button = self.song_buttons[self.playlist_idx]
-            self.current_button.background_color = (0, 1, 1, 1)  # Highlight the button (RGB with opacity)
+            self.current_button.background_color = (0, 1, 1, 1)
 
             # Scroll so the current button is visible
             if self.playlist_idx < len(self.song_buttons) - 2:
@@ -267,7 +270,7 @@ class MusicPlayer(BoxLayout):
             Clock.schedule_interval(self.update_progress, self.schedule_interval)
 
             if platform.system() == 'Windows':
-                time.sleep(0.1) # hack to prevent losing position in the music
+                time.sleep(0.1)  # hack to prevent losing position in the music
                 self.sound.play()
                 self.sound.seek(self.playing_position)
             else:
@@ -276,7 +279,8 @@ class MusicPlayer(BoxLayout):
 
             # Update the Play/Pause button text to "Pause"
             if hasattr(self, 'play_pause_button'):
-                self.play_pause_button.background_normal = os.path.join(self.script_path, 'icons', 'pause.png')  # Switch to Pause icon
+                # Switch to Pause icon
+                self.play_pause_button.background_normal = os.path.join(self.script_path, 'icons', 'pause.png')
         else:
             # If sound couldn't be loaded, show an error popup and skip to the next song
             self.show_error_popup(f"Could not load song: {self.playlist[self.playlist_idx]}")
@@ -294,6 +298,7 @@ class MusicPlayer(BoxLayout):
 
             # Update the Play/Pause button text to "Play"
             if hasattr(self, 'play_pause_button'):
+                # Switch to Play
                 self.play_pause_button.background_normal = os.path.join(self.script_path, 'icons', 'play.png')
 
     def stop_sound(self, instance=None):
@@ -529,7 +534,7 @@ class MusicPlayer(BoxLayout):
             self.dances = self.get_dances('LineDance')
             self.num_selections = 100
         elif text == 'Misc':
-            #self.play_single_song = True
+            # self.play_single_song = True
             self.dances = self.get_dances('misc')
             self.num_selections = 100
         else:
@@ -557,8 +562,10 @@ class MusicApp(App):
         user_section = 'user'
         if config.has_section(user_section):
             self.root.volume = config.getfloat(user_section, 'volume', fallback=0.7)
-            self.root.music_dir = config.get(user_section, 'music_dir', fallback=self.default_music_dir)
-            self.root.song_max_playtime = config.getint(user_section, 'song_max_playtime', fallback=210)
+            self.root.music_dir = config.get(user_section, 'music_dir',
+                                             fallback=self.default_music_dir)
+            self.root.song_max_playtime = config.getint(user_section, 'song_max_playtime',
+                                                        fallback=210)
             self.root.practice_type = config.get(user_section, 'practice_type', fallback='60min')
 
         self.root.set_practice_type(None, self.root.practice_type)
@@ -588,7 +595,8 @@ class MusicApp(App):
         })
 
     def build_settings(self, settings):
-        settings.add_json_panel('Music Player Settings', self.config, data=json.dumps(self.root.settings_json))
+        settings.add_json_panel('Music Player Settings',
+                                self.config, data=json.dumps(self.root.settings_json))
 
     def on_config_change(self, config, section, key, value):
         if section == 'user':
