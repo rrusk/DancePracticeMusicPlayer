@@ -49,7 +49,7 @@ class MusicPlayer(BoxLayout):
     practice_dances = DictProperty({
         "default": ['Waltz', 'Tango', 'VWSlow', 'VienneseWaltz', 'Foxtrot', 'QuickStep',
                     'WCS', 'Samba', 'ChaCha', 'Rumba', 'PasoDoble', 'JSlow', 'Jive'],
-        "beginner": ["Waltz", "JSlow", "Jive", "Rumba", "Foxtrot", "ChaCha", "Tango"],
+        "beginner": ["Waltz", "JSlow", "Rumba", "Foxtrot", "ChaCha", "Tango"],
         "newcomer": ["Waltz", "JSlow", "Jive", "Rumba", "Foxtrot", "ChaCha", "Tango",
                      "Samba", "QuickStep", "VWSlow", "VienneseWaltz", "WCS"],
         "LineDance": ["LineDance"],
@@ -62,6 +62,7 @@ class MusicPlayer(BoxLayout):
     dances = ListProperty([])
     practice_type = StringProperty('60min')
     num_selections = NumericProperty(2)
+    auto_update_restart_playlist = BooleanProperty(False)
     song_max_playtime = 210  # music selections longer than 210 (3m30s) are faded out
     fade_time = 10  # 10s fade out
 
@@ -389,7 +390,11 @@ class MusicPlayer(BoxLayout):
                         self.sound = None
                         self.play_sound()
                     else:
-                        self.restart_playlist()
+                        if self.auto_update_restart_playlist == True:
+                            self.update_playlist(self.music_dir)
+                            self.on_song_button_press(0)  # Restart with the first song
+                        else:
+                            self.restart_playlist()
 
     def on_song_button_press(self, index):
         if self.sound:
@@ -520,7 +525,8 @@ class MusicPlayer(BoxLayout):
             self.num_selections = 2
         elif text == 'B 60min':
             self.dances = self.get_dances('beginner')
-            self.num_selections = 2
+            self.num_selections = 1
+            self.auto_update_restart_playlist = True
         elif text == 'NC 60min':
             self.dances = self.get_dances('newcomer')
             self.num_selections = 2
