@@ -26,12 +26,12 @@ The application is designed to play music files (MP3, WAV, OGG, M4A, FLAC, WAV) 
 
 ## Features
 
-- **Customizable Playists:** Generates randomized playlists based on predefined or custom dance types and lengths
+- **Customizable Playlists:** Generates randomized playlists based on predefined or custom dance types and lengths
 - **Spoken Dance Announcements:** Automatically announces the dance type before each selection begins
 - **Intuitive UI:** Play, pause, stop, restart controls, and a clickable, scrollable playlist
 - **Real-time Progress:** Displays current song title, artist, album, genre, and playback progress with seeking capability
 - **Configurable Settings:** Adjust volume, set music directory, and define maximum song playtime via an in-app settings panel
-- **Customum Practice Types:** Easily define new practice routines, dance sequences, and song selection rules using `custom_practice_types.json`
+- **Custom Practice Types:** Easily define new practice routines, dance sequences, and song selection rules using `custom_practice_types.json`
 - **Platform Compatibility:** Designed to run on Linux, macOS, and Windows.
 
 ---
