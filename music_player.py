@@ -110,7 +110,6 @@ class MusicPlayer(BoxLayout):
                 "JSlow",
                 "Jive",
             ],
-            "beginner": ["Waltz", "JSlow", "Rumba", "Foxtrot", "ChaCha", "Tango"],
             "newcomer": [
                 "Waltz",
                 "JSlow",
@@ -182,15 +181,13 @@ class MusicPlayer(BoxLayout):
             "title": "Practice Type",
             "desc": (
                 "Choose the practice type/length. Un-prefixed times are dances played in "
-                "competition order. The prefix B (for beginner) includes only beginner dances."
-                " The prefixes B and NC (for newcomer) modify the order of dances."
+                "competition order. The prefix NC (for newcomer) modifies the order of dances."
             ),
             "section": "user",
             "key": "practice_type",
             "options": [
                 "60min",
                 "NC 60min",
-                "B 60min",
                 "90min",
                 "NC 90min",
                 "120min",
@@ -877,7 +874,6 @@ class MusicPlayer(BoxLayout):
         """
         mapping = {
             "60min": ("default", 2, False, False),
-            "B 60min": ("beginner", 1, True, False),
             "NC 60min": ("newcomer", 2, False, False),
             "90min": ("default", 3, False, False),
             "NC 90min": ("newcomer", 3, False, False),
