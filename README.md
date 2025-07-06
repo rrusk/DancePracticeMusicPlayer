@@ -9,11 +9,10 @@
 Main GUI (Linux/macOS/Windows):
 
 ![Music_Player_20250706](https://github.com/user-attachments/assets/6b307479-a60a-49b0-8b89-8cfe79a04f2e)
-87-8954-595252907a2e)
 
 Settings panel:
 
-![Music_Settings-20250706](https://github.com/user-attachments/assets/2ecce905-868d-40f6-9bc4-fc6192e2f867)
+![Music_Settings-20250706](https://github.com/user-attachments/assets/35212dcf-8063-4b08-9503-4020939bb1c6)
 
 ---
 
