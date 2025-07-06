@@ -207,6 +207,10 @@ class MusicPlayer(BoxLayout):
     _schedule_interval = 0.1
     _update_progress_event = None  # To hold the scheduled Clock event
 
+    # New ObjectProperty for the playlist button
+    playlist_button = ObjectProperty(None)
+
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.orientation = "vertical"
@@ -366,8 +370,9 @@ class MusicPlayer(BoxLayout):
             size_hint=(None, None),
             size=(50, 50),
         )
-        playlist_button = Button(
-            text="New Playlist",
+        # Assign the playlist_button to the ObjectProperty here
+        self.playlist_button = Button(
+            text=f"New Playlist ({self.practice_type})", # Initial text
             background_color=(0.2, 0.6, 0.8, 1),
             color=PlayerConstants.DEFAULT_BUTTON_TEXT_COLOR,
         )
@@ -380,13 +385,13 @@ class MusicPlayer(BoxLayout):
         self.play_pause_button.bind(on_press=self.toggle_play_pause)
         stop_button.bind(on_press=self.stop_sound)
         restart_button.bind(on_press=self.restart_sound)
-        playlist_button.bind(on_press=lambda instance: self.update_playlist(self.music_dir))
+        self.playlist_button.bind(on_press=lambda instance: self.update_playlist(self.music_dir))
         settings_button.bind(on_press=lambda instance: App.get_running_app().open_settings())
 
         control_buttons.add_widget(self.play_pause_button)
         control_buttons.add_widget(stop_button)
         control_buttons.add_widget(restart_button)
-        control_buttons.add_widget(playlist_button)
+        control_buttons.add_widget(self.playlist_button) # Use the ObjectProperty
         control_buttons.add_widget(settings_button)
         controls.add_widget(control_buttons)
 
@@ -403,6 +408,7 @@ class MusicPlayer(BoxLayout):
         self.bind(progress_value=self.progress_bar.setter("value"))
         self.progress_bar.bind(on_touch_up=self.on_slider_move)
         self.bind(progress_text=self.progress_label.setter("text"))
+        self.bind(practice_type=self.update_playlist_button_text) # Bind practice_type here
 
     def _get_icon_path(self, icon_name: str) -> str:
         """Returns the full path to an icon.
@@ -894,6 +900,17 @@ class MusicPlayer(BoxLayout):
 
         self.stop_sound()
         self.update_playlist(self.music_dir)
+        # The practice_type property will trigger update_playlist_button_text automatically
+
+    def update_playlist_button_text(self, _instance: typing.Any, practice_type_value: str) -> None:
+        """Updates the text of the 'New Playlist' button to include the current practice type.
+
+        Args:
+            _instance: The property instance (unused).
+            practice_type_value (str): The current value of the practice_type property.
+        """
+        if self.playlist_button:
+            self.playlist_button.text = f"New Playlist ({practice_type_value})"
 
 
 class MusicApp(App):
