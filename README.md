@@ -2,6 +2,8 @@
 
 **Kivy-based desktop application for managing and playing custom dance practice playlists with spoken announcements.**
 
+---
+
 ## Screenshots
 
 Main GUI (Linux/macOS/Windows):
@@ -11,6 +13,8 @@ Main GUI (Linux/macOS/Windows):
 Settings panel:
 
 ![MusicPlayerSettings](https://github.com/user-attachments/assets/bc30ff80-c87d-41fd-9d76-fc6a23436ef6)
+
+---
 
 ## Overview
 
@@ -75,8 +79,6 @@ python -m pip install tinytag
 
 To exit the virtual environment, type `deactivate`.
 
----
-
 ### 3. Music Directory Setup
 
 The player assumes a specific music organization within your chosen `music_dir` folder. This directory should contain sub-folders, each named after a dance type, containing the corresponding music files:
@@ -118,6 +120,8 @@ python music_player.py
 
 Windows users can run the application by double-clicking on `run_music_player.bat`.
 
+---
+
 ## Usage
 
 1. **Initial Setup:** On first run, the application will create a `music.ini` configuration file in the `DancePracticeMusicPlayer` directory.
@@ -135,6 +139,8 @@ Windows users can run the application by double-clicking on `run_music_player.ba
 5. **Change Practice Type:** Use the "Music Settings" button to change the "Practice Type". This will adjust the sequence and number of songs played. The "New Playlist" button will also update to show the current practice type.
 
 6. **Custom Practice Types:** Refer to the `Customizing Practice Types` section to learn how to create your own practice routines.
+
+---
 
 ## Customizing Practice Types
 
@@ -172,6 +178,8 @@ The JSON file should be a dictionary where each key is the name of your custom p
 
 1. Create or modify the `custom_practice_types.json` file in the root directory of the application.
 2. The new practice types (e.g., "Beginner", "Intermediate") will appear in the "Practice Type" dropdown within the "Music Settings" panel.
+
+---
 
 ## Code Architecture
 
