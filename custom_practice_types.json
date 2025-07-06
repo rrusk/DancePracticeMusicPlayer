@@ -1,0 +1,14 @@
+{
+  "Beginner": {
+    "dances": ["Waltz", "JSlow", "Rumba", "Foxtrot", "ChaCha", "Tango"],
+    "num_selections": 1,
+    "auto_update": true,
+    "play_single_song": false
+  },
+  "Intermediate": {
+    "dances": ["Waltz", "JSlow", "Rumba", "Foxtrot", "ChaCha", "Tango", "Samba", "QuickStep"],
+    "num_selections": 1,
+    "auto_update": true,
+    "play_single_song": false
+  }
+}

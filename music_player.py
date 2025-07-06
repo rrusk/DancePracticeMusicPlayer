@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines
 """Dance Practice Music Player
 
 A Kivy-based application for managing and playing playlists for ballroom and line dance practice.
@@ -931,9 +932,24 @@ class MusicApp(App):
             self.root.song_max_playtime = self.config.getint(
                 user_section, "song_max_playtime", fallback=210
             )
-            self.root.practice_type = self.config.get(
+            # Get available practice types from settings_json
+            practice_type_options = next(
+                (
+                    item["options"]
+                    for item in self.root.settings_json
+                    if item.get("key") == "practice_type"
+                ),
+                []
+            )
+            loaded_practice_type = self.config.get(
                 user_section, "practice_type", fallback="60min"
             )
+            # If the loaded practice_type is not valid, reset to default
+            if loaded_practice_type not in practice_type_options:
+                loaded_practice_type = "60min"
+                self.config.set(user_section, "practice_type", loaded_practice_type)
+                self.config.write()
+            self.root.practice_type = loaded_practice_type
 
     def _windows_startup_fixes(self, _dt: float) -> None:
         """Applies Windows-specific startup fixes.
