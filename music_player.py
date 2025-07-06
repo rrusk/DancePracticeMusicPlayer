@@ -181,7 +181,11 @@ class MusicPlayer(BoxLayout):
             "title": "Practice Type",
             "desc": (
                 "Choose the practice type/length. Un-prefixed times are dances played in "
-                "competition order. The prefix NC (for newcomer) modifies the order of dances."
+                "competition order. The prefix NC (for newcomer) modifies the order of dances. "
+                "Custom practice types can be added in the custom_practice_types.json file, "
+                "with dances played in the order listed.  For custom practice types, the "
+                "practice length can't be pre-determined very accurately so it is best to "
+                "set auto_update to true and just stop the music player at the end of the practice."
             ),
             "section": "user",
             "key": "practice_type",
