@@ -75,13 +75,12 @@ class PlayerConstants:
 
 class MusicPlayer(BoxLayout):
     """Main widget for the dance practice music player.
-    
+
     Handles the user interface, playlist management, playback controls, and interaction logic.
     """
     # Kivy Properties
     sound = ObjectProperty(None, allownone=True)
     music_file = StringProperty(None)
-    position = NumericProperty(0)  # Unused property, consider removing or using
     volume = NumericProperty(0.7)
     music_dir = StringProperty("")
     progress_max = NumericProperty(100)
@@ -230,11 +229,61 @@ class MusicPlayer(BoxLayout):
         self._schedule_interval = 0.1
         self._update_progress_event = None
 
+        self.custom_practice_mapping = {}
+        self.merge_custom_practice_types()
+
         self._build_ui()
         self._bind_properties()
 
         if not self.playlist and self.music_dir:
             self.update_playlist(self.music_dir)
+
+    def load_custom_practice_types(self):
+        """Load custom practice types from a JSON file in the application directory.
+
+        Returns:
+            dict: Dictionary of custom practice types loaded from JSON, or empty dict if none found.
+        """
+        custom_types = {}
+        # Always look for the JSON file in the same directory as this script
+        json_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "custom_practice_types.json")
+        if os.path.isfile(json_path):
+            try:
+                with open(json_path, "r", encoding="utf-8") as f:
+                    custom_types = json.load(f)
+            except Exception as e:
+                print(f"Failed to load custom practice types: {e}")
+        return custom_types
+
+    def merge_custom_practice_types(self):
+        """Merge custom practice types into settings and dances.
+
+        Updates the settings dropdown and internal mappings with user-defined practice types.
+        """
+        custom_types = self.load_custom_practice_types()
+        if not custom_types:
+            return
+
+        # Add to settings_json options
+        practice_type_setting = next(
+            (item for item in self.settings_json if item.get("key") == "practice_type"), None
+        )
+        if practice_type_setting:
+            for custom_name in custom_types:
+                if custom_name not in practice_type_setting["options"]:
+                    practice_type_setting["options"].append(custom_name)
+
+        # Add to practice_dances and mapping
+        if not hasattr(self, "custom_practice_mapping"):
+            self.custom_practice_mapping = {}
+        for name, data in custom_types.items():
+            self.practice_dances[name] = data.get("dances", [])
+            self.custom_practice_mapping[name] = (
+                name,
+                data.get("num_selections", 2),
+                data.get("auto_update", False),
+                data.get("play_single_song", False),
+            )
 
     def _build_ui(self):
         """Builds the main user interface layout."""
@@ -358,15 +407,33 @@ class MusicPlayer(BoxLayout):
         self.bind(progress_text=self.progress_label.setter("text"))
 
     def _get_icon_path(self, icon_name):
-        """Returns the full path to an icon."""
+        """Returns the full path to an icon.
+
+        Args:
+            icon_name (str): The filename of the icon.
+
+        Returns:
+            str: Full path to the icon file.
+        """
         return os.path.join(self.script_path, "icons", icon_name)
 
     def get_dances(self, list_name):
-        """Returns a list of dances based on the given list name."""
+        """Returns a list of dances based on the given list name.
+
+        Args:
+            list_name (str): The key for the dance list.
+
+        Returns:
+            list: List of dance names.
+        """
         return self.practice_dances.get(list_name, self.practice_dances["default"])
 
     def toggle_play_pause(self, _instance=None):
-        """Toggles between playing and pausing the current sound."""
+        """Toggles between playing and pausing the current sound.
+
+        Args:
+            _instance: The button instance (unused).
+        """
         if self.sound and self.sound.state == "play":
             self.pause_sound()
         else:
@@ -423,7 +490,11 @@ class MusicPlayer(BoxLayout):
                 PlayerConstants.ICON_PLAY)
 
     def stop_sound(self, _instance=None):
-        """Stops the current sound and resets player state."""
+        """Stops the current sound and resets player state.
+
+        Args:
+            _instance: The button instance (unused).
+        """
         if self.sound:
             self.sound.stop()
             self.sound.unload()
@@ -435,7 +506,11 @@ class MusicPlayer(BoxLayout):
         self.play_pause_button.background_normal = self._get_icon_path(PlayerConstants.ICON_PLAY)
 
     def restart_sound(self, _instance=None):
-        """Restarts the current song from the beginning."""
+        """Restarts the current song from the beginning.
+
+        Args:
+            _instance: The button instance (unused).
+        """
         if self.sound:
             self.sound.stop()
             self._playing_position = 0
@@ -444,17 +519,31 @@ class MusicPlayer(BoxLayout):
                 PlayerConstants.ICON_PAUSE)
 
     def set_volume(self, _slider_instance, volume_value):
-        """Sets the volume of the sound."""
+        """Sets the volume of the sound.
+
+        Args:
+            _slider_instance: The slider instance (unused).
+            volume_value (float): The new volume value.
+        """
         self.volume = volume_value
         if self.sound:
             self.sound.volume = volume_value
 
     def update_volume_label(self, _instance, value):
-        """Updates the volume label text."""
+        """Updates the volume label text.
+
+        Args:
+            _instance: The property instance (unused).
+            value (float): The new volume value.
+        """
         self.volume_label.text = f"Vol: {int(value * 100)}%"
 
     def show_error_popup(self, message):
-        """Displays an error popup with the given message."""
+        """Displays an error popup with the given message.
+
+        Args:
+            message (str): The error message to display.
+        """
         label = Label(
             text=message,
             text_size=(380, None),
@@ -480,7 +569,12 @@ class MusicPlayer(BoxLayout):
         popup.open()
 
     def on_slider_move(self, instance, touch):
-        """Handles seeking when the progress bar slider is moved."""
+        """Handles seeking when the progress bar slider is moved.
+
+        Args:
+            instance: The slider instance.
+            touch: The touch event.
+        """
         if self.sound and instance.collide_point(*touch.pos):
             self._playing_position = self.progress_bar.value
             self.sound.seek(self._playing_position)
@@ -525,7 +619,11 @@ class MusicPlayer(BoxLayout):
             self.scrollview.scroll_to(self._song_buttons[target_idx])
 
     def update_progress(self, _dt):
-        """Updates the playback progress and handles song transitions."""
+        """Updates the playback progress and handles song transitions.
+
+        Args:
+            _dt (float): The time delta since the last update.
+        """
         if self.sound is None or self.sound.state != "play":
             return
 
@@ -576,7 +674,11 @@ class MusicPlayer(BoxLayout):
             self.restart_playlist()
 
     def on_song_button_press(self, index):
-        """Handles a song button press, playing the selected song."""
+        """Handles a song button press, playing the selected song.
+
+        Args:
+            index (int): The index of the song in the playlist.
+        """
         self.stop_sound()  # Stop current sound and reset state
         self._playing_position = 0
         self.playlist_idx = index
@@ -595,7 +697,11 @@ class MusicPlayer(BoxLayout):
         )
 
     def restart_playlist(self, _instance=None):
-        """Resets the playlist playback to the beginning."""
+        """Resets the playlist playback to the beginning.
+
+        Args:
+            _instance: The button instance (unused).
+        """
         self.stop_sound()  # Use the existing stop_sound to handle unloading and unscheduling
         self.playlist_idx = 0
         self.song_title = PlayerConstants.INIT_SONG_TITLE
@@ -611,7 +717,12 @@ class MusicPlayer(BoxLayout):
             btn.background_color = PlayerConstants.SONG_BTN_BACKGROUND_COLOR
 
     def update_playlist(self, directory, _instance=None):
-        """Updates the playlist based on the selected music directory and dance types."""
+        """Updates the playlist based on the selected music directory and dance types.
+
+        Args:
+            directory (str): The directory containing music.
+            _instance: The button instance (unused).
+        """
         self.stop_sound()
         self.playlist = []
         for dance in self.dances:
@@ -622,7 +733,11 @@ class MusicPlayer(BoxLayout):
         self.restart_playlist()
 
     def _display_playlist_buttons(self, playlist=None):
-        """Clears existing song buttons and creates new ones for the current playlist."""
+        """Clears existing song buttons and creates new ones for the current playlist.
+
+        Args:
+            playlist (list, optional): Playlist to display. Defaults to None.
+        """
         playlist_to_display = playlist if playlist is not None else self.playlist
         self.button_grid.clear_widgets()
         self._song_buttons = []
@@ -652,13 +767,27 @@ class MusicPlayer(BoxLayout):
                 self.button_grid.add_widget(btn)
 
     def _get_song_duration_str(self, selection):
-        """Returns the duration of a song as a formatted string."""
+        """Returns the duration of a song as a formatted string.
+
+        Args:
+            selection (str): Path to the song file.
+
+        Returns:
+            str: Duration in MM:SS or HH:MM:SS format.
+        """
         tag = TinyTag.get(selection)
         duration = tag.duration if tag.duration is not None else 300
         return self._secs_to_time_str(duration)
 
     def _get_song_label(self, selection) -> str:
-        """Generates a display label for a song using its metadata."""
+        """Generates a display label for a song using its metadata.
+
+        Args:
+            selection (str): Path to the song file.
+
+        Returns:
+            str: Formatted label for the song.
+        """
         label = pathlib.Path(selection).stem
         tag = TinyTag.get(selection)
 
@@ -732,7 +861,12 @@ class MusicPlayer(BoxLayout):
         return selected_songs
 
     def set_practice_type(self, _spinner_instance, text):
-        """Sets the practice type and updates the playlist accordingly."""
+        """Sets the practice type and updates the playlist accordingly.
+
+        Args:
+            _spinner_instance: The spinner instance (unused).
+            text (str): The selected practice type.
+        """
         mapping = {
             "60min": ("default", 2, False, False),
             "B 60min": ("beginner", 1, True, False),
@@ -744,6 +878,8 @@ class MusicPlayer(BoxLayout):
             "LineDance": ("LineDance", 100, False, True),
             "Misc": ("misc", 100, False, False),
         }
+        # Merge in custom mappings
+        mapping.update(getattr(self, "custom_practice_mapping", {}))
         dance_type, num_selections, auto_update, play_single_song = mapping.get(
             text, ("default", 2, True, False)
         )
@@ -765,16 +901,18 @@ class MusicApp(App):
     DEFAULT_MUSIC_DIR = os.path.join(home_dir, "Music")
 
     def __init__(self, **kwargs):
+        """Initializes the MusicApp and its configuration."""
         super().__init__(**kwargs)
         self.config = ConfigParser()
 
     def build(self):
+        """Builds and returns the root widget for the application."""
         self.settings_cls = SettingsWithSpinner
         self.root = MusicPlayer()
         return self.root
 
     def on_start(self):
-        """Configures the application settings and initializes the player."""
+        """Configures the application settings and initializes the player on app start."""
         self._load_config_settings()
         self.root.set_practice_type(None, self.root.practice_type)
 
@@ -798,7 +936,11 @@ class MusicApp(App):
             )
 
     def _windows_startup_fixes(self, _dt):
-        """Applies Windows-specific startup fixes."""
+        """Applies Windows-specific startup fixes.
+
+        Args:
+            _dt (float): The time delta since the last update.
+        """
         # These methods are only called if sys.platform is 'win32',
         # ensuring ctypes is already imported and available.
         self._hide_console_window()
@@ -825,7 +967,11 @@ class MusicApp(App):
             print(f"Error during gstreamer priming: {e}")
 
     def build_config(self, config):
-        """Sets default configuration values."""
+        """Sets default configuration values.
+
+        Args:
+            config: The Kivy ConfigParser instance.
+        """
         config.setdefaults(
             "user",
             {
@@ -837,13 +983,24 @@ class MusicApp(App):
         )
 
     def build_settings(self, settings):
-        """Builds the settings panel for the application."""
+        """Builds the settings panel for the application.
+
+        Args:
+            settings: The Kivy settings instance.
+        """
         settings.add_json_panel(
             "Music Player Settings", self.config, data=json.dumps(self.root.settings_json)
         )
 
     def on_config_change(self, config, section, key, value):
-        """Handles changes in application configuration."""
+        """Handles changes in application configuration.
+
+        Args:
+            config: The Kivy ConfigParser instance.
+            section (str): The section of the config that changed.
+            key (str): The key that changed.
+            value: The new value.
+        """
         if section == "user":
             if key == "volume":
                 try:
@@ -865,7 +1022,6 @@ class MusicApp(App):
             elif key == "practice_type":
                 self.root.practice_type = value
                 self.root.set_practice_type(None, value)
-
 
 if __name__ == "__main__":
     MusicApp().run()
