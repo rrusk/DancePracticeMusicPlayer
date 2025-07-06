@@ -636,6 +636,13 @@ class MusicPlayer(BoxLayout):
         if not self.play_single_song:
             self._handle_fade_out()
             self._check_and_advance_song()
+        elif ( # if play_single_song is True, stop at the end and set icon to play
+                self._playing_position >= self.progress_max - 1
+                or self._playing_position > self.song_max_playtime + PlayerConstants.FADE_TIME
+            ):
+            self.stop_sound()
+            self.play_pause_button.background_normal = self._get_icon_path(
+                PlayerConstants.ICON_PLAY)
 
     def _handle_fade_out(self) -> None:
         """Handles fading out the music near the end of the song."""
