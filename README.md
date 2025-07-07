@@ -12,7 +12,7 @@ Main GUI (Linux/macOS/Windows):
 
 Settings panel:
 
-![Music_Settings-20250706](https://github.com/user-attachments/assets/35212dcf-8063-4b08-9503-4020939bb1c6)
+![Music_Settings-20250706](https://github.com/user-attachments/assets/06be1dd6-fee1-41bb-b971-c81317f595f9)
 
 ---
 
