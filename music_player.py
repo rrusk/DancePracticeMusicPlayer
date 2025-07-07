@@ -125,19 +125,6 @@ class MusicPlayer(BoxLayout):
                 "WCS",
             ],
             "LineDance": ["LineDance"],
-            "misc": [
-                "AmericanRumba",
-                "ArgentineTango",
-                "Bolero",
-                "DiscoFox",
-                "Hustle",
-                "LindyHop",
-                "Mambo",
-                "Merengue",
-                "NC2Step",
-                "Polka",
-                "Salsa",
-            ],
         }
     )
 
@@ -198,7 +185,6 @@ class MusicPlayer(BoxLayout):
                 "120min",
                 "NC 120min",
                 "LineDance",
-                "Misc",
             ],
         },
     ]
@@ -890,7 +876,6 @@ class MusicPlayer(BoxLayout):
             "120min": ("default", 4, False, False),
             "NC 120min": ("newcomer", 4, False, False),
             "LineDance": ("LineDance", 100, False, True),
-            "Misc": ("misc", 100, False, False),
         }
         # Merge in custom mappings using the union operator (Python 3.9+)
         mapping |= getattr(self, "custom_practice_mapping", {})

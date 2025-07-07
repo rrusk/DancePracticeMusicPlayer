@@ -10,5 +10,23 @@
     "num_selections": 1,
     "auto_update": true,
     "play_single_song": false
+  },
+  "Misc": {
+    "dances": [
+      "AmericanRumba",
+      "ArgentineTango",
+      "Bolero",
+      "DiscoFox",
+      "Hustle",
+      "LindyHop",
+      "Mambo",
+      "Merengue",
+      "NC2Step",
+      "Polka",
+      "Salsa"
+    ],
+    "num_selections": 100,
+    "auto_update": false,
+    "play_single_song": false
   }
 }
