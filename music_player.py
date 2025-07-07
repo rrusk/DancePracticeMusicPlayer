@@ -93,6 +93,8 @@ class MusicPlayer(BoxLayout):
     song_max_playtime = NumericProperty(210)
     auto_update_restart_playlist = BooleanProperty(False)
     randomize_playlist = BooleanProperty(True)
+    adjust_song_counts_for_playlist = BooleanProperty(False)
+    current_dance_adjustments = DictProperty({})
 
     practice_dances = DictProperty(
         {
@@ -276,6 +278,8 @@ class MusicPlayer(BoxLayout):
                 data.get("auto_update", False),
                 data.get("play_single_song", False),
                 data.get("randomize_playlist", True),
+                data.get("adjust_song_counts", False),
+                data.get("dance_adjustments", {}),
             )
 
     def _build_ui(self) -> None:
@@ -805,22 +809,33 @@ class MusicPlayer(BoxLayout):
 
         return f"{title} / {genre} / {artist} / {album}"
 
-    def _adjust_num_selections_for_dance(self, dance: str, num_selections: int) -> int:
-        """Adjusts the number of selections for specific dance types."""
-        # This function may become less critical if num_selections can be set in JSON
-        if dance == "PasoDoble":
-            if num_selections == 1:
-                return 0
-            elif num_selections in {2, 3}:
+    # This method interprets the adjustment rules from the JSON file.
+    def _get_adjusted_song_count(self, dance: str, num_selections: int) -> int:
+        """
+        Adjusts the number of songs for a dance based on rules defined in the
+        current practice type's 'dance_adjustments' dictionary.
+        """
+        if not self.adjust_song_counts_for_playlist or dance not in self.current_dance_adjustments:
+            return num_selections
+
+        rule = self.current_dance_adjustments[dance]
+
+        # Rule is a direct mapping (e.g., {"1": 0, "2": 1, "default": 2})
+        if isinstance(rule, dict):
+            num_selections_str = str(num_selections)
+            if num_selections_str in rule:
+                return rule[num_selections_str]
+            return rule.get("default", num_selections)
+
+        # Rule is a string formula (e.g., "n-1", "cap_at_1")
+        if isinstance(rule, str):
+            if rule == "n-1" and num_selections > 1:
+                return num_selections - 1
+            if rule == "cap_at_1" and num_selections > 1:
                 return 1
-            elif num_selections > 3:
+            if rule == "cap_at_2" and num_selections > 2:
                 return 2
-        elif dance in {"VWSlow", "JSlow"} and num_selections > 1:
-            return 1
-        elif dance in {"VienneseWaltz", "Jive"} and num_selections > 1:
-            return num_selections - 1
-        elif dance == "WCS" and num_selections > 2:
-            return 2
+
         return num_selections
 
     def _get_songs_for_dance(
@@ -847,7 +862,7 @@ class MusicPlayer(BoxLayout):
                 return None
 
         music = []
-        adjusted_num_selections = self._adjust_num_selections_for_dance(dance, num_selections)
+        adjusted_num_selections = self._get_adjusted_song_count(dance, num_selections)
         subdir = os.path.join(directory, dance)
 
         if not os.path.exists(subdir):
@@ -879,24 +894,30 @@ class MusicPlayer(BoxLayout):
             _spinner_instance: The spinner instance (unused).
             text (str): The selected practice type.
         """
+        default_adjustments = {
+            "PasoDoble": {"1": 0, "2": 1, "3": 1, "default": 2}, "VWSlow": "cap_at_1",
+            "JSlow": "cap_at_1", "VienneseWaltz": "n-1", "Jive": "n-1", "WCS": "cap_at_2"
+        }
         mapping = {
-            "60min": ("default", 2, False, False, True),
-            "NC 60min": ("newcomer", 2, False, False, True),
-            "90min": ("default", 3, False, False, True),
-            "NC 90min": ("newcomer", 3, False, False, True),
-            "120min": ("default", 4, False, False, True),
-            "NC 120min": ("newcomer", 4, False, False, True),
+            "60min": ("default", 2, False, False, True, True, default_adjustments),
+            "NC 60min": ("newcomer", 2, False, False, True, True, default_adjustments),
+            "90min": ("default", 3, False, False, True, True, default_adjustments),
+            "NC 90min": ("newcomer", 3, False, False, True, True, default_adjustments),
+            "120min": ("default", 4, False, False, True, True, default_adjustments),
+            "NC 120min": ("newcomer", 4, False, False, True, True, default_adjustments),
         }
         # Merge in custom mappings using the union operator (Python 3.9+)
-        mapping |= getattr(self, "custom_practice_mapping", {})
-        dance_type, num_selections, auto_update, play_single_song, randomize_playlist = mapping.get(
-            text, ("default", 2, True, False, True)
-        )
+        mapping |= getattr(self, "custom_practice_mapping", {})       
+        params = mapping.get(text, ("default", 2, True, False, True, False, {}))
+        dance_type, num_selections, auto_update, play_single, randomize, adj_counts, adj_dict = params
+        
         self.dances = self.get_dances(dance_type)
         self.num_selections = num_selections
         self.auto_update_restart_playlist = auto_update
-        self.play_single_song = play_single_song
-        self.randomize_playlist = randomize_playlist
+        self.play_single_song = play_single
+        self.randomize_playlist = randomize
+        self.adjust_song_counts_for_playlist = adj_counts
+        self.current_dance_adjustments = adj_dict
 
         self.stop_sound()
         self.update_playlist(self.music_dir)
