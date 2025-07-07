@@ -171,7 +171,8 @@ class MusicPlayer(BoxLayout):
             "title": "Max Playtime",
             "desc": (
                 "Set the maximum playtime for a song in seconds. The music fades out and "
-                "stops after the maximum playtime."
+                "stops after the maximum playtime.  This setting is ignored for LineDance "
+                "and custom practice types with play_single_song set to true."
             ),
             "section": "user",
             "key": "song_max_playtime",
@@ -645,7 +646,6 @@ class MusicPlayer(BoxLayout):
             self._check_and_advance_song()
         elif ( # if play_single_song is True, stop at the end and set icon to play
                 self._playing_position >= self.progress_max - 1
-                or self._playing_position > self.song_max_playtime + PlayerConstants.FADE_TIME
             ):
             self.stop_sound()
             self.play_pause_button.background_normal = self._get_icon_path(
