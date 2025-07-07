@@ -3,13 +3,15 @@
     "dances": ["Waltz", "JSlow", "Rumba", "Foxtrot", "ChaCha", "Tango"],
     "num_selections": 1,
     "auto_update": true,
-    "play_single_song": false
+    "play_single_song": false,
+    "randomize_playlist": true
   },
   "Intermediate": {
     "dances": ["Waltz", "JSlow", "Rumba", "Foxtrot", "ChaCha", "Tango", "Samba", "QuickStep"],
     "num_selections": 1,
     "auto_update": true,
-    "play_single_song": false
+    "play_single_song": false,
+    "randomize_playlist": true
   },
   "Misc": {
     "dances": [
@@ -27,6 +29,14 @@
     ],
     "num_selections": 100,
     "auto_update": false,
-    "play_single_song": false
+    "play_single_song": false,
+    "randomize_playlist": true
+  },
+  "LineDance": {
+    "dances": ["LineDance"],
+    "num_selections": 100,
+    "auto_update": false,
+    "play_single_song": true,
+    "randomize_playlist": false
   }
 }

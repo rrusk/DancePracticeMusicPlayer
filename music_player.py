@@ -90,8 +90,9 @@ class MusicPlayer(BoxLayout):
     progress_text = StringProperty(PlayerConstants.INIT_POS_DUR)
     song_title = StringProperty(PlayerConstants.INIT_SONG_TITLE)
     play_single_song = BooleanProperty(False)
-    song_max_playtime = NumericProperty(210)  # Kivy Property for settings
+    song_max_playtime = NumericProperty(210)
     auto_update_restart_playlist = BooleanProperty(False)
+    randomize_playlist = BooleanProperty(True)
 
     practice_dances = DictProperty(
         {
@@ -124,7 +125,6 @@ class MusicPlayer(BoxLayout):
                 "VienneseWaltz",
                 "WCS",
             ],
-            "LineDance": ["LineDance"],
         }
     )
 
@@ -158,8 +158,8 @@ class MusicPlayer(BoxLayout):
             "title": "Max Playtime",
             "desc": (
                 "Set the maximum playtime for a song in seconds. The music fades out and "
-                "stops after the maximum playtime.  This setting is ignored for LineDance "
-                "and custom practice types with play_single_song set to true."
+                "stops after the maximum playtime.  This setting is ignored for "
+                "custom practice types with play_single_song set to true."
             ),
             "section": "user",
             "key": "song_max_playtime",
@@ -184,7 +184,6 @@ class MusicPlayer(BoxLayout):
                 "NC 90min",
                 "120min",
                 "NC 120min",
-                "LineDance",
             ],
         },
     ]
@@ -276,6 +275,7 @@ class MusicPlayer(BoxLayout):
                 data.get("num_selections", 2),
                 data.get("auto_update", False),
                 data.get("play_single_song", False),
+                data.get("randomize_playlist", True),
             )
 
     def _build_ui(self) -> None:
@@ -727,7 +727,8 @@ class MusicPlayer(BoxLayout):
         self.stop_sound()
         self.playlist = []
         for dance in self.dances:
-            self.playlist.extend(self._get_songs_for_dance(directory, dance, self.num_selections))
+            self.playlist.extend(self._get_songs_for_dance(
+                directory, dance, self.num_selections, self.randomize_playlist))
         self.playlist_idx = 0
         self.sound = None
         self._display_playlist_buttons()
@@ -806,6 +807,7 @@ class MusicPlayer(BoxLayout):
 
     def _adjust_num_selections_for_dance(self, dance: str, num_selections: int) -> int:
         """Adjusts the number of selections for specific dance types."""
+        # This function may become less critical if num_selections can be set in JSON
         if dance == "PasoDoble":
             if num_selections == 1:
                 return 0
@@ -819,12 +821,21 @@ class MusicPlayer(BoxLayout):
             return num_selections - 1
         elif dance == "WCS" and num_selections > 2:
             return 2
-        elif dance == "LineDance":
-            return 100  # Include all line dances
         return num_selections
 
-    def _get_songs_for_dance(self, directory: str, dance: str, num_selections: int) -> list:
-        """Collects random songs for a given dance type."""
+    def _get_songs_for_dance(
+        self, directory: str, dance: str, num_selections: int, randomize: bool) -> list:
+        """Collects songs for a given dance type, either randomized or sorted.
+
+        Args:
+            directory (str): The directory containing music.
+            dance (str): The specific dance sub-folder.
+            num_selections (int): The number of songs to select.
+            randomize (bool): True to randomize, False to sort.
+
+        Returns:
+            list: A list of selected song paths, potentially including an announcement.
+        """
         def get_announce_path(dance):
             announce_path = os.path.join(self.script_path, "announce", f"{dance}.ogg")
             generic_announce_path = os.path.join(self.script_path, "announce", "Generic.ogg")
@@ -851,10 +862,10 @@ class MusicPlayer(BoxLayout):
             return []
 
         num = min(adjusted_num_selections, len(music))
-        if dance != "LineDance":
+        if randomize:
             selected_songs = random.sample(music, num)
         else:
-            selected_songs = sorted(music[: num + 1])
+            selected_songs = sorted(random.sample(music, num))
 
         announce = get_announce_path(dance)
         if announce:
@@ -869,23 +880,23 @@ class MusicPlayer(BoxLayout):
             text (str): The selected practice type.
         """
         mapping = {
-            "60min": ("default", 2, False, False),
-            "NC 60min": ("newcomer", 2, False, False),
-            "90min": ("default", 3, False, False),
-            "NC 90min": ("newcomer", 3, False, False),
-            "120min": ("default", 4, False, False),
-            "NC 120min": ("newcomer", 4, False, False),
-            "LineDance": ("LineDance", 100, False, True),
+            "60min": ("default", 2, False, False, True),
+            "NC 60min": ("newcomer", 2, False, False, True),
+            "90min": ("default", 3, False, False, True),
+            "NC 90min": ("newcomer", 3, False, False, True),
+            "120min": ("default", 4, False, False, True),
+            "NC 120min": ("newcomer", 4, False, False, True),
         }
         # Merge in custom mappings using the union operator (Python 3.9+)
         mapping |= getattr(self, "custom_practice_mapping", {})
-        dance_type, num_selections, auto_update, play_single_song = mapping.get(
-            text, ("default", 2, True, False)
+        dance_type, num_selections, auto_update, play_single_song, randomize_playlist = mapping.get(
+            text, ("default", 2, True, False, True)
         )
         self.dances = self.get_dances(dance_type)
         self.num_selections = num_selections
         self.auto_update_restart_playlist = auto_update
         self.play_single_song = play_single_song
+        self.randomize_playlist = randomize_playlist
 
         self.stop_sound()
         self.update_playlist(self.music_dir)
