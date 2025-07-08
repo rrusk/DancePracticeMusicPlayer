@@ -1,0 +1,91 @@
+{
+  "__COMMENT__ default adjustments for adjust_song_counts true but dance_adjustments not specified": {
+    "PasoDoble": {
+      "1": 0,
+      "2": 1,
+      "3": 1,
+      "default": 2
+    },
+    "VWSlow": "cap_at_1",
+    "JSlow": "cap_at_1",
+    "VienneseWaltz": "n-1",
+    "Jive": "n-1",
+    "WCS": "cap_at_2"
+  },
+  "Beginner": {
+    "dances": ["Waltz", "JSlow", "Rumba", "Foxtrot", "ChaCha", "Tango"],
+    "num_selections": 1,
+    "auto_update": true,
+    "play_single_song": false,
+    "randomize_playlist": true,
+    "adjust_song_counts": false
+  },
+  "Intermediate": {
+    "dances": ["Waltz", "JSlow", "Rumba", "Foxtrot", "ChaCha", "Tango", "Samba", "QuickStep"],
+    "num_selections": 1,
+    "auto_update": true,
+    "play_single_song": false,
+    "randomize_playlist": true,
+    "adjust_song_counts": false
+  },
+    "LineDance": {
+    "dances": ["LineDance"],
+    "num_selections": 100,
+    "auto_update": false,
+    "play_single_song": true,
+    "randomize_playlist": false,
+    "adjust_song_counts": false
+  },
+  "Silver+ Standard 60min": {
+    "dances": ["Waltz", "Tango", "VienneseWaltz", "Foxtrot", "QuickStep"],
+    "num_selections": 4,
+    "auto_update": false,
+    "play_single_song": false,
+    "randomize_playlist": true,
+    "adjust_song_counts": true,
+    "dance_adjustments": {
+      "VienneseWaltz": {
+        "1": 0,
+        "2": 1,
+        "3": 2,
+        "default": 3
+      }
+    }
+  },
+    "Silver+ Latin 30min": {
+    "dances": ["Samba", "ChaCha", "Rumba", "PasoDoble", "Jive"],
+    "num_selections": 2,
+    "auto_update": false,
+    "play_single_song": false,
+    "randomize_playlist": true,
+    "adjust_song_counts": true,
+    "dance_adjustments": {
+      "PasoDoble": {
+        "1": 0,
+        "2": 1,
+        "3": 1,
+        "default": 2
+      }
+    }
+  },
+  "Misc": {
+    "dances": [
+      "AmericanRumba",
+      "ArgentineTango",
+      "Bolero",
+      "DiscoFox",
+      "Hustle",
+      "LindyHop",
+      "Mambo",
+      "Merengue",
+      "NC2Step",
+      "Polka",
+      "Salsa"
+    ],
+    "num_selections": 100,
+    "auto_update": false,
+    "play_single_song": false,
+    "randomize_playlist": true,
+    "adjust_song_counts": false
+  }
+}
