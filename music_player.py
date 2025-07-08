@@ -251,7 +251,9 @@ class MusicPlayer(BoxLayout):
         if os.path.isfile(json_path):
             try:
                 with open(json_path, "r", encoding="utf-8") as f:
-                    custom_types = json.load(f)
+                    raw_data = json.load(f)
+                    # Filter out any keys that start with "__COMMENT__"
+                    custom_types = {k: v for k, v in raw_data.items() if not k.startswith("__COMMENT__")}
             except (OSError, json.JSONDecodeError) as e:
                 print(f"Failed to load custom practice types: {e}")
         return custom_types
