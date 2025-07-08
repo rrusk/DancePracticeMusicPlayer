@@ -15,6 +15,14 @@
     "randomize_playlist": true,
     "adjust_song_counts": false
   },
+    "LineDance": {
+    "dances": ["LineDance"],
+    "num_selections": 100,
+    "auto_update": false,
+    "play_single_song": true,
+    "randomize_playlist": false,
+    "adjust_song_counts": false
+  },
   "Competition": {
     "dances": ["Waltz", "Tango", "VWSlow", "VienneseWaltz", "Foxtrot", "QuickStep", "WCS", "Samba", "ChaCha", "Rumba", "PasoDoble", "JSlow", "Jive"],
     "num_selections": 3,
@@ -62,14 +70,6 @@
     "auto_update": false,
     "play_single_song": false,
     "randomize_playlist": true,
-    "adjust_song_counts": false
-  },
-  "LineDance": {
-    "dances": ["LineDance"],
-    "num_selections": 100,
-    "auto_update": false,
-    "play_single_song": true,
-    "randomize_playlist": false,
     "adjust_song_counts": false
   }
 }

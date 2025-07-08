@@ -31,7 +31,7 @@ The application is designed to play music files (MP3, WAV, OGG, M4A, FLAC, WAV) 
 - **Intuitive UI:** Play, pause, stop, restart controls, and a clickable, scrollable playlist
 - **Real-time Progress:** Displays current song title, artist, album, genre, and playback progress with seeking capability
 - **Configurable Settings:** Adjust volume, set music directory, and define maximum song playtime via an in-app settings panel
-- **Custom Practice Types:** Easily define new practice routines, dance sequences, and song selection rules using `custom_practice_types.json`
+- **Custom Practice Types:** Easily define new practice routines, dance sequences, and song selection rules using `custom_practice_types.json`, including options for randomize_playlist, adjust_song_counts, and specific dance_adjustments.
 - **Platform Compatibility:** Designed to run on Linux, macOS, and Windows.
 
 ---
@@ -107,7 +107,7 @@ You can set your `music_dir` via the "Music Settings" button in the application.
 
 - Music File Requirements:
   - Musical selections are assumed to be at the correct tempo.
-  - Songs longer than 3 minutes 30 seconds (210 seconds), except for linedances, will fade out and end by 3 minutes 40 seconds (adjustable via "Max Playtime" in settings).
+  - Songs longer than 3 minutes 30 seconds (210 seconds) will fade out and end by 3 minutes 40 seconds (adjustable via "Max Playtime" in settings), except when play_single_song is true for the playlist.  This is useful for line dances, in particular, where one wants to play the entire song.
   - It is recommended that the volume of your musical selections be normalized for consistent playback.
 
 ### 4. Running the Application
@@ -153,7 +153,10 @@ The JSON file should be a dictionary where each key is the name of your custom p
 - `dances` (list of strings): The sequence of dance sub-folder names to include in the playlist
 - `num_selections` (integer): The default number of songs to select for each dance type in the dances list
 - `auto_update (boolean):` If true, the playlist will automatically generate a new set of songs and restart when it reaches the end
-- `play_single_song (boolean):` If true, the player will stop after playing a single song from the current selection
+- `play_single_song (boolean):` If true, the player will stop after playing the entirety of a single song from the current selection
+- `randomize_playlist (boolean):` If true, songs for each dance type will be randomly selected. If false, they will be displayed in a fixed order after selection
+- `adjust_song_counts (boolean):` If true, the num_selections for certain dances will be adjusted based on predefined rules or dance_adjustments
+- `dance_adjustments (object, optional):` A dictionary specifying custom rules for adjusting num_selections for individual dances. If adjust_song_counts is true but dance_adjustments is not specified, a default set of adjustments will be applied (e.g., to reduce the number of songs for specific dances like Paso Doble, Viennese Waltz, Jive, WCS, JSlow, and VWSlow). These rules can be direct mappings (e.g., {"1": 0, "2": 1, "default": 2}) or string formulas (e.g., "n-1", "cap_at_1").
 
 **Example** `custom_practice_types.json`
 
@@ -163,16 +166,60 @@ The JSON file should be a dictionary where each key is the name of your custom p
     "dances": ["Waltz", "JSlow", "Rumba", "Foxtrot", "ChaCha", "Tango"],
     "num_selections": 1,
     "auto_update": true,
-    "play_single_song": false
+    "play_single_song": false,
+    "randomize_playlist": true,
+    "adjust_song_counts": false
   },
   "Intermediate": {
     "dances": ["Waltz", "JSlow", "Rumba", "Foxtrot", "ChaCha", "Tango", "Samba", "QuickStep"],
     "num_selections": 1,
     "auto_update": true,
-    "play_single_song": false
+    "play_single_song": false,
+    "randomize_playlist": true,
+    "adjust_song_counts": false
+  },
+  "Competition": {
+    "dances": ["Waltz", "Tango", "VWSlow", "VienneseWaltz", "Foxtrot", "QuickStep", "WCS", "Samba", "ChaCha", "Rumba", "PasoDoble", "JSlow", "Jive"],
+    "num_selections": 3,
+    "auto_update": false,
+    "play_single_song": false,
+    "randomize_playlist": true,
+    "adjust_song_counts": true,
+    "dance_adjustments": {
+      "PasoDoble": {
+        "1": 0,
+        "2": 1,
+        "3": 1,
+        "default": 2
+      },
+      "VWSlow": "cap_at_1",
+      "JSlow": "cap_at_1",
+      "VienneseWaltz": "n-1",
+      "Jive": "n-1",
+      "WCS": "cap_at_2"
+    }
+  },
+  "Misc": {
+    "dances": [
+      "AmericanRumba",
+      "ArgentineTango",
+      "Bolero",
+      "DiscoFox",
+      "Hustle",
+      "LindyHop",
+      "Mambo",
+      "Merengue",
+      "NC2Step",
+      "Polka",
+      "Salsa"
+    ],
+    "num_selections": 100,
+    "auto_update": false,
+    "play_single_song": false,
+    "randomize_playlist": true,
+    "adjust_song_counts": false
   }
 }
-```
 
 ### How to Use Custom Types
 
@@ -212,7 +259,7 @@ Some critical methods within the MusicPlayer class include:
 - `update_progress():` Called periodically to update the UI progress bar and manage song transitions (fade out, next song).
 - `update_playlist(directory):` Regenerates the entire playlist based on the current music directory and selected dance types.
 - `_display_playlist_buttons():` Renders the current playlist as clickable buttons in the UI.
-- `set_practice_type(text):` Updates the internal dance lists and playlist generation logic based on the chosen practice type.
+- `set_practice_type(text):` Updates the internal dance lists and playlist generation logic based on the chosen practice type, including applying randomize_playlist, adjust_song_counts, and dance_adjustments.
 - `load_custom_practice_types():` Reads custom practice types from `custom_practice_types.json`.
 - `merge_custom_practice_types():` Integrates loaded custom practice types into the application's settings and dance mappings.
 
