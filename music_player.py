@@ -187,11 +187,9 @@ class MusicPlayer(BoxLayout):
             "key": "practice_type",
             "options": [
                 "60min",
-                "NC 60min",
                 "90min",
-                "NC 90min",
                 "120min",
-                "NC 120min",
+                "NC 60min",
             ],
         },
     ]
@@ -297,9 +295,35 @@ class MusicPlayer(BoxLayout):
 
     def _create_playlist_widgets(self) -> None:
         """Creates and adds the scrollable playlist area."""
-        self.scrollview = ScrollView(size_hint=(1, 1), size=(self.width, 400))
-        self.button_grid = GridLayout(cols=1, size_hint_y=None)
+        self.scrollview = ScrollView(size_hint=(1, 1))
+        self.button_grid = GridLayout(
+            cols=1,
+            size_hint_y=None, # Important: Let height be determined by children
+            row_force_default=False, # Ensure rows respect their height property
+            row_default_height=40,   # Explicitly set height for each row, matching button heights
+        )
+        # This bind ensures button_grid.height grows to fit its content
         self.button_grid.bind(minimum_height=self.button_grid.setter("height"))
+
+        # Binding for top allignment
+        def ensure_grid_fills_scrollview_height(_instance, _value):
+            # This function ensures the button_grid's height is at least the scrollview's height.
+            # If the content (minimum_height) is less than the scrollview's height,
+            # we force the button_grid's height to match the scrollview's height.
+            # This makes the Label(size_hint_y=1), at the bottom of _displaylist_playlist_buttons(),
+            # expand and push content to the top.
+            if self.button_grid.minimum_height < self.scrollview.height:
+                self.button_grid.height = self.scrollview.height
+            else:
+                # If content is larger, allow it to be its minimum_height
+                # (which the setter("height") already handles)
+                self.button_grid.height = self.button_grid.minimum_height
+
+        # Bind this function to changes in both button_grid's minimum_height (content changes)
+        # and scrollview's height (window resize or layout changes).
+        self.button_grid.bind(minimum_height=ensure_grid_fills_scrollview_height)
+        self.scrollview.bind(height=ensure_grid_fills_scrollview_height)
+
         self.scrollview.add_widget(self.button_grid)
         self.add_widget(self.scrollview)
 
@@ -780,6 +804,11 @@ class MusicPlayer(BoxLayout):
                 self._song_buttons.append(btn)
                 self.button_grid.add_widget(btn)
 
+        # IMPORTANT: Add this spacer *after* all other buttons.
+        # This Label will expand to fill available vertical space if the content doesn't,
+        # pushing all previous content to the top.
+        self.button_grid.add_widget(Label(size_hint_y=1))
+
     def _get_song_duration_str(self, selection: str) -> str:
         """Returns the duration of a song as a formatted string.
 
@@ -908,11 +937,9 @@ class MusicPlayer(BoxLayout):
         }
         mapping = {
             "60min": ("default", 2, False, False, True, True, default_adjustments),
-            "NC 60min": ("newcomer", 2, False, False, True, True, default_adjustments),
             "90min": ("default", 3, False, False, True, True, default_adjustments),
-            "NC 90min": ("newcomer", 3, False, False, True, True, default_adjustments),
             "120min": ("default", 4, False, False, True, True, default_adjustments),
-            "NC 120min": ("newcomer", 4, False, False, True, True, default_adjustments),
+            "NC 60min": ("newcomer", 2, False, False, True, True, default_adjustments),
         }
         # Merge in custom mappings using the union operator (Python 3.9+)
         mapping |= getattr(self, "custom_practice_mapping", {})
