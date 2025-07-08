@@ -13,6 +13,15 @@ import sys
 import time
 import typing
 
+# IMPORTANT: Kivy Config.set for graphics must be called BEFORE importing any other Kivy modules.
+from kivy.config import Config
+
+# Set Kivy configuration for input and window size
+Config.set("input", "mouse", "mouse,multitouch_on_demand")
+Config.set('graphics', 'width', '1024')
+Config.set('graphics', 'height', '768')
+
+# pylint: disable=wrong-import-position
 from kivy.app import App
 # pylint: disable=no-name-in-module, no-member
 from kivy.properties import (
@@ -33,11 +42,8 @@ from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.slider import Slider
 from kivy.uix.settings import SettingsWithSpinner
-from kivy.config import ConfigParser, Config
+from kivy.config import ConfigParser
 from tinytag import TinyTag
-
-# Set Kivy configuration
-Config.set("input", "mouse", "mouse,multitouch_on_demand")
 
 # Conditional import for Windows-specific functionality
 # This ensures ctypes is only imported if on Windows,
