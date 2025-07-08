@@ -909,8 +909,14 @@ class MusicPlayer(BoxLayout):
         # Merge in custom mappings using the union operator (Python 3.9+)
         mapping |= getattr(self, "custom_practice_mapping", {})
         params = mapping.get(text, ("default", 2, True, False, True, False, {}))
+
         (dance_type, num_selections, auto_update, play_single, randomize, adj_counts,
          adj_dict) = params
+
+        # Explicitly apply default_adjustments if adj_counts is True and adj_dict is empty
+        if adj_counts and not adj_dict:
+            adj_dict = default_adjustments
+
         self.dances = self.get_dances(dance_type)
         self.num_selections = num_selections
         self.auto_update_restart_playlist = auto_update
