@@ -907,10 +907,10 @@ class MusicPlayer(BoxLayout):
             "NC 120min": ("newcomer", 4, False, False, True, True, default_adjustments),
         }
         # Merge in custom mappings using the union operator (Python 3.9+)
-        mapping |= getattr(self, "custom_practice_mapping", {})       
+        mapping |= getattr(self, "custom_practice_mapping", {})
         params = mapping.get(text, ("default", 2, True, False, True, False, {}))
-        dance_type, num_selections, auto_update, play_single, randomize, adj_counts, adj_dict = params
-        
+        (dance_type, num_selections, auto_update, play_single, randomize, adj_counts,
+         adj_dict) = params
         self.dances = self.get_dances(dance_type)
         self.num_selections = num_selections
         self.auto_update_restart_playlist = auto_update
