@@ -220,6 +220,7 @@ The JSON file should be a dictionary where each key is the name of your custom p
     "adjust_song_counts": false
   }
 }
+```
 
 ### How to Use Custom Types
 
