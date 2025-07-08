@@ -270,7 +270,7 @@ The application uses a `music.ini` file for persistent configuration (music dire
 
 ### Practice Dances
 
-The `practice_dances` property within MusicPlayer defines the default dance sequences for different practice lengths (e.g., "60min", "90min", "LineDance"). This data is extended by the `custom_practice_types.json` file, allowing users to define their own dance lists and associated song selection rules.
+The `practice_dances` property within MusicPlayer defines the default dance sequences for different practice lengths (e.g., "60min", "90min"). This data is extended by the `custom_practice_types.json` file, allowing users to define their own dance lists and associated song selection rules.
 
 ## License
 
