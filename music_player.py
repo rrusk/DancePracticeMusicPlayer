@@ -625,11 +625,16 @@ class MusicPlayer(BoxLayout):
 
     def _apply_platform_specific_play(self) -> None:
         """Applies platform-specific workarounds for playing sound."""
-        if platform.system() == "Windows":
-            time.sleep(0.1)  # Hack to prevent losing position in the music
+        def play_after_delay(_dt):
             self.sound.play()
-            self.sound.seek(self._playing_position)
+            if self._playing_position > 0:
+                self.sound.seek(self._playing_position)
+
+        if platform.system() == "Windows":
+            # Use Kivy's Clock to wait 0.1s without blocking
+            Clock.schedule_once(play_after_delay, 0.1)
         else:
+            # For other systems, play immediately
             self.sound.seek(self._playing_position)
             self.sound.play()
 
