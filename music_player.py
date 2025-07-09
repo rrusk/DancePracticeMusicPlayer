@@ -10,7 +10,6 @@ import pathlib
 import random
 import json
 import sys
-import time
 import typing
 
 # IMPORTANT: Kivy Config.set for graphics must be called BEFORE importing any other Kivy modules.
@@ -251,7 +250,10 @@ class MusicPlayer(BoxLayout):
                 with open(json_path, "r", encoding="utf-8") as f:
                     raw_data = json.load(f)
                     # Filter out any keys that start with "__COMMENT__"
-                    custom_types = {k: v for k, v in raw_data.items() if not k.startswith("__COMMENT__")}
+                    custom_types = {
+                        k: v for k, v in raw_data.items()
+                        if not k.startswith("__COMMENT__")
+                    }
             except (OSError, json.JSONDecodeError) as e:
                 print(f"Failed to load custom practice types: {e}")
         return custom_types
@@ -477,6 +479,7 @@ class MusicPlayer(BoxLayout):
             return
 
         current_song_path = self.playlist[self.playlist_idx]
+        self.music_file = current_song_path # needed to get song duration
 
         if not os.path.exists(current_song_path):
             self.show_error_popup(f"Song file not found: {current_song_path}")
@@ -621,7 +624,13 @@ class MusicPlayer(BoxLayout):
         self._update_progress_event = Clock.schedule_interval(
             self.update_progress, self._schedule_interval
         )
-        self.progress_max = round(self.sound.length) if self.sound.length > 0 else 300
+        # Use TinyTag to get the accurate duration for progress_max
+        if self.music_file and os.path.exists(self.music_file):
+            tag = TinyTag.get(self.music_file)
+            duration = tag.duration if tag.duration is not None else 300
+            self.progress_max = round(duration)
+        else:
+            self.progress_max = 300 # Fallback in case music_file is not set or valid
 
     def _apply_platform_specific_play(self) -> None:
         """Applies platform-specific workarounds for playing sound."""
