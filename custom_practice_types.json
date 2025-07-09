@@ -87,5 +87,13 @@
     "play_single_song": false,
     "randomize_playlist": true,
     "adjust_song_counts": false
+  },
+  "Debug": {
+    "dances": ["Tango"],
+    "num_selections": 100,
+    "auto_update": false,
+    "play_single_song": true,
+    "randomize_playlist": false,
+    "adjust_song_counts": false
   }
 }
