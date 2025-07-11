@@ -100,6 +100,7 @@ class MusicPlayer(BoxLayout):
     randomize_playlist = BooleanProperty(True)
     adjust_song_counts_for_playlist = BooleanProperty(False)
     current_dance_adjustments = DictProperty({})
+    current_dance_max_playtimes = DictProperty({})
 
     practice_dances = DictProperty(
         {
@@ -162,10 +163,11 @@ class MusicPlayer(BoxLayout):
         },
         {
             "type": "numeric",
-            "title": "Max Playtime",
+            "title": "Max Playtime (Default)",
             "desc": (
-                "Set the maximum playtime for a song in seconds. The music fades out and "
-                "stops after the maximum playtime.  This setting is ignored for "
+                "Set the default maximum playtime for a song in seconds. This can be "
+                "overridden for specific dances in custom practice types. The music fades "
+                "out and stops after the maximum playtime. This setting is ignored for "
                 "custom practice types with play_single_song set to true."
             ),
             "section": "user",
@@ -186,8 +188,6 @@ class MusicPlayer(BoxLayout):
             "key": "practice_type",
             "options": [
                 "60min",
-                "90min",
-                "120min",
                 "NC 60min",
             ],
         },
@@ -288,6 +288,7 @@ class MusicPlayer(BoxLayout):
                 data.get("randomize_playlist", True),
                 data.get("adjust_song_counts", False),
                 data.get("dance_adjustments", {}),
+                data.get("dance_max_playtimes", {}),
             )
 
     def _build_ui(self) -> None:
@@ -478,7 +479,7 @@ class MusicPlayer(BoxLayout):
             self.restart_playlist()
             return
 
-        current_song_path = self.playlist[self.playlist_idx]
+        current_song_path = self.playlist[self.playlist_idx]['path']
         self.music_file = current_song_path # needed to get song duration
 
         if not os.path.exists(current_song_path):
@@ -678,8 +679,24 @@ class MusicPlayer(BoxLayout):
         self.progress_text = f"{current_time_str} / {self._total_time}"
 
         if not self.play_single_song:
-            self._handle_fade_out()
-            self._check_and_advance_song()
+            try:
+                song_info = self.playlist[self.playlist_idx]
+                current_dance = song_info.get('dance', 'unknown')
+
+                # Announcements should just play out; their natural duration is their max playtime.
+                if current_dance == 'announce':
+                    max_playtime = self.progress_max
+                else:
+                    max_playtime = self.current_dance_max_playtimes.get(
+                        current_dance, self.song_max_playtime
+                    )
+            except (IndexError, AttributeError):
+                # Fallback if playlist structure is unexpected or index is out of bounds
+                max_playtime = self.song_max_playtime
+
+            self._handle_fade_out(max_playtime)
+            self._check_and_advance_song(max_playtime)
+
         elif ( # if play_single_song is True, stop at the end and set icon to play
                 self._playing_position >= self.progress_max - 1
             ):
@@ -687,23 +704,23 @@ class MusicPlayer(BoxLayout):
             self.play_pause_button.background_normal = self._get_icon_path(
                 PlayerConstants.ICON_PLAY)
 
-    def _handle_fade_out(self) -> None:
+    def _handle_fade_out(self, max_playtime: float) -> None:
         """Handles fading out the music near the end of the song."""
-        if self._playing_position >= self.song_max_playtime and PlayerConstants.FADE_TIME > 0:
+        if self._playing_position >= max_playtime and PlayerConstants.FADE_TIME > 0:
             fade_factor = max(
                 0,
                 1
                 + self._schedule_interval
-                * (self.song_max_playtime - self._playing_position)
+                * (max_playtime - self._playing_position)
                 / PlayerConstants.FADE_TIME,
             )
             self.sound.volume = self.sound.volume * fade_factor
 
-    def _check_and_advance_song(self) -> None:
+    def _check_and_advance_song(self, max_playtime: float) -> None:
         """Checks if the song is finished or exceeded max playtime and advances."""
         if (
             self._playing_position >= self.progress_max - 1
-            or self._playing_position > self.song_max_playtime + PlayerConstants.FADE_TIME
+            or self._playing_position > max_playtime + PlayerConstants.FADE_TIME
         ):
             self._advance_playlist()
 
@@ -806,7 +823,8 @@ class MusicPlayer(BoxLayout):
             self._song_buttons.append(btn)
             self.button_grid.add_widget(btn)
         else:
-            for i, song_path in enumerate(playlist_to_display):
+            for i, song_info in enumerate(playlist_to_display):
+                song_path = song_info['path']
                 btn = Button(
                     text=self._get_song_label(song_path),
                     size_hint_y=None,
@@ -900,10 +918,10 @@ class MusicPlayer(BoxLayout):
             randomize (bool): True to randomize, False to sort.
 
         Returns:
-            list: A list of selected song paths, potentially including an announcement.
+            list: A list of selected song dicts, potentially including an announcement.
         """
-        def get_announce_path(dance):
-            announce_path = os.path.join(self.script_path, "announce", f"{dance}.ogg")
+        def get_announce_path(dance_name):
+            announce_path = os.path.join(self.script_path, "announce", f"{dance_name}.ogg")
             generic_announce_path = os.path.join(self.script_path, "announce", "Generic.ogg")
             if os.path.isfile(announce_path):
                 return announce_path
@@ -922,7 +940,7 @@ class MusicPlayer(BoxLayout):
         for root, _, files in os.walk(subdir):
             for file in files:
                 if file.endswith((".mp3", ".ogg", ".m4a", ".flac", ".wav")):
-                    music.append(os.path.join(root, file))
+                    music.append({'path': os.path.join(root, file), 'dance': dance})
 
         if not music:
             return []
@@ -931,11 +949,11 @@ class MusicPlayer(BoxLayout):
         if randomize:
             selected_songs = random.sample(music, num)
         else:
-            selected_songs = sorted(random.sample(music, num))
+            selected_songs = sorted(random.sample(music, num), key=lambda x: x['path'])
 
         announce = get_announce_path(dance)
         if announce:
-            selected_songs.insert(0, announce)
+            selected_songs.insert(0, {'path': announce, 'dance': 'announce'})
         return selected_songs
 
     def set_practice_type(self, _spinner_instance: typing.Any, text: str) -> None:
@@ -950,17 +968,15 @@ class MusicPlayer(BoxLayout):
             "JSlow": "cap_at_1", "VienneseWaltz": "n-1", "Jive": "n-1", "WCS": "cap_at_2"
         }
         mapping = {
-            "60min": ("default", 2, False, False, True, True, default_adjustments),
-            "90min": ("default", 3, False, False, True, True, default_adjustments),
-            "120min": ("default", 4, False, False, True, True, default_adjustments),
-            "NC 60min": ("newcomer", 2, False, False, True, True, default_adjustments),
+            "60min": ("default", 2, False, False, True, True, default_adjustments, {}),
+            "NC 60min": ("newcomer", 2, False, False, True, True, default_adjustments, {}),
         }
         # Merge in custom mappings using the union operator (Python 3.9+)
         mapping |= getattr(self, "custom_practice_mapping", {})
-        params = mapping.get(text, ("default", 2, True, False, True, False, {}))
+        params = mapping.get(text, ("default", 2, True, False, True, False, {}, {}))
 
         (dance_type, num_selections, auto_update, play_single, randomize, adj_counts,
-         adj_dict) = params
+         adj_dict, max_playtimes_dict) = params
 
         # Explicitly apply default_adjustments if adj_counts is True and adj_dict is empty
         if adj_counts and not adj_dict:
@@ -973,6 +989,7 @@ class MusicPlayer(BoxLayout):
         self.randomize_playlist = randomize
         self.adjust_song_counts_for_playlist = adj_counts
         self.current_dance_adjustments = adj_dict
+        self.current_dance_max_playtimes = max_playtimes_dict
 
         self.stop_sound()
         self.update_playlist(self.music_dir)
@@ -1070,7 +1087,8 @@ class MusicApp(App):
                 self.root
                 and self.root.playlist
                 and self.root.playlist_idx is not None
-                and (temp_sound := SoundLoader.load(self.root.playlist[self.root.playlist_idx]))
+                and (temp_sound := SoundLoader.load(
+                    self.root.playlist[self.root.playlist_idx]['path']))
             ):
                 temp_sound.play()
                 temp_sound.stop()
