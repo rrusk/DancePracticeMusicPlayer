@@ -28,9 +28,10 @@ The application is designed to play music files (MP3, WAV, OGG, M4A, FLAC, WAV) 
 
 - **Customizable Playlists:** Generates randomized playlists based on predefined or custom dance types and lengths
 - **Spoken Dance Announcements:** Automatically announces the dance type before each selection begins
+- **Per-Dance Playtime:** Override the global maximum song playtime for specific dances within a custom practice type.
 - **Intuitive UI:** Play, pause, stop, restart controls, and a clickable, scrollable playlist
 - **Real-time Progress:** Displays current song title, artist, album, genre, and playback progress with seeking capability
-- **Configurable Settings:** Adjust volume, set music directory, and define maximum song playtime via an in-app settings panel
+- **Configurable Settings:** Adjust volume, set music directory, and define a default maximum song playtime via an in-app settings panel
 - **Custom Practice Types:** Easily define new practice routines, dance sequences, and song selection rules using `custom_practice_types.json`, including options for randomize_playlist, adjust_song_counts, and specific dance_adjustments.
 - **Platform Compatibility:** Designed to run on Linux, macOS, and Windows.
 
@@ -156,7 +157,8 @@ The JSON file should be a dictionary where each key is the name of your custom p
 - `play_single_song (boolean):` If true, the player will stop after playing the entirety of a single song from the current selection
 - `randomize_playlist (boolean):` If true, songs for each dance type will be randomly selected. If false, they will be displayed in a fixed order after selection
 - `adjust_song_counts (boolean):` If true, the num_selections for certain dances will be adjusted based on predefined rules or dance_adjustments
-- `dance_adjustments (object, optional):` A dictionary specifying custom rules for adjusting num_selections for individual dances. If adjust_song_counts is true but dance_adjustments is not specified, a default set of adjustments will be applied (e.g., to reduce the number of songs for specific dances like Paso Doble, Viennese Waltz, Jive, WCS, JSlow, and VWSlow). These rules can be direct mappings (e.g., {"1": 0, "2": 1, "default": 2}) or string formulas (e.g., "n-1", "cap_at_1").
+- `dance_adjustments (object, optional):` A dictionary specifying custom rules for adjusting num_selections for individual dances. If adjust_song_counts is true but dance_adjustments is not specified, a default set of adjustments will be applied (e.g., to reduce the number of songs for specific dances like Paso Doble, Viennese Waltz, Jive, WCS, JSlow, and VWSlow). These rules can be direct mappings (e.g., {"1": 0, "2": 1, "default": 2}) or string formulas (e.g., "n-1", "cap_at_1")
+- `dance_max_playtimes (object, optional):` A dictionary to override the global "Max Playtime" for specific dances. The keys are dance names (e.g., "VienneseWaltz") and the values are the maximum playtime in seconds.
 
 **Example** `custom_practice_types.json`
 
@@ -178,7 +180,7 @@ The JSON file should be a dictionary where each key is the name of your custom p
     "randomize_playlist": true,
     "adjust_song_counts": false
   },
-  "Competition": {
+  "Silver+ Practice": {
     "dances": ["Waltz", "Tango", "VWSlow", "VienneseWaltz", "Foxtrot", "QuickStep", "WCS", "Samba", "ChaCha", "Rumba", "PasoDoble", "JSlow", "Jive"],
     "num_selections": 3,
     "auto_update": false,
@@ -197,6 +199,10 @@ The JSON file should be a dictionary where each key is the name of your custom p
       "VienneseWaltz": "n-1",
       "Jive": "n-1",
       "WCS": "cap_at_2"
+    },
+    "dance_max_playtimes": {
+      "VienneseWaltz": 120,
+      "Jive": 150
     }
   },
   "Misc": {
