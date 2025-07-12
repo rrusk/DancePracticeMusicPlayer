@@ -11,6 +11,8 @@ import random
 import json
 import sys
 import typing
+import threading
+from functools import partial
 
 # IMPORTANT: Kivy Config.set for graphics must be called BEFORE importing any other Kivy modules.
 from kivy.config import Config
@@ -232,6 +234,7 @@ class MusicPlayer(BoxLayout):
 
     # New ObjectProperty for the playlist button
     playlist_button = ObjectProperty(None)
+    _playlist_generation_in_progress = BooleanProperty(False)
 
 
     def __init__(self, **kwargs):
@@ -270,8 +273,10 @@ class MusicPlayer(BoxLayout):
         self._build_ui()
         self._bind_properties()
 
-        if not self.playlist and self.music_dir:
-            self.update_playlist(self.music_dir)
+        if self.music_dir:
+            self.update_playlist()
+        else:
+            self._display_playlist_buttons()
 
     def load_custom_practice_types(self) -> dict:
         """Load custom practice types from a JSON file in the application directory.
@@ -476,7 +481,7 @@ class MusicPlayer(BoxLayout):
         self.play_pause_button.bind(on_press=self.toggle_play_pause)
         stop_button.bind(on_press=self.stop_sound)
         restart_button.bind(on_press=self.restart_sound)
-        self.playlist_button.bind(on_press=lambda instance: self.update_playlist(self.music_dir))
+        self.playlist_button.bind(on_press=self.update_playlist)
         settings_button.bind(on_press=lambda instance: App.get_running_app().open_settings())
 
         control_buttons.add_widget(self.play_pause_button)
@@ -505,6 +510,8 @@ class MusicPlayer(BoxLayout):
         self.progress_bar.bind(on_touch_up=self.on_slider_move)
         self.bind(progress_text=self.progress_label.setter("text"))
         self.bind(practice_type=self.update_playlist_button_text) # Bind practice_type here
+        self.bind(_playlist_generation_in_progress=self.on_playlist_generation_status_change)
+
 
     def _get_icon_path(self, icon_name: str) -> str:
         """Constructs the full, absolute path to an icon file.
@@ -541,6 +548,8 @@ class MusicPlayer(BoxLayout):
         Args:
             _instance: The widget instance that triggered the event (unused).
         """
+        if self._playlist_generation_in_progress:
+            return # Don't allow play/pause while playlist is generating
         if self.sound and self.sound.state == "play":
             self.pause_sound()
         else:
@@ -769,7 +778,7 @@ class MusicPlayer(BoxLayout):
         if self._current_button:
             self._current_button.background_color = PlayerConstants.SONG_BTN_BACKGROUND_COLOR
 
-        if self._song_buttons:
+        if self._song_buttons and self.playlist_idx < len(self._song_buttons):
             self._current_button = self._song_buttons[self.playlist_idx]
             self._current_button.background_color = PlayerConstants.ACTIVE_SONG_BUTTON_COLOR
 
@@ -864,25 +873,18 @@ class MusicPlayer(BoxLayout):
             self._advance_playlist()
 
     def _advance_playlist(self) -> None:
-        """Advances to the next song in the playlist.
-
-        This method increments the `playlist_idx`, unloads the completed song, and
-        initiates playback of the next song. If the end of the playlist is reached,
-        it either regenerates the playlist (if `auto_update_restart_playlist` is True)
-        or stops playback.
-        """
+        """Advances to the next song in the playlist."""
         if self.sound:
             self.sound.unload()
         self.playlist_idx += 1
         self._playing_position = 0
-        self.sound = None  # Force reloading for the next song
+        self.sound = None
 
         if self.playlist_idx < len(self.playlist):
             self.play_sound()
         elif self.auto_update_restart_playlist:
-            self.update_playlist(self.music_dir)
-            # Restart with the first song after updating playlist
-            self.on_song_button_press(0)
+            # Call update_playlist with the flag to auto-start playback.
+            self.update_playlist(start_playback=True)
         else:
             self.restart_playlist()
 
@@ -895,10 +897,12 @@ class MusicPlayer(BoxLayout):
         Args:
             index: The index of the song in the `playlist` that was clicked.
         """
-        self.stop_sound()  # Stop current sound and reset state
+        if self._playlist_generation_in_progress:
+            return # Don't allow song selection while playlist is generating
+        self.stop_sound()
         self._playing_position = 0
         self.playlist_idx = index
-        self.sound = None  # Ensure sound is reloaded for the new song
+        self.sound = None
         self.play_sound()
 
     def _secs_to_time_str(self, time_sec: float) -> str:
@@ -928,11 +932,11 @@ class MusicPlayer(BoxLayout):
         Args:
             _instance: The widget instance that triggered the event (unused).
         """
-        self.stop_sound()  # Use the existing stop_sound to handle unloading and unscheduling
+        self.stop_sound()
         self.playlist_idx = 0
         self.song_title = PlayerConstants.INIT_SONG_TITLE
         self._reset_song_button_colors()
-        if self._song_buttons:
+        if self._song_buttons and len(self._song_buttons) > 0:
             self._current_button = self._song_buttons[self.playlist_idx]
             self._current_button.background_color = PlayerConstants.ACTIVE_SONG_BUTTON_COLOR
             self.scrollview.scroll_to(self._current_button)
@@ -942,27 +946,67 @@ class MusicPlayer(BoxLayout):
         for btn in self._song_buttons:
             btn.background_color = PlayerConstants.SONG_BTN_BACKGROUND_COLOR
 
-    def update_playlist(self, directory: str, _instance: typing.Any = None) -> None:
-        """Generates a new playlist based on the current settings.
+    def on_playlist_generation_status_change(
+        self, _instance: typing.Any, is_generating: bool) -> None:
+        """Provides user feedback when playlist generation starts or stops."""
+        if is_generating:
+            self.playlist_button.disabled = True
+            self.button_grid.clear_widgets()
+            loading_label = Label(
+                text="Generating new playlist, please wait...", size_hint_y=None, height=40)
+            self.button_grid.add_widget(loading_label)
+        else:
+            self.playlist_button.disabled = False
 
-        This method stops any current playback, clears the existing playlist, and then iterates
-        through the `dances` list for the current practice type. For each dance, it fetches
-        the specified number of songs from the corresponding subdirectory in the `directory`.
-        Finally, it refreshes the UI to display the new playlist.
+    def update_playlist(self, _instance: typing.Any = None, start_playback: bool = False) -> None:
+        """Triggers the generation of a new playlist in a background thread."""
+        if self._playlist_generation_in_progress:
+            return
 
-        Args:
-            directory: The root directory containing the music subfolders.
-            _instance: The widget instance that triggered the event (unused).
-        """
         self.stop_sound()
-        self.playlist = []
-        for dance in self.dances:
-            self.playlist.extend(self._get_songs_for_dance(
-                directory, dance, self.num_selections, self.randomize_playlist))
+        self._playlist_generation_in_progress = True
+
+        thread = threading.Thread(
+            target=self._generate_playlist_in_background,
+            args=(
+                self.music_dir,
+                self.dances,
+                self.num_selections,
+                self.randomize_playlist,
+                start_playback
+            ),
+            daemon=True
+        )
+        thread.start()
+
+    def _generate_playlist_in_background(
+        self, directory: str, dances: list, num_selections: int,
+        randomize: bool, start_playback: bool
+    ) -> None:
+        """Performs the blocking I/O of scanning files and reading metadata."""
+        new_playlist = []
+        for dance in dances:
+            new_playlist.extend(self._get_songs_for_dance(
+                directory, dance, num_selections, randomize))
+
+        # Schedule the UI update to run on the main Kivy thread
+        Clock.schedule_once(partial(
+            self._finish_playlist_generation, new_playlist, start_playback
+        ))
+
+    def _finish_playlist_generation(
+        self, new_playlist: list, start_playback: bool, _dt: float) -> None:
+        """Updates the UI with the newly generated playlist."""
+        self.playlist = new_playlist
         self.playlist_idx = 0
         self.sound = None
         self._display_playlist_buttons()
         self.restart_playlist()
+        self._playlist_generation_in_progress = False
+
+        # If triggered by an auto-update, start playing the first song.
+        if start_playback and self.playlist:
+            self.play_sound()
 
     def _display_playlist_buttons(self, playlist: typing.Optional[list] = None) -> None:
         """Renders the buttons for each song in the playlist view.
@@ -979,8 +1023,14 @@ class MusicPlayer(BoxLayout):
         self._song_buttons = []
 
         if not playlist_to_display:
+            # This handles both an empty playlist and the initial state before a music_dir is set
+            if not self.music_dir:
+                message = PlayerConstants.INIT_MUSIC_SELECTION
+            else:
+                message = "No songs found for the selected practice type. Check music sub-folders."
+
             btn = Button(
-                text=PlayerConstants.INIT_MUSIC_SELECTION,
+                text=message,
                 size_hint_y=None,
                 height=40,
                 background_color=(1, 0, 0, 1),  # Red background for error
@@ -1137,6 +1187,8 @@ class MusicPlayer(BoxLayout):
         Returns:
             A list of full paths to all found music files.
         """
+        if not directory or not os.path.isdir(directory):
+            return []
         subdir = os.path.join(directory, dance)
         if not os.path.isdir(subdir):
             return []
@@ -1234,9 +1286,9 @@ class MusicPlayer(BoxLayout):
         self.current_dance_adjustments = adj_dict
         self.current_dance_max_playtimes = max_playtimes_dict
 
-        self.stop_sound()
-        self.update_playlist(self.music_dir)
-        # The practice_type property will trigger update_playlist_button_text automatically
+        if self.music_dir:
+            self.update_playlist()
+
 
     def update_playlist_button_text(self, _instance: typing.Any, practice_type_value: str) -> None:
         """Updates the text of the 'New Playlist' button to show the current practice type.
@@ -1309,7 +1361,7 @@ class MusicApp(App):
         if self.config.has_section(user_section):
             self.root.volume = self.config.getfloat(user_section, "volume", fallback=0.7)
             self.root.music_dir = self.config.get(
-                user_section, "music_dir", fallback=self.DEFAULT_MUSIC_DIR
+                user_section, "music_dir", fallback="" # Default to empty string
             )
             self.root.song_max_playtime = self.config.getint(
                 user_section, "song_max_playtime", fallback=210
@@ -1342,7 +1394,11 @@ class MusicApp(App):
         # These methods are only called if sys.platform is 'win32',
         # ensuring ctypes is already imported and available.
         self._hide_console_window()
-        self._prime_gstreamer()
+        # Priming GStreamer can be problematic if no playlist is loaded yet.
+        # It's better to prime it just before the first playback if possible,
+        # but this simple startup prime is a common workaround.
+        if self.root.playlist:
+            self._prime_gstreamer()
 
     def _hide_console_window(self) -> None:
         """Hides the command-line console window that may appear on Windows."""
@@ -1360,15 +1416,14 @@ class MusicApp(App):
             if (
                 self.root
                 and self.root.playlist
-                and self.root.playlist_idx is not None
                 and (temp_sound := SoundLoader.load(
-                    self.root.playlist[self.root.playlist_idx]['path']))
+                    self.root.playlist[0]['path']))
             ):
                 temp_sound.play()
                 temp_sound.stop()
-                temp_sound.unload()  # Unload immediately after priming
-        except (IndexError, OSError, AttributeError) as e:
-            print(f"Error during gstreamer priming: {e}")
+                temp_sound.unload()
+        except (IndexError, OSError, AttributeError, TypeError) as e:
+            print(f"Non-critical error during gstreamer priming: {e}")
 
     def build_config(self, config: ConfigParser) -> None:
         """Sets the default values for the application's configuration file.
@@ -1428,7 +1483,7 @@ class MusicApp(App):
                         print(f"Error: Invalid volume value '{value}'. Must be a float.")
                 case "music_dir":
                     self.root.music_dir = value
-                    self.root.update_playlist(value)
+                    self.root.update_playlist()
                 case "song_max_playtime":
                     try:
                         self.root.song_max_playtime = int(value)
@@ -1436,6 +1491,7 @@ class MusicApp(App):
                         print(f"Error: Invalid max playtime value '{value}'. Must be an integer.")
                 case "practice_type":
                     self.root.practice_type = value
+                    # set_practice_type will trigger its own playlist update
                     self.root.set_practice_type(None, value)
 
 if __name__ == "__main__":
