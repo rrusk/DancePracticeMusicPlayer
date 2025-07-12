@@ -42,7 +42,7 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.slider import Slider
 from kivy.uix.settings import SettingsWithSpinner
 from kivy.config import ConfigParser
-from tinytag import TinyTag
+from tinytag import TinyTag, TinyTagException
 
 # Conditional import for Windows-specific functionality
 # This ensures ctypes is only imported if on Windows,
@@ -558,8 +558,9 @@ class MusicPlayer(BoxLayout):
             self.restart_playlist()
             return
 
-        current_song_path = self.playlist[self.playlist_idx]['path']
-        self.music_file = current_song_path # needed to get song duration
+        current_song = self.playlist[self.playlist_idx]
+        current_song_path = current_song['path']
+        self.music_file = current_song_path # Keep for reference if needed
 
         if not os.path.exists(current_song_path):
             self.show_error_popup(f"Song file not found: {current_song_path}")
@@ -580,14 +581,14 @@ class MusicPlayer(BoxLayout):
             self.sound.stop()
 
         self.sound.volume = self.volume
-        self._total_time = self._get_song_duration_str(current_song_path)
-        self.song_title = self._get_song_label(current_song_path)[:90]
+        self._total_time = self._get_song_duration_str(current_song['duration'])
+        self.song_title = self._get_song_label(current_song)[:120]  # Limit to 120 characters
 
         self._update_song_button_highlight()
         self._scroll_to_current_song()
 
         self._unschedule_progress_update()
-        self._schedule_progress_update()
+        self._schedule_progress_update(current_song['duration'])
 
         self._apply_platform_specific_play()
 
@@ -723,23 +724,20 @@ class MusicPlayer(BoxLayout):
             Clock.unschedule(self._update_progress_event)
             self._update_progress_event = None
 
-    def _schedule_progress_update(self) -> None:
+    def _schedule_progress_update(self, duration: float) -> None:
         """Schedules the `update_progress` method to be called periodically.
 
         This creates a `Clock` event that fires at a regular interval (`_schedule_interval`),
         allowing the progress bar and time display to be updated smoothly during playback.
         It also sets the `progress_max` value based on the song's actual duration.
+
+        Args:
+            duration: The duration of the song in seconds.
         """
         self._update_progress_event = Clock.schedule_interval(
             self.update_progress, self._schedule_interval
         )
-        # Use TinyTag to get the accurate duration for progress_max
-        if self.music_file and os.path.exists(self.music_file):
-            tag = TinyTag.get(self.music_file)
-            duration = tag.duration if tag.duration is not None else 300
-            self.progress_max = round(duration)
-        else:
-            self.progress_max = 300 # Fallback in case music_file is not set or valid
+        self.progress_max = round(duration)
 
     def _apply_platform_specific_play(self) -> None:
         """Applies platform-specific workarounds for sound playback.
@@ -811,7 +809,7 @@ class MusicPlayer(BoxLayout):
 
                 # Announcements should just play out; their natural duration is their max playtime.
                 if current_dance == 'announce':
-                    max_playtime = self.progress_max
+                    max_playtime = song_info.get('duration', self.song_max_playtime)
                 else:
                     max_playtime = self.current_dance_max_playtimes.get(
                         current_dance, self.song_max_playtime
@@ -993,9 +991,8 @@ class MusicPlayer(BoxLayout):
             self.button_grid.add_widget(btn)
         else:
             for i, song_info in enumerate(playlist_to_display):
-                song_path = song_info['path']
                 btn = Button(
-                    text=self._get_song_label(song_path),
+                    text=self._get_song_label(song_info),
                     size_hint_y=None,
                     height=40,
                     background_color=PlayerConstants.SONG_BTN_BACKGROUND_COLOR,
@@ -1010,59 +1007,46 @@ class MusicPlayer(BoxLayout):
         # pushing all previous content to the top.
         self.button_grid.add_widget(Label(size_hint_y=1))
 
-    def _get_song_duration_str(self, selection: str) -> str:
-        """Retrieves the duration of a media file using TinyTag and formats it.
+    def _get_song_duration_str(self, duration_sec: float) -> str:
+        """Returns the duration of a song as a formatted string from seconds.
 
         Args:
-            selection: The file path to the song.
+            duration_sec: The duration in seconds.
 
         Returns:
             A formatted duration string (e.g., "03:30").
         """
-        tag = TinyTag.get(selection)
-        duration = tag.duration if tag.duration is not None else 300
-        return self._secs_to_time_str(duration)
+        return self._secs_to_time_str(duration_sec)
 
-    def _get_song_label(self, selection: str) -> str:
-        """Generates a descriptive label for a song from its metadata.
-
-        It uses TinyTag to extract title, genre, artist, and album. If no tags are found,
-        it falls back to the filename.
+    def _get_song_label(self, song_info: dict) -> str:
+        """Generates a descriptive label for a song from its pre-fetched metadata.
+        
+        For announcements, it only shows the title (e.g. 'Waltz'). For all
+        other songs, it returns a label with title, genre, artist, and album.
 
         Args:
-            selection: The file path to the song.
+            song_info: The dictionary for the song containing its metadata.
 
         Returns:
-            A formatted string like "Title / Genre / Artist / Album".
+            A formatted string to be used as the song's label.
         """
-        label = pathlib.Path(selection).stem
-        tag = TinyTag.get(selection)
+        # If the song is an announcement, just return its title.
+        if song_info.get('dance') == 'announce':
+            return song_info.get('title', "Announcement")
 
-        if all(
-            [tag.title is None, tag.genre is None, tag.artist is None, tag.album is None]
-        ):
-            return label
-
-        title = tag.title if tag.title is not None else "Title Unspecified"
-        genre = tag.genre if tag.genre is not None else "Genre Unspecified"
-        artist = tag.artist if tag.artist is not None else "Artist Unspecified"
-        album = tag.album if tag.album is not None else "Album Unspecified"
+        # Otherwise, build the full label for a regular song.
+        title = song_info.get('title', "Title Unspecified")
+        genre = song_info.get('genre', "Genre Unspecified")
+        artist = song_info.get('artist', "Artist Unspecified")
+        album = song_info.get('album', "Album Unspecified")
 
         return f"{title} / {genre} / {artist} / {album}"
 
+    # This method interprets the adjustment rules from the JSON file.
     def _get_adjusted_song_count(self, dance: str, num_selections: int) -> int:
-        """Adjusts the number of songs for a dance based on custom rules.
-
-        This function consults the `current_dance_adjustments` dictionary for the active
-        practice type. Rules can be either a dictionary mapping input counts to output counts
-        (e.g., {"1": 0, "2": 1}) or a string formula (e.g., "n-1", "cap_at_1").
-
-        Args:
-            dance: The name of the dance to check for adjustment rules.
-            num_selections: The base number of selections before adjustment.
-
-        Returns:
-            The adjusted number of songs. Returns `num_selections` if no rules apply.
+        """
+        Adjusts the number of songs for a dance based on rules defined in the
+        current practice type's 'dance_adjustments' dictionary.
         """
         if not self.adjust_song_counts_for_playlist or dance not in self.current_dance_adjustments:
             return num_selections
@@ -1087,13 +1071,90 @@ class MusicPlayer(BoxLayout):
 
         return num_selections
 
-    def _get_songs_for_dance(
-        self, directory: str, dance: str, num_selections: int, randomize: bool) -> list:
-        """Retrieves a list of song file paths for a specific dance.
+    def _create_song_info(self, path: str, dance: str) -> typing.Optional[dict]:
+        """Reads metadata from a music file and returns it as a dictionary.
 
-        It scans the subdirectory corresponding to the `dance` name, collects all valid
-        music files, and selects a sample based on `num_selections` and the `randomize` flag.
-        It can also prepend a spoken announcement file (e.g., "Waltz.ogg") if one exists.
+        Args:
+            path: The full path to the music file.
+            dance: The dance type associated with this song ('announce' for announcements).
+
+        Returns:
+            A dictionary containing song metadata, or None if reading fails.
+        """
+        try:
+            tag = TinyTag.get(path)
+            if dance == 'announce':
+                return {
+                    'path': path,
+                    'dance': 'announce',
+                    'title': pathlib.Path(path).stem,
+                    'artist': 'Announcement', 'album': '', 'genre': '',
+                    'duration': tag.duration if tag.duration is not None else 5,
+                }
+            return {
+                'path': path,
+                'dance': dance,
+                'title': tag.title or pathlib.Path(path).stem,
+                'artist': tag.artist or "Artist Unspecified",
+                'album': tag.album or "Album Unspecified",
+                'genre': tag.genre or "Genre Unspecified",
+                'duration': tag.duration if tag.duration is not None else 300,
+            }
+        except (TinyTagException, OSError) as e:
+            print(f"Could not read metadata for {path}: {e}")
+            return None
+
+    def _get_announce_path(self, dance_name: str) -> typing.Optional[str]:
+        """Constructs the path for a dance announcement audio file.
+
+        It first looks for a specific announcement file (e.g., 'Waltz.ogg') and
+        falls back to a generic one ('Generic.ogg') if the specific one is not found.
+
+        Args:
+            dance_name: The name of the dance.
+
+        Returns:
+            The file path to the announcement audio, or None if not found.
+        """
+        announce_dir = os.path.join(self.script_path, "announce")
+        specific_announce_path = os.path.join(announce_dir, f"{dance_name}.ogg")
+        generic_announce_path = os.path.join(announce_dir, "Generic.ogg")
+
+        if os.path.isfile(specific_announce_path):
+            return specific_announce_path
+        elif os.path.isfile(generic_announce_path):
+            return generic_announce_path
+        else:
+            return None
+
+    def _collect_music_files(self, directory: str, dance: str) -> list[str]:
+        """Scans a directory for all valid music files.
+
+        Args:
+            directory: The root music directory.
+            dance: The name of the dance subfolder.
+
+        Returns:
+            A list of full paths to all found music files.
+        """
+        subdir = os.path.join(directory, dance)
+        if not os.path.isdir(subdir):
+            return []
+
+        music_paths = []
+        for root, _, files in os.walk(subdir):
+            music_paths.extend(
+                [os.path.join(root, file) for file in files if file.lower().endswith((
+                    ".mp3", ".ogg", ".m4a", ".flac", ".wav"))])
+        return music_paths
+
+    def _get_songs_for_dance(
+        self, directory: str, dance: str, num_selections: int, randomize: bool
+    ) -> list:
+        """Retrieves a list of song dictionaries for a specific dance.
+
+        This method coordinates collecting music files, applying selection logic,
+        reading metadata, and prepending a spoken announcement.
 
         Args:
             directory: The root music directory.
@@ -1102,43 +1163,35 @@ class MusicPlayer(BoxLayout):
             randomize: If True, songs are shuffled; otherwise, they are sorted alphabetically.
 
         Returns:
-            A list of song dictionaries, where each dictionary contains the path and dance type.
+            A list of song dictionaries with pre-fetched metadata, potentially
+            including an announcement at the beginning.
         """
-        def get_announce_path(dance_name):
-            announce_path = os.path.join(self.script_path, "announce", f"{dance_name}.ogg")
-            generic_announce_path = os.path.join(self.script_path, "announce", "Generic.ogg")
-            if os.path.isfile(announce_path):
-                return announce_path
-            elif os.path.isfile(generic_announce_path):
-                return generic_announce_path
-            else:
-                return None
-
-        music = []
+        # 1. Get and prepare the list of songs
         adjusted_num_selections = self._get_adjusted_song_count(dance, num_selections)
-        subdir = os.path.join(directory, dance)
+        all_music_paths = self._collect_music_files(directory, dance)
 
-        if not os.path.exists(subdir):
+        if not all_music_paths or adjusted_num_selections == 0:
             return []
 
-        for root, _, files in os.walk(subdir):
-            for file in files:
-                if file.endswith((".mp3", ".ogg", ".m4a", ".flac", ".wav")):
-                    music.append({'path': os.path.join(root, file), 'dance': dance})
+        num_to_sample = min(adjusted_num_selections, len(all_music_paths))
 
-        if not music:
-            return []
-
-        num = min(adjusted_num_selections, len(music))
         if randomize:
-            selected_songs = random.sample(music, num)
+            sampled_paths = random.sample(all_music_paths, num_to_sample)
         else:
-            selected_songs = sorted(random.sample(music, num), key=lambda x: x['path'])
+            sampled_paths = sorted(all_music_paths)[:num_to_sample]
 
-        announce = get_announce_path(dance)
-        if announce:
-            selected_songs.insert(0, {'path': announce, 'dance': 'announce'})
-        return selected_songs
+        # 2. Create the song info dictionaries
+        playlist = [
+            song_info for path in sampled_paths
+            if (song_info := self._create_song_info(path, dance)) is not None
+        ]
+
+        # 3. Get the announcement and prepend it to the playlist
+        if (announce_path := self._get_announce_path(dance)) and \
+        (announce_info := self._create_song_info(announce_path, 'announce')):
+            playlist.insert(0, announce_info)
+
+        return playlist
 
     def set_practice_type(self, _spinner_instance: typing.Any, text: str) -> None:
         """Configures player behavior based on the selected practice type.
