@@ -947,12 +947,14 @@ class MusicPlayer(BoxLayout):
         for btn in self._song_buttons:
             btn.background_color = PlayerConstants.SONG_BTN_BACKGROUND_COLOR
 
-    def on_playlist_generation_status_change(self, _instance: typing.Any, is_generating: bool) -> None:
+    def on_playlist_generation_status_change(
+        self, _instance: typing.Any, is_generating: bool) -> None:
         """Provides user feedback when playlist generation starts or stops."""
         if is_generating:
             self.playlist_button.disabled = True
             self.button_grid.clear_widgets()
-            loading_label = Label(text="Generating new playlist, please wait...", size_hint_y=None, height=40)
+            loading_label = Label(
+                text="Generating new playlist, please wait...", size_hint_y=None, height=40)
             self.button_grid.add_widget(loading_label)
         else:
             self.playlist_button.disabled = False
@@ -979,7 +981,8 @@ class MusicPlayer(BoxLayout):
         thread.start()
 
     def _generate_playlist_in_background(
-        self, directory: str, dances: list, num_selections: int, randomize: bool, start_playback: bool
+        self, directory: str, dances: list, num_selections: int,
+        randomize: bool, start_playback: bool
     ) -> None:
         """Performs the blocking I/O of scanning files and reading metadata."""
         new_playlist = []
@@ -992,7 +995,8 @@ class MusicPlayer(BoxLayout):
             self._finish_playlist_generation, new_playlist, start_playback
         ))
 
-    def _finish_playlist_generation(self, new_playlist: list, start_playback: bool, _dt: float) -> None:
+    def _finish_playlist_generation(
+        self, new_playlist: list, start_playback: bool, _dt: float) -> None:
         """Updates the UI with the newly generated playlist."""
         self.playlist = new_playlist
         self.playlist_idx = 0
@@ -1017,8 +1021,7 @@ class MusicPlayer(BoxLayout):
                 return
 
             print("Priming GStreamer audio backend...")
-            temp_sound = SoundLoader.load(self.playlist[0]['path'])
-            if temp_sound:
+            if (temp_sound := SoundLoader.load(self.playlist[0]['path'])):
                 temp_sound.play()
                 temp_sound.stop()
                 temp_sound.unload()
