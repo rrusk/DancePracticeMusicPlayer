@@ -235,6 +235,7 @@ class MusicPlayer(BoxLayout):
     # New ObjectProperty for the playlist button
     playlist_button = ObjectProperty(None)
     _playlist_generation_in_progress = BooleanProperty(False)
+    _is_first_load = BooleanProperty(True)
 
 
     def __init__(self, **kwargs):
@@ -946,14 +947,12 @@ class MusicPlayer(BoxLayout):
         for btn in self._song_buttons:
             btn.background_color = PlayerConstants.SONG_BTN_BACKGROUND_COLOR
 
-    def on_playlist_generation_status_change(
-        self, _instance: typing.Any, is_generating: bool) -> None:
+    def on_playlist_generation_status_change(self, _instance: typing.Any, is_generating: bool) -> None:
         """Provides user feedback when playlist generation starts or stops."""
         if is_generating:
             self.playlist_button.disabled = True
             self.button_grid.clear_widgets()
-            loading_label = Label(
-                text="Generating new playlist, please wait...", size_hint_y=None, height=40)
+            loading_label = Label(text="Generating new playlist, please wait...", size_hint_y=None, height=40)
             self.button_grid.add_widget(loading_label)
         else:
             self.playlist_button.disabled = False
@@ -980,8 +979,7 @@ class MusicPlayer(BoxLayout):
         thread.start()
 
     def _generate_playlist_in_background(
-        self, directory: str, dances: list, num_selections: int,
-        randomize: bool, start_playback: bool
+        self, directory: str, dances: list, num_selections: int, randomize: bool, start_playback: bool
     ) -> None:
         """Performs the blocking I/O of scanning files and reading metadata."""
         new_playlist = []
@@ -994,8 +992,7 @@ class MusicPlayer(BoxLayout):
             self._finish_playlist_generation, new_playlist, start_playback
         ))
 
-    def _finish_playlist_generation(
-        self, new_playlist: list, start_playback: bool, _dt: float) -> None:
+    def _finish_playlist_generation(self, new_playlist: list, start_playback: bool, _dt: float) -> None:
         """Updates the UI with the newly generated playlist."""
         self.playlist = new_playlist
         self.playlist_idx = 0
@@ -1007,6 +1004,27 @@ class MusicPlayer(BoxLayout):
         # If triggered by an auto-update, start playing the first song.
         if start_playback and self.playlist:
             self.play_sound()
+
+        # Prime GStreamer on Windows after the very first playlist is loaded
+        if self._is_first_load and sys.platform == "win32":
+            self._prime_gstreamer()
+            self._is_first_load = False
+
+    def _prime_gstreamer(self) -> None:
+        """Workaround for GStreamer delay on Windows, called after first playlist is loaded."""
+        try:
+            if not self.playlist:
+                return
+
+            print("Priming GStreamer audio backend...")
+            temp_sound = SoundLoader.load(self.playlist[0]['path'])
+            if temp_sound:
+                temp_sound.play()
+                temp_sound.stop()
+                temp_sound.unload()
+                print("GStreamer priming successful.")
+        except (IndexError, OSError, AttributeError, TypeError) as e:
+            print(f"Non-critical error during GStreamer priming: {e}")
 
     def _display_playlist_buttons(self, playlist: typing.Optional[list] = None) -> None:
         """Renders the buttons for each song in the playlist view.
@@ -1386,44 +1404,13 @@ class MusicApp(App):
             self.root.practice_type = loaded_practice_type
 
     def _windows_startup_fixes(self, _dt: float) -> None:
-        """Applies startup fixes specific to the Windows platform.
-
-        Args:
-            _dt: The time delta since the schedule (unused).
-        """
-        # These methods are only called if sys.platform is 'win32',
-        # ensuring ctypes is already imported and available.
+        """Applies startup fixes specific to the Windows platform."""
         self._hide_console_window()
-        # Priming GStreamer can be problematic if no playlist is loaded yet.
-        # It's better to prime it just before the first playback if possible,
-        # but this simple startup prime is a common workaround.
-        if self.root.playlist:
-            self._prime_gstreamer()
 
     def _hide_console_window(self) -> None:
         """Hides the command-line console window that may appear on Windows."""
         # ctypes is available here because of the module-level conditional import.
         ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 0) # type: ignore
-
-    def _prime_gstreamer(self) -> None:
-        """Workaround for a GStreamer issue on Windows causing a delay on first play.
-
-        This method quickly loads, plays, stops, and unloads the first song in the
-        playlist. This "primes" the GStreamer backend, preventing a noticeable lag
-        when the user clicks play for the first time.
-        """
-        try:
-            if (
-                self.root
-                and self.root.playlist
-                and (temp_sound := SoundLoader.load(
-                    self.root.playlist[0]['path']))
-            ):
-                temp_sound.play()
-                temp_sound.stop()
-                temp_sound.unload()
-        except (IndexError, OSError, AttributeError, TypeError) as e:
-            print(f"Non-critical error during gstreamer priming: {e}")
 
     def build_config(self, config: ConfigParser) -> None:
         """Sets the default values for the application's configuration file.
