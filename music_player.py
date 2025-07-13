@@ -1020,12 +1020,20 @@ class MusicPlayer(BoxLayout):
             if not self.playlist:
                 return
 
-            print("Priming GStreamer audio backend...")
+            print("Priming GStreamer audio backend silently...")
             if (temp_sound := SoundLoader.load(self.playlist[0]['path'])):
+                # Set volume to 0 to make the priming inaudible
+                temp_sound.volume = 0
                 temp_sound.play()
-                temp_sound.stop()
-                temp_sound.unload()
-                print("GStreamer priming successful.")
+
+                # Let it play for a tiny fraction of a second then stop and unload
+                def silent_stop(_dt):
+                    temp_sound.stop()
+                    temp_sound.unload()
+                    print("GStreamer priming successful.")
+
+                Clock.schedule_once(silent_stop, 0.1)
+
         except (IndexError, OSError, AttributeError, TypeError) as e:
             print(f"Non-critical error during GStreamer priming: {e}")
 
