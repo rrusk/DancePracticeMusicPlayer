@@ -110,6 +110,7 @@ class TestMusicPlayerLogic(unittest.TestCase):
         self.assertEqual(self.player.num_selections, 2)
         self.assertEqual(self.player.randomize_playlist, True)
         self.assertEqual(self.player.adjust_song_counts_for_playlist, True)
+        self.assertFalse(self.player.play_all_songs)
         self.assertIn("PasoDoble", self.player.current_dance_adjustments)
         self.assertEqual(self.player.dances, self.player.practice_dances["default"])
 
@@ -149,6 +150,39 @@ class TestMusicPlayerLogic(unittest.TestCase):
         self.assertIn(os.path.join(fake_waltz_dir, 'song2.wav'), result)
         self.assertIn(os.path.join(fake_waltz_dir, 'subdir', 'song3.m4a'), result)
         self.assertNotIn(os.path.join(fake_waltz_dir, 'info.txt'), result)
+
+    @patch('music_player.MusicPlayer._collect_music_files')
+    @patch('music_player.MusicPlayer._create_song_info')
+    @patch('music_player.MusicPlayer._get_announce_path', return_value=None)
+    def test_get_songs_for_dance_with_play_all(self, mock_get_announce, mock_create_info, mock_collect_files):
+        """Tests that 'play_all_songs' overrides num_selections and gets all files."""
+        # --- Setup ---
+        # Set player state to simulate a practice type where all songs should be played.
+        self.player.play_all_songs = True
+        self.player.randomize_playlist = False # Use non-random for a predictable output order.
+
+        # Mock the list of files that would be found on the file system.
+        fake_paths = ['/music/c.mp3', '/music/a.mp3', '/music/b.mp3']
+        mock_collect_files.return_value = fake_paths
+
+        # Mock the metadata reader to just return the path for easy verification.
+        mock_create_info.side_effect = lambda path, dance: {'path': path, 'dance': dance}
+
+        # --- Action ---
+        # Call the method. Note that num_selections is 1, but should be ignored.
+        result_playlist = self.player._get_songs_for_dance('/fake/dir', 'TestDance', 1, False)
+
+        # --- Assertions ---
+        # 1. Verify that all 3 mocked files were selected, not just 1.
+        self.assertEqual(len(result_playlist), 3)
+
+        # 2. Verify the file collection was called as expected.
+        mock_collect_files.assert_called_with('/fake/dir', 'TestDance')
+
+        # 3. Since randomize_playlist was False, verify the output is sorted alphabetically.
+        self.assertEqual(result_playlist[0]['path'], '/music/a.mp3')
+        self.assertEqual(result_playlist[1]['path'], '/music/b.mp3')
+        self.assertEqual(result_playlist[2]['path'], '/music/c.mp3')
 
 if __name__ == '__main__':
     # The verbosity argument increases the detail of the test output.
