@@ -1,5 +1,5 @@
 {
-    "__COMMENT__ default adjustments when adjust_song_counts true and dance_adjustments left unspecified": {
+    "__COMMENT__ Example of dance_adjustments. If a playlist has 'adjust_song_counts: true' and does not define its own 'dance_adjustments', the application uses a default set of adjustments similar to this example.": {
         "dance_adjustments": {
             "PasoDoble": {
                 "1": 0,
@@ -45,31 +45,6 @@
             "VienneseWaltz": 150
         }
     },
-    "120min": {
-        "dances": [
-            "Waltz",
-            "Tango",
-            "VWSlow",
-            "VienneseWaltz",
-            "Foxtrot",
-            "QuickStep",
-            "WCS",
-            "Samba",
-            "ChaCha",
-            "Rumba",
-            "PasoDoble",
-            "JSlow",
-            "Jive"
-        ],
-        "num_selections": 4,
-        "auto_update": false,
-        "play_single_song": false,
-        "randomize_playlist": true,
-        "adjust_song_counts": true,
-        "dance_max_playtimes": {
-            "VienneseWaltz": 150
-        }
-    },
     "Beginner": {
         "dances": [
             "Waltz",
@@ -106,7 +81,7 @@
         "dances": [
             "LineDance"
         ],
-        "num_selections": 100,
+        "play_all_songs": true,
         "auto_update": false,
         "play_single_song": true,
         "randomize_playlist": false,
@@ -162,6 +137,31 @@
             "Jive": 150
         }
     },
+    "I2B 90min": {
+        "dances": [
+            "Waltz",
+            "JSlow",
+            "Jive",
+            "Foxtrot",
+            "Rumba",
+            "Tango",
+            "ChaCha",
+            "WCS",
+            "VWSlow",
+            "VienneseWaltz",
+            "QuickStep",
+            "Samba",
+            "PasoDoble"
+        ],
+        "num_selections": 3,
+        "auto_update": false,
+        "play_single_song": false,
+        "randomize_playlist": true,
+        "adjust_song_counts": true,
+        "dance_max_playtimes": {
+            "VienneseWaltz": 150
+        }
+    },
     "Misc": {
         "dances": [
             "AmericanRumba",
@@ -176,7 +176,7 @@
             "Polka",
             "Salsa"
         ],
-        "num_selections": 100,
+        "play_all_songs": true,
         "auto_update": false,
         "play_single_song": false,
         "randomize_playlist": true,
@@ -186,7 +186,7 @@
         "dances": [
             "Tango"
         ],
-        "num_selections": 100,
+        "play_all_songs": true,
         "auto_update": false,
         "play_single_song": true,
         "randomize_playlist": false,

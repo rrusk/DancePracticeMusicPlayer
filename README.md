@@ -32,7 +32,7 @@ The application is designed to play music files (MP3, WAV, OGG, M4A, FLAC, WAV) 
 - **Intuitive UI:** Play, pause, stop, restart controls, and a clickable, scrollable playlist
 - **Real-time Progress:** Displays current song title, artist, album, genre, and playback progress with seeking capability
 - **Configurable Settings:** Adjust volume, set music directory, and define a default maximum song playtime via an in-app settings panel
-- **Custom Practice Types:** Easily define new practice routines, dance sequences, and song selection rules using `custom_practice_types.json`, including options for randomize_playlist, adjust_song_counts, and specific dance_adjustments.
+- **Custom Practice Types:** Easily define new practice routines, dance sequences, and song selection rules using `custom_practice_types.json`, including options for play_all_songs, randomize_playlist, adjust_song_counts, and specific dance_adjustments.
 - **Platform Compatibility:** Designed to run on Linux, macOS, and Windows.
 
 ---
@@ -152,7 +152,8 @@ The application allows you to define custom dance practice routines by creating 
 The JSON file should be a dictionary where each key is the name of your custom practice type, and the value is an object containing:
 
 - `dances` (list of strings): The sequence of dance sub-folder names to include in the playlist
-- `num_selections` (integer): The default number of songs to select for each dance type in the dances list
+- `num_selections` (integer): The default number of songs to select for each dance. This is ignored if play_all_songs is set to true
+- `play_all_songs` (boolean, optional): If true, the player selects all available songs for a dance, ignoring num_selections Defaults to false
 - `auto_update (boolean):` If true, the playlist will automatically generate a new set of songs and restart when it reaches the end
 - `play_single_song (boolean):` If true, the player will stop after playing the entirety of a single song from the current selection
 - `randomize_playlist (boolean):` If true, songs for each dance type will be randomly selected. If false, they will be displayed in a fixed order after selection
@@ -219,7 +220,7 @@ The JSON file should be a dictionary where each key is the name of your custom p
       "Polka",
       "Salsa"
     ],
-    "num_selections": 100,
+    "play_all_songs": true,
     "auto_update": false,
     "play_single_song": false,
     "randomize_playlist": true,

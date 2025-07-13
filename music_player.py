@@ -99,6 +99,7 @@ class MusicPlayer(BoxLayout):
         progress_text (StringProperty): A formatted string showing "current_time / total_time".
         song_title (StringProperty): The display title of the currently playing song.
         play_single_song (BooleanProperty): If True, the player stops after the current song.
+        play_all_songs (BooleanProperty): If True, all songs in a dance subfolder are played.
         song_max_playtime (NumericProperty): Default maximum time in seconds a song will play.
         auto_update_restart_playlist (BooleanProperty): If True, a new playlist is generated
             when the current one ends.
@@ -125,6 +126,7 @@ class MusicPlayer(BoxLayout):
     progress_text = StringProperty(PlayerConstants.INIT_POS_DUR)
     song_title = StringProperty(PlayerConstants.INIT_SONG_TITLE)
     play_single_song = BooleanProperty(False)
+    play_all_songs = BooleanProperty(False)
     song_max_playtime = NumericProperty(210)
     auto_update_restart_playlist = BooleanProperty(False)
     randomize_playlist = BooleanProperty(True)
@@ -334,6 +336,7 @@ class MusicPlayer(BoxLayout):
             self.custom_practice_mapping[name] = (
                 name,
                 data.get("num_selections", 2),
+                data.get("play_all_songs", False),
                 data.get("auto_update", False),
                 data.get("play_single_song", False),
                 data.get("randomize_playlist", True),
@@ -1240,34 +1243,44 @@ class MusicPlayer(BoxLayout):
         Args:
             directory: The root music directory.
             dance: The name of the dance (and its subfolder).
-            num_selections: The number of songs to retrieve.
+            num_selections: The number of songs to retrieve (ignored if play_all_songs is True).
             randomize: If True, songs are shuffled; otherwise, they are sorted alphabetically.
 
         Returns:
             A list of song dictionaries with pre-fetched metadata, potentially
             including an announcement at the beginning.
         """
-        # 1. Get and prepare the list of songs
-        adjusted_num_selections = self._get_adjusted_song_count(dance, num_selections)
+        # 1. Get the list of all available music files
         all_music_paths = self._collect_music_files(directory, dance)
-
-        if not all_music_paths or adjusted_num_selections == 0:
+        if not all_music_paths:
             return []
 
-        num_to_sample = min(adjusted_num_selections, len(all_music_paths))
-
-        if randomize:
-            sampled_paths = random.sample(all_music_paths, num_to_sample)
+        # 2. Determine how many songs to select based on the practice type settings
+        if self.play_all_songs:
+            # If play_all_songs is true, we ignore num_selections and select all available songs
+            num_to_sample = len(all_music_paths)
         else:
+            # Otherwise, use the existing logic with num_selections and adjustments
+            adjusted_num_selections = self._get_adjusted_song_count(dance, num_selections)
+            if adjusted_num_selections == 0:
+                return []
+            num_to_sample = min(adjusted_num_selections, len(all_music_paths))
+
+        # 3. Select the song paths (either by sampling or sorting)
+        if randomize:
+            # random.sample handles both selecting a subset and shuffling the whole list
+            sampled_paths = random.sample(all_music_paths, k=num_to_sample)
+        else:
+            # Sorting and slicing works for both selecting a subset and getting the whole list
             sampled_paths = sorted(all_music_paths)[:num_to_sample]
 
-        # 2. Create the song info dictionaries
+        # 4. Create the song info dictionaries for the selected paths
         playlist = [
             song_info for path in sampled_paths
             if (song_info := self._create_song_info(path, dance)) is not None
         ]
 
-        # 3. Get the announcement and prepend it to the playlist
+        # 5. Get the announcement and prepend it to the playlist
         if (announce_path := self._get_announce_path(dance)) and \
         (announce_info := self._create_song_info(announce_path, 'announce')):
             playlist.insert(0, announce_info)
@@ -1292,15 +1305,15 @@ class MusicPlayer(BoxLayout):
             "JSlow": "cap_at_1", "VienneseWaltz": "n-1", "Jive": "n-1", "WCS": "cap_at_2"
         }
         mapping = {
-            "60min": ("default", 2, False, False, True, True, default_adjustments, {}),
-            "NC 60min": ("newcomer", 2, False, False, True, True, default_adjustments, {}),
+            "60min": ("default", 2, False, False, False, True, True, default_adjustments, {}),
+            "NC 60min": ("newcomer", 2, False, False, False, True, True, default_adjustments, {}),
         }
         # Merge in custom mappings using the union operator (Python 3.9+)
         mapping |= getattr(self, "custom_practice_mapping", {})
-        params = mapping.get(text, ("default", 2, True, False, True, False, {}, {}))
+        params = mapping.get(text, ("default", 2, False, True, False, True, False, {}, {}))
 
-        (dance_type, num_selections, auto_update, play_single, randomize, adj_counts,
-         adj_dict, max_playtimes_dict) = params
+        (dance_type, num_selections, play_all, auto_update, play_single, randomize,
+         adj_counts, adj_dict, max_playtimes_dict) = params
 
         # Explicitly apply default_adjustments if adj_counts is True and adj_dict is empty
         if adj_counts and not adj_dict:
@@ -1308,6 +1321,7 @@ class MusicPlayer(BoxLayout):
 
         self.dances = self.get_dances(dance_type)
         self.num_selections = num_selections
+        self.play_all_songs = play_all
         self.auto_update_restart_playlist = auto_update
         self.play_single_song = play_single
         self.randomize_playlist = randomize
