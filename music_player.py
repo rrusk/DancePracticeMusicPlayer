@@ -1305,8 +1305,8 @@ class MusicPlayer(BoxLayout):
             "JSlow": "cap_at_1", "VienneseWaltz": "n-1", "Jive": "n-1", "WCS": "cap_at_2"
         }
         mapping = {
-            "60min": ("default", 2, False, False, False, True, True, default_adjustments, {}),
-            "NC 60min": ("newcomer", 2, False, False, False, True, True, default_adjustments, {}),
+            "60min": ("default", 2, False, False, False, True, True, default_adjustments, {"VienneseWaltz": 150}),
+            "NC 60min": ("newcomer", 2, False, False, False, True, True, default_adjustments, {"VienneseWaltz": 150}),
         }
         # Merge in custom mappings using the union operator (Python 3.9+)
         mapping |= getattr(self, "custom_practice_mapping", {})
