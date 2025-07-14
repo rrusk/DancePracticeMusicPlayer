@@ -161,7 +161,6 @@ class PlaylistEditorScreen(Screen):
         """Resets the form to a template based on the 60min playlist."""
         self.current_playlist_name = None
 
-        # --- MODIFICATION: Template data based on the "60min" built-in playlist ---
         default_60min_data = {
             "dances": [
                 "Waltz", "Tango", "VWSlow", "VienneseWaltz", "Foxtrot", "QuickStep",
@@ -290,104 +289,200 @@ Builder.load_string("""
             size_hint_x: 0.6
 
     BoxLayout:
+        orientation: 'vertical'
         size_hint_y: None
-        height: '30dp'
+        height: self.minimum_height
+        BoxLayout:
+            size_hint_y: None
+            height: '30dp'
+            Label:
+                text: 'Play All Songs'
+                size_hint_x: 0.8
+                text_size: self.size
+                halign: 'left'
+                valign: 'middle'
+            Switch:
+                id: play_all_songs_input
+                size_hint_x: None
+                width: '60dp'
         Label:
-            text: 'Play All Songs:'
-            size_hint_x: 0.8
-            text_size: self.size
-            halign: 'left'
-            valign: 'middle'
-        Switch:
-            id: play_all_songs_input
-            size_hint_x: None
-            width: '60dp'
+            text: "Plays every song in the dance subfolder, ignoring 'Num Selections'."
+            font_size: '11sp'
+            color: 0.7, 0.7, 0.7, 1
+            size_hint_y: None
+            height: self.texture_size[1]
+            text_size: self.width, None
+            padding_x: 10
 
     BoxLayout:
+        orientation: 'vertical'
         size_hint_y: None
-        height: '30dp'
+        height: self.minimum_height
+        BoxLayout:
+            size_hint_y: None
+            height: '30dp'
+            Label:
+                text: 'Auto Update/Restart'
+                size_hint_x: 0.8
+                text_size: self.size
+                halign: 'left'
+                valign: 'middle'
+            Switch:
+                id: auto_update_input
+                size_hint_x: None
+                width: '60dp'
         Label:
-            text: 'Auto Update/Restart:'
-            size_hint_x: 0.8
-            text_size: self.size
-            halign: 'left'
-            valign: 'middle'
-        Switch:
-            id: auto_update_input
-            size_hint_x: None
-            width: '60dp'
+            text: "Automatically generates and starts a new playlist when the current one ends."
+            font_size: '11sp'
+            color: 0.7, 0.7, 0.7, 1
+            size_hint_y: None
+            height: self.texture_size[1]
+            text_size: self.width, None
+            padding_x: 10
 
     BoxLayout:
+        orientation: 'vertical'
         size_hint_y: None
-        height: '30dp'
+        height: self.minimum_height
+        BoxLayout:
+            size_hint_y: None
+            height: '30dp'
+            Label:
+                text: 'Play Single Song'
+                size_hint_x: 0.8
+                text_size: self.size
+                halign: 'left'
+                valign: 'middle'
+            Switch:
+                id: play_single_song_input
+                size_hint_x: None
+                width: '60dp'
         Label:
-            text: 'Play Single Song:'
-            size_hint_x: 0.8
-            text_size: self.size
-            halign: 'left'
-            valign: 'middle'
-        Switch:
-            id: play_single_song_input
-            size_hint_x: None
-            width: '60dp'
+            text: "Stops after each song. Overrides 'Play All' and 'Auto Update'."
+            font_size: '11sp'
+            color: 0.7, 0.7, 0.7, 1
+            size_hint_y: None
+            height: self.texture_size[1]
+            text_size: self.width, None
+            padding_x: 10
 
     BoxLayout:
+        orientation: 'vertical'
         size_hint_y: None
-        height: '30dp'
+        height: self.minimum_height
+        BoxLayout:
+            size_hint_y: None
+            height: '30dp'
+            Label:
+                text: 'Randomize Playlist'
+                size_hint_x: 0.8
+                text_size: self.size
+                halign: 'left'
+                valign: 'middle'
+            Switch:
+                id: randomize_playlist_input
+                size_hint_x: None
+                width: '60dp'
         Label:
-            text: 'Randomize Playlist:'
-            size_hint_x: 0.8
-            text_size: self.size
-            halign: 'left'
-            valign: 'middle'
-        Switch:
-            id: randomize_playlist_input
-            size_hint_x: None
-            width: '60dp'
+            text: "Shuffles songs within each dance. If off, plays in a fixed order."
+            font_size: '11sp'
+            color: 0.7, 0.7, 0.7, 1
+            size_hint_y: None
+            height: self.texture_size[1]
+            text_size: self.width, None
+            padding_x: 10
 
     BoxLayout:
+        orientation: 'vertical'
         size_hint_y: None
-        height: '30dp'
+        height: self.minimum_height
+        BoxLayout:
+            size_hint_y: None
+            height: '30dp'
+            Label:
+                text: 'Adjust Song Counts'
+                size_hint_x: 0.8
+                text_size: self.size
+                halign: 'left'
+                valign: 'middle'
+            Switch:
+                id: adjust_song_counts_input
+                size_hint_x: None
+                width: '60dp'
         Label:
-            text: 'Adjust Song Counts:'
-            size_hint_x: 0.8
-            text_size: self.size
-            halign: 'left'
-            valign: 'middle'
-        Switch:
-            id: adjust_song_counts_input
-            size_hint_x: None
-            width: '60dp'
+            text: "Applies rules from 'Dance Adjustments (JSON)' to change song counts."
+            font_size: '11sp'
+            color: 0.7, 0.7, 0.7, 1
+            size_hint_y: None
+            height: self.texture_size[1]
+            text_size: self.width, None
+            padding_x: 10
 
+    # --- MODIFICATION: Labels are top-aligned and TextInputs are scrollable ---
     BoxLayout:
         size_hint_y: None
-        height: '120dp'
-        Label:
-            text: 'Dance Adjustments (JSON):'
+        height: '170dp'
+        BoxLayout:
+            orientation: 'vertical'
             size_hint_x: 0.4
-            text_size: self.size
-            halign: 'left'
-            valign: 'top'
-        TextInput:
-            id: dance_adjustments_input
+            spacing: 4
+            Label:
+                text: 'Dance Adjustments (JSON):'
+                size_hint_y: None
+                height: self.texture_size[1]
+                text_size: self.width, None
+                halign: 'left'
+                valign: 'top'
+            Label:
+                text: 'Overrides "Num Selections" for specific dances.\\n[b]String Rules:[/b] "n-1", "cap_at_1", "cap_at_2".\\n[b]Mapping Rule:[/b] Use "Num Selections" as key (e.g., "2": 1). Use "default" for all other cases.'
+                markup: True
+                font_size: '11sp'
+                color: 0.7, 0.7, 0.7, 1
+                text_size: self.width, None
+                size_hint_y: None
+                height: self.texture_size[1]
+            Widget: # Spacer to push labels to the top
+        ScrollView:
             size_hint_x: 0.6
-            font_name: 'RobotoMono-Regular'
-            hint_text: 'e.g.,\\n{\\n    "VienneseWaltz": "n-1",\\n    "PasoDoble": { "2": 1, "default": 2 }\\n}'
+            bar_width: 10
+            TextInput:
+                id: dance_adjustments_input
+                size_hint_y: None
+                height: self.minimum_height
+                font_name: 'RobotoMono-Regular'
+                hint_text: 'e.g.,\\n{\\n    "VienneseWaltz": "n-1",\\n    "PasoDoble": { "2": 1, "default": 2 }\\n}'
 
     BoxLayout:
         size_hint_y: None
-        height: '120dp'
-        Label:
-            text: 'Dance Max Playtimes (JSON):'
+        height: '100dp'
+        BoxLayout:
+            orientation: 'vertical'
             size_hint_x: 0.4
-            text_size: self.size
-            halign: 'left'
-            valign: 'top'
-        TextInput:
-            id: dance_max_playtimes_input
+            spacing: 2
+            Label:
+                text: 'Dance Max Playtimes (JSON):'
+                size_hint_y: None
+                height: self.texture_size[1]
+                text_size: self.width, None
+                halign: 'left'
+                valign: 'top'
+            Label:
+                text: 'Overrides default max song playtime for specific dances (in seconds).'
+                font_size: '11sp'
+                color: 0.7, 0.7, 0.7, 1
+                size_hint_y: None
+                height: self.texture_size[1]
+                text_size: self.width, None
+            Widget: # Spacer to push labels to the top
+        ScrollView:
             size_hint_x: 0.6
-            font_name: 'RobotoMono-Regular'
-            hint_text: 'e.g.,\\n{\\n    "VienneseWaltz": 150,\\n    "QuickStep": 180\\n}'
+            bar_width: 10
+            TextInput:
+                id: dance_max_playtimes_input
+                size_hint_y: None
+                height: self.minimum_height
+                font_name: 'RobotoMono-Regular'
+                hint_text: 'e.g.,\\n{\\n    "VienneseWaltz": 150,\\n    "QuickStep": 180\\n}'
 
 <PlaylistEditorScreen>:
     playlist_list_layout: playlist_list_layout
