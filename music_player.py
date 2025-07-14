@@ -46,6 +46,11 @@ from kivy.uix.settings import SettingsWithSpinner
 from kivy.config import ConfigParser
 from tinytag import TinyTag, TinyTagException
 
+# --- Imports for ScreenManager and the editor screen ---
+from kivy.uix.screenmanager import ScreenManager, Screen
+from playlist_editor import PlaylistEditorScreen # Import the new screen
+
+
 # Conditional import for Windows-specific functionality
 # This ensures ctypes is only imported if on Windows,
 # and is then available throughout the module's global scope.
@@ -81,6 +86,23 @@ class PlayerConstants:
     ICON_PAUSE = "pause.png"
     ICON_STOP = "stop.png"
     ICON_REPLAY = "replay.png"
+
+# --- Root ScreenManager Widget ---
+class RootManager(ScreenManager):
+    """The root ScreenManager that holds the player and editor screens."""
+    def reload_custom_types(self):
+        """
+        Finds the music player screen and tells it to reload its custom
+        playlist definitions.
+        """
+        player_screen = self.get_screen('player')
+        # The MusicPlayer widget is the first child of the Screen
+        player_widget = player_screen.children[0]
+        player_widget.merge_custom_practice_types()
+        player_widget.update_settings_options()
+        # Also update the playlist button text in case the practice type was reset
+        player_widget.update_playlist_button_text(None, player_widget.practice_type)
+
 
 class MusicPlayer(BoxLayout):
     """Main widget for the dance practice music player.
@@ -344,6 +366,24 @@ class MusicPlayer(BoxLayout):
                 data.get("dance_adjustments", {}),
                 data.get("dance_max_playtimes", {}),
             )
+    
+    def update_settings_options(self):
+        """
+        Dynamically updates the options in the settings JSON. Call this
+        after practice types have been modified externally.
+        """
+        custom_types = self.load_custom_practice_types()
+        if (practice_type_setting := next(
+            (item for item in self.settings_json if item.get("key") == "practice_type"), None
+        )):
+            # Reset options to default before adding custom ones
+            base_options = ["60min", "NC 60min"]
+            custom_options = list(custom_types.keys())
+            practice_type_setting["options"] = base_options + custom_options
+
+            # If current practice type is no longer valid, reset it
+            if self.practice_type not in practice_type_setting["options"]:
+                self.practice_type = "60min"
 
     def _build_ui(self) -> None:
         """Constructs the main user interface by creating and arranging all widgets.
@@ -481,6 +521,15 @@ class MusicPlayer(BoxLayout):
             background_color=(0.2, 0.6, 0.8, 1),
             color=PlayerConstants.DEFAULT_BUTTON_TEXT_COLOR,
         )
+        # Add the "Edit Playlists" button
+        edit_playlists_button = Button(
+            text="Edit Playlists",
+            background_color=(0.8, 0.6, 0.2, 1), # Orange
+            color=PlayerConstants.DEFAULT_BUTTON_TEXT_COLOR,
+        )
+        # --- FIX: Bind the button to the new method ---
+        edit_playlists_button.bind(on_press=self.switch_to_editor)
+
 
         self.play_pause_button.bind(on_press=self.toggle_play_pause)
         stop_button.bind(on_press=self.stop_sound)
@@ -491,8 +540,10 @@ class MusicPlayer(BoxLayout):
         control_buttons.add_widget(self.play_pause_button)
         control_buttons.add_widget(stop_button)
         control_buttons.add_widget(restart_button)
-        control_buttons.add_widget(self.playlist_button) # Use the ObjectProperty
+        control_buttons.add_widget(self.playlist_button)
         control_buttons.add_widget(settings_button)
+        # Add the new button to the layout
+        control_buttons.add_widget(edit_playlists_button)
         controls.add_widget(control_buttons)
 
         volume_and_controls.add_widget(volume_layout)
@@ -515,6 +566,11 @@ class MusicPlayer(BoxLayout):
         self.bind(progress_text=self.progress_label.setter("text"))
         self.bind(practice_type=self.update_playlist_button_text) # Bind practice_type here
         self.bind(_playlist_generation_in_progress=self.on_playlist_generation_status_change)
+        
+    # --- FIX: Add a new method to handle switching to the editor screen ---
+    def switch_to_editor(self, _instance: typing.Any = None):
+        """Switches the screen to the playlist editor."""
+        App.get_running_app().manager.current = 'editor'
 
 
     def _get_icon_path(self, icon_name: str) -> str:
@@ -1365,19 +1421,29 @@ class MusicApp(App):
         """
         super().__init__(**kwargs)
         self.config = ConfigParser()
+        self.manager = None
+        self.editor_screen = None
+        self.player_widget = None
 
-    def build(self) -> MusicPlayer:
-        """Creates and returns the root widget of the application.
-
-        This method is called by Kivy when the app starts. It instantiates the `MusicPlayer`
-        widget, which serves as the main interface.
-
-        Returns:
-            An instance of the `MusicPlayer` widget.
-        """
+    def build(self) -> ScreenManager:
+        """Creates and returns the root widget of the application."""
         self.settings_cls = SettingsWithSpinner
-        self.root = MusicPlayer()
-        return self.root
+        
+        # Create the screen manager
+        self.manager = RootManager()
+
+        # Create the MusicPlayer screen
+        self.player_widget = MusicPlayer()
+        player_screen = Screen(name='player')
+        player_screen.add_widget(self.player_widget)
+        self.manager.add_widget(player_screen)
+        
+        # Create and add the editor screen
+        self.editor_screen = PlaylistEditorScreen(name='editor')
+        self.manager.add_widget(self.editor_screen)
+
+        return self.manager
+
 
     def on_start(self) -> None:
         """Called once the Kivy application event loop is running.
@@ -1387,7 +1453,7 @@ class MusicApp(App):
         GStreamer priming workaround.
         """
         self._load_config_settings()
-        self.root.set_practice_type(None, self.root.practice_type)
+        self.player_widget.set_practice_type(None, self.player_widget.practice_type)
 
         # Call platform-specific fixes only if on Windows
         if sys.platform == "win32":
@@ -1402,18 +1468,19 @@ class MusicApp(App):
         """
         user_section = "user"
         if self.config.has_section(user_section):
-            self.root.volume = self.config.getfloat(user_section, "volume", fallback=0.7)
-            self.root.music_dir = self.config.get(
+            self.player_widget.volume = self.config.getfloat(user_section, "volume", fallback=0.7)
+            self.player_widget.music_dir = self.config.get(
                 user_section, "music_dir", fallback="" # Default to empty string
             )
-            self.root.song_max_playtime = self.config.getint(
+            self.player_widget.song_max_playtime = self.config.getint(
                 user_section, "song_max_playtime", fallback=210
             )
             # Get available practice types from settings_json
+            self.player_widget.update_settings_options()
             practice_type_options = next(
                 (
                     item["options"]
-                    for item in self.root.settings_json
+                    for item in self.player_widget.settings_json
                     if item.get("key") == "practice_type"
                 ),
                 []
@@ -1426,7 +1493,7 @@ class MusicApp(App):
                 loaded_practice_type = "60min"
                 self.config.set(user_section, "practice_type", loaded_practice_type)
                 self.config.write()
-            self.root.practice_type = loaded_practice_type
+            self.player_widget.practice_type = loaded_practice_type
 
     def _windows_startup_fixes(self, _dt: float) -> None:
         """Applies startup fixes specific to the Windows platform."""
@@ -1464,8 +1531,10 @@ class MusicApp(App):
         Args:
             settings: The Kivy settings object to which the panel is added.
         """
+        # Update settings options before showing them
+        self.player_widget.update_settings_options()
         settings.add_json_panel(
-            "Music Player Settings", self.config, data=json.dumps(self.root.settings_json)
+            "Music Player Settings", self.config, data=json.dumps(self.player_widget.settings_json)
         )
 
     def on_config_change(
@@ -1483,28 +1552,29 @@ class MusicApp(App):
             value: The new value of the setting.
         """
         if section == "user":
+            player = self.player_widget
             match key:
                 case "volume":
                     try:
                         volume_value = float(value)
-                        self.root.volume = volume_value
-                        self.root.set_volume(None, volume_value)
+                        player.volume = volume_value
+                        player.set_volume(None, volume_value)
                         # Directly update the slider value to reflect the change from settings
-                        self.root.volume_slider.value = volume_value
+                        player.volume_slider.value = volume_value
                     except ValueError:
                         print(f"Error: Invalid volume value '{value}'. Must be a float.")
                 case "music_dir":
-                    self.root.music_dir = value
-                    self.root.update_playlist()
+                    player.music_dir = value
+                    player.update_playlist()
                 case "song_max_playtime":
                     try:
-                        self.root.song_max_playtime = int(value)
+                        player.song_max_playtime = int(value)
                     except ValueError:
                         print(f"Error: Invalid max playtime value '{value}'. Must be an integer.")
                 case "practice_type":
-                    self.root.practice_type = value
+                    player.practice_type = value
                     # set_practice_type will trigger its own playlist update
-                    self.root.set_practice_type(None, value)
+                    player.set_practice_type(None, value)
 
 if __name__ == "__main__":
     MusicApp().run()
