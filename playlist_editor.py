@@ -210,10 +210,21 @@ class PlaylistEditorScreen(Screen):
         self.manager.current = 'player'
 
     def show_popup(self, title, message):
-        """Utility function to show a simple popup."""
+        """Utility function to show a popup with an OK button."""
+        content_layout = BoxLayout(orientation='vertical', spacing=10, padding=10)
+        message_label = Label(text=message)
+        ok_button = Button(text="OK", size_hint_y=None, height='44dp')
+
+        content_layout.add_widget(message_label)
+        content_layout.add_widget(ok_button)
+
         popup = Popup(title=title,
-                      content=Label(text=message),
-                      size_hint=(None, None), size=(400, 200))
+                      content=content_layout,
+                      size_hint=(None, None), size=('400dp', '200dp'))
+
+        # Bind the button's on_press event to dismiss the popup
+        ok_button.bind(on_press=popup.dismiss)
+        
         popup.open()
 
 
@@ -278,7 +289,7 @@ Builder.load_string("""
         size_hint_y: None
         height: '35dp'
         Label:
-            text: 'Num Selections:'
+            text: 'Num Selections Per Dance:'
             size_hint_x: 0.4
             text_size: self.size
             halign: 'left'
@@ -418,7 +429,6 @@ Builder.load_string("""
             text_size: self.width, None
             padding_x: 10
 
-    # --- MODIFICATION: Labels are top-aligned and TextInputs are scrollable ---
     BoxLayout:
         size_hint_y: None
         height: '170dp'
@@ -434,7 +444,7 @@ Builder.load_string("""
                 halign: 'left'
                 valign: 'top'
             Label:
-                text: 'Overrides "Num Selections" for specific dances.\\n[b]String Rules:[/b] "n-1", "cap_at_1", "cap_at_2".\\n[b]Mapping Rule:[/b] Use "Num Selections" as key (e.g., "2": 1). Use "default" for all other cases.'
+                text: 'Overrides "Num Selections" for specific dances.\\n\\n[b]String Rules:[/b] Simple formulas.\\n  "n-1": Play one less than Num Selections.\\n  "cap_at_1": Play a maximum of 1 song.\\n\\n[b]Mapping Rule:[/b] A dictionary to map the "Num Selections" value to a song count. Use a "default" key as a fallback.'
                 markup: True
                 font_size: '11sp'
                 color: 0.7, 0.7, 0.7, 1

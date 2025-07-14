@@ -524,7 +524,7 @@ class MusicPlayer(BoxLayout):
         # Add the "Edit Playlists" button
         edit_playlists_button = Button(
             text="Edit Playlists",
-            background_color=(0.8, 0.6, 0.2, 1), # Orange
+            background_color=(0.2, 0.6, 0.8, 1),
             color=PlayerConstants.DEFAULT_BUTTON_TEXT_COLOR,
         )
         # --- FIX: Bind the button to the new method ---
