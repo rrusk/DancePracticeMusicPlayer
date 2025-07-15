@@ -32,6 +32,7 @@ class PracticeTypeEditorScreen(Screen):
         self.script_path = os.path.dirname(os.path.abspath(__file__))
         self.json_path = os.path.join(self.script_path, "custom_practice_types.json")
         self.practice_types = {}
+        self._current_button = None
 
     def on_enter(self, *args):
         """Called when the screen is entered. Loads and displays the practice types."""
@@ -86,14 +87,26 @@ class PracticeTypeEditorScreen(Screen):
     def display_practice_type_list(self):
         """Populates the scroll view with buttons for each practice type."""
         self.practice_type_list_layout.clear_widgets()
+        # When clearing the list, also reset the tracked button
+        self._current_button = None
+        
         sorted_names = sorted(self.practice_types.keys())
         for name in sorted_names:
             btn = Button(text=name, size_hint_y=None, height=40)
-            btn.bind(on_press=partial(self.load_practice_type_into_form, name))
+            # Pass the button 'btn' as an argument to the callback
+            btn.bind(on_press=partial(self.load_practice_type_into_form, btn, name))
             self.practice_type_list_layout.add_widget(btn)
 
-    def load_practice_type_into_form(self, name, *args):
-        """Loads the selected practice type's data into the form."""
+    def load_practice_type_into_form(self, button_instance, name, *args):
+        """Loads the selected practice type's data into the form and highlights the button."""
+        # Reset the color of the previously selected button, if it exists
+        if self._current_button:
+            self._current_button.background_color = (1, 1, 1, 1) # Default color
+
+        # Set the color of the newly clicked button
+        button_instance.background_color = (0, 1, 1, 1) # Highlight color (cyan)
+        self._current_button = button_instance
+        
         self.current_practice_type_name = name
         data = self.practice_types[name]
 
@@ -141,7 +154,8 @@ class PracticeTypeEditorScreen(Screen):
             self.practice_types[name] = new_data
             self.current_practice_type_name = name
             
-            # If a rename of the active type occurred, update the player and the app config
+            # If a rename of the active type occurred, update the player's state.
+            # The binding in MusicPlayer will handle updating the config file.
             if old_name and old_name != name:
                 app = App.get_running_app()
                 player_widget = app.manager.get_screen('player').children[0]
@@ -149,10 +163,6 @@ class PracticeTypeEditorScreen(Screen):
                 if player_widget.practice_type == old_name:
                     # Update the live widget property
                     player_widget.practice_type = name
-                    
-                    # Update the application's config object and save it to the .ini file
-                    app.config.set('user', 'practice_type', name)
-                    app.config.write()
 
             if self.save_practice_types():
                 self.show_popup("Success", "Practice Type saved successfully!")
@@ -174,6 +184,11 @@ class PracticeTypeEditorScreen(Screen):
 
     def clear_form(self, *args):
         """Resets the form to a template for a new practice type."""
+        # Reset the color of the previously selected button, if it exists
+        if self._current_button:
+            self._current_button.background_color = (1, 1, 1, 1) # Default color
+            self._current_button = None
+            
         self.current_practice_type_name = None
 
         default_data = {
@@ -222,8 +237,17 @@ class PracticeTypeEditorScreen(Screen):
             self.show_popup("Info", "No Practice Type selected to reset.\nClick 'New' to load a template.")
             return
         
-        self.load_practice_type_into_form(self.current_practice_type_name)
-        self.show_popup("Reset", f"'{self.current_practice_type_name}' has been reset to its saved state.")
+        # We need to find the button associated with the current practice type name
+        # to pass it to the load function for re-highlighting.
+        button_to_reset = None
+        for button in self.practice_type_list_layout.children:
+            if button.text == self.current_practice_type_name:
+                button_to_reset = button
+                break
+        
+        if button_to_reset:
+            self.load_practice_type_into_form(button_to_reset, self.current_practice_type_name)
+            self.show_popup("Reset", f"'{self.current_practice_type_name}' has been reset to its saved state.")
 
     def go_back_to_player(self):
         """

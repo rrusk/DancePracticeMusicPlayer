@@ -516,15 +516,12 @@ class MusicPlayer(BoxLayout):
             text=f"New Playlist\n({self.practice_type})",
             background_color=(0.2, 0.6, 0.8, 1),
             color=PlayerConstants.DEFAULT_BUTTON_TEXT_COLOR,
-            #text_size=(self.width, None),
             halign="center",
             valign="middle"
         )
-
         # This callback updates the text_size whenever the button's size changes.
         def update_button_text_size(button, size):
             button.text_size = (size[0], None)
-
         # Bind the callback to the button's size property.
         self.playlist_button.bind(size=update_button_text_size)
 
@@ -533,7 +530,7 @@ class MusicPlayer(BoxLayout):
             background_color=(0.2, 0.6, 0.8, 1),
             color=PlayerConstants.DEFAULT_BUTTON_TEXT_COLOR,
         )
-
+        
         manage_practice_types_button = Button(
             text="Manage Practice Types",
             background_color=(0.2, 0.6, 0.8, 1),
@@ -575,8 +572,19 @@ class MusicPlayer(BoxLayout):
         self.progress_bar.bind(on_touch_up=self.on_slider_move)
         self.bind(progress_text=self.progress_label.setter("text"))
         self.bind(practice_type=self.update_playlist_button_text)
+        self.bind(practice_type=self.on_practice_type_change)
         self.bind(_playlist_generation_in_progress=self.on_playlist_generation_status_change)
         
+    def on_practice_type_change(self, _instance, value: str):
+        """
+        When the practice_type property changes, update and save the app's config.
+        """
+        app = App.get_running_app()
+        # Update the config only if the value is different to avoid unnecessary writes
+        if app.config.get('user', 'practice_type') != value:
+            app.config.set('user', 'practice_type', value)
+            app.config.write()
+
     def switch_to_editor(self, _instance: typing.Any = None):
         """Switches the screen to the practice type editor."""
         App.get_running_app().manager.current = 'editor'
