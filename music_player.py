@@ -516,16 +516,24 @@ class MusicPlayer(BoxLayout):
             text=f"New Playlist\n({self.practice_type})",
             background_color=(0.2, 0.6, 0.8, 1),
             color=PlayerConstants.DEFAULT_BUTTON_TEXT_COLOR,
-            text_size=(self.width, None),
+            #text_size=(self.width, None),
             halign="center",
             valign="middle"
         )
+
+        # This callback updates the text_size whenever the button's size changes.
+        def update_button_text_size(button, size):
+            button.text_size = (size[0], None)
+
+        # Bind the callback to the button's size property.
+        self.playlist_button.bind(size=update_button_text_size)
+
         settings_button = Button(
             text="Music Settings",
             background_color=(0.2, 0.6, 0.8, 1),
             color=PlayerConstants.DEFAULT_BUTTON_TEXT_COLOR,
         )
-        
+
         manage_practice_types_button = Button(
             text="Manage Practice Types",
             background_color=(0.2, 0.6, 0.8, 1),
