@@ -48,7 +48,7 @@ from tinytag import TinyTag, TinyTagException
 
 # --- Imports for ScreenManager and the editor screen ---
 from kivy.uix.screenmanager import ScreenManager, Screen
-from playlist_editor import PlaylistEditorScreen # Import the new screen
+from practice_type_editor import PracticeTypeEditorScreen
 
 
 # Conditional import for Windows-specific functionality
@@ -511,25 +511,27 @@ class MusicPlayer(BoxLayout):
             size_hint=(None, None),
             size=(50, 50),
         )
-        # Assign the playlist_button to the ObjectProperty here
+        
         self.playlist_button = Button(
-            text=f"New Playlist ({self.practice_type})", # Initial text
+            text=f"New Playlist\n({self.practice_type})",
             background_color=(0.2, 0.6, 0.8, 1),
             color=PlayerConstants.DEFAULT_BUTTON_TEXT_COLOR,
+            text_size=(self.width, None),
+            halign="center",
+            valign="middle"
         )
         settings_button = Button(
             text="Music Settings",
             background_color=(0.2, 0.6, 0.8, 1),
             color=PlayerConstants.DEFAULT_BUTTON_TEXT_COLOR,
         )
-        # Add the "Edit Playlists" button
-        edit_playlists_button = Button(
-            text="Edit Playlists",
+        
+        manage_practice_types_button = Button(
+            text="Manage Practice Types",
             background_color=(0.2, 0.6, 0.8, 1),
             color=PlayerConstants.DEFAULT_BUTTON_TEXT_COLOR,
         )
-        # --- FIX: Bind the button to the new method ---
-        edit_playlists_button.bind(on_press=self.switch_to_editor)
+        manage_practice_types_button.bind(on_press=self.switch_to_editor)
 
 
         self.play_pause_button.bind(on_press=self.toggle_play_pause)
@@ -543,8 +545,7 @@ class MusicPlayer(BoxLayout):
         control_buttons.add_widget(restart_button)
         control_buttons.add_widget(self.playlist_button)
         control_buttons.add_widget(settings_button)
-        # Add the new button to the layout
-        control_buttons.add_widget(edit_playlists_button)
+        control_buttons.add_widget(manage_practice_types_button)
         controls.add_widget(control_buttons)
 
         volume_and_controls.add_widget(volume_layout)
@@ -565,12 +566,11 @@ class MusicPlayer(BoxLayout):
         self.bind(progress_value=self.progress_bar.setter("value"))
         self.progress_bar.bind(on_touch_up=self.on_slider_move)
         self.bind(progress_text=self.progress_label.setter("text"))
-        self.bind(practice_type=self.update_playlist_button_text) # Bind practice_type here
+        self.bind(practice_type=self.update_playlist_button_text)
         self.bind(_playlist_generation_in_progress=self.on_playlist_generation_status_change)
         
-    # --- FIX: Add a new method to handle switching to the editor screen ---
     def switch_to_editor(self, _instance: typing.Any = None):
-        """Switches the screen to the playlist editor."""
+        """Switches the screen to the practice type editor."""
         App.get_running_app().manager.current = 'editor'
 
 
@@ -1181,7 +1181,6 @@ class MusicPlayer(BoxLayout):
 
         return f"{title} / {genre} / {artist} / {album}"
 
-    # This method interprets the adjustment rules from the JSON file.
     def _get_adjusted_song_count(self, dance: str, num_selections: int) -> int:
         """
         Adjusts the number of songs for a dance based on rules defined in the
@@ -1307,37 +1306,28 @@ class MusicPlayer(BoxLayout):
             A list of song dictionaries with pre-fetched metadata, potentially
             including an announcement at the beginning.
         """
-        # 1. Get the list of all available music files
         all_music_paths = self._collect_music_files(directory, dance)
         if not all_music_paths:
             return []
 
-        # 2. Determine how many songs to select based on the practice type settings
         if self.play_all_songs:
-            # If play_all_songs is true, we ignore num_selections and select all available songs
             num_to_sample = len(all_music_paths)
         else:
-            # Otherwise, use the existing logic with num_selections and adjustments
             adjusted_num_selections = self._get_adjusted_song_count(dance, num_selections)
             if adjusted_num_selections == 0:
                 return []
             num_to_sample = min(adjusted_num_selections, len(all_music_paths))
 
-        # 3. Select the song paths (either by sampling or sorting)
         if randomize:
-            # random.sample handles both selecting a subset and shuffling the whole list
             sampled_paths = random.sample(all_music_paths, k=num_to_sample)
         else:
-            # Sorting and slicing works for both selecting a subset and getting the whole list
             sampled_paths = sorted(all_music_paths)[:num_to_sample]
 
-        # 4. Create the song info dictionaries for the selected paths
         playlist = [
             song_info for path in sampled_paths
             if (song_info := self._create_song_info(path, dance)) is not None
         ]
 
-        # 5. Get the announcement and prepend it to the playlist
         if (announce_path := self._get_announce_path(dance)) and \
         (announce_info := self._create_song_info(announce_path, 'announce')):
             playlist.insert(0, announce_info)
@@ -1365,14 +1355,13 @@ class MusicPlayer(BoxLayout):
             "60min": ("default", 2, False, False, False, True, True, default_adjustments, {"VienneseWaltz": 150}),
             "NC 60min": ("newcomer", 2, False, False, False, True, True, default_adjustments, {"VienneseWaltz": 150}),
         }
-        # Merge in custom mappings using the union operator (Python 3.9+)
+        
         mapping |= getattr(self, "custom_practice_mapping", {})
         params = mapping.get(text, ("default", 2, False, True, False, True, False, {}, {}))
 
         (dance_type, num_selections, play_all, auto_update, play_single, randomize,
          adj_counts, adj_dict, max_playtimes_dict) = params
 
-        # Explicitly apply default_adjustments if adj_counts is True and adj_dict is empty
         if adj_counts and not adj_dict:
             adj_dict = default_adjustments
 
@@ -1401,7 +1390,9 @@ class MusicPlayer(BoxLayout):
             practice_type_value: The new value of the `practice_type` property.
         """
         if self.playlist_button:
-            self.playlist_button.text = f"New Playlist ({practice_type_value})"
+            self.playlist_button.text = f"New Playlist\n({practice_type_value})"
+            # Manually trigger a layout update if the button's size might change
+            self.playlist_button.text_size = (self.playlist_button.width, None)
 
 
 class MusicApp(App):
@@ -1440,11 +1431,19 @@ class MusicApp(App):
         self.manager.add_widget(player_screen)
         
         # Create and add the editor screen
-        self.editor_screen = PlaylistEditorScreen(name='editor')
+        self.editor_screen = PracticeTypeEditorScreen(name='editor')
         self.manager.add_widget(self.editor_screen)
 
         return self.manager
 
+    def open_settings(self, *largs, **kwargs):
+        """
+        Force the settings panel to be destroyed and rebuilt every time it's opened.
+        This ensures that any changes to the available options (like renamed
+        practice types) are reflected immediately.
+        """
+        self.destroy_settings()
+        super().open_settings(*largs, **kwargs)
 
     def on_start(self) -> None:
         """Called once the Kivy application event loop is running.
@@ -1456,7 +1455,6 @@ class MusicApp(App):
         self._load_config_settings()
         self.player_widget.set_practice_type(None, self.player_widget.practice_type)
 
-        # Call platform-specific fixes only if on Windows
         if sys.platform == "win32":
             Clock.schedule_once(self._windows_startup_fixes, 1)
 
@@ -1471,12 +1469,12 @@ class MusicApp(App):
         if self.config.has_section(user_section):
             self.player_widget.volume = self.config.getfloat(user_section, "volume", fallback=0.7)
             self.player_widget.music_dir = self.config.get(
-                user_section, "music_dir", fallback="" # Default to empty string
+                user_section, "music_dir", fallback=""
             )
             self.player_widget.song_max_playtime = self.config.getint(
                 user_section, "song_max_playtime", fallback=210
             )
-            # Get available practice types from settings_json
+            
             self.player_widget.update_settings_options()
             practice_type_options = next(
                 (
@@ -1489,7 +1487,7 @@ class MusicApp(App):
             loaded_practice_type = self.config.get(
                 user_section, "practice_type", fallback="60min"
             )
-            # If the loaded practice_type is not valid, reset to default
+
             if loaded_practice_type not in practice_type_options:
                 loaded_practice_type = "60min"
                 self.config.set(user_section, "practice_type", loaded_practice_type)
@@ -1502,7 +1500,6 @@ class MusicApp(App):
 
     def _hide_console_window(self) -> None:
         """Hides the command-line console window that may appear on Windows."""
-        # ctypes is available here because of the module-level conditional import.
         ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 0) # type: ignore
 
     def build_config(self, config: ConfigParser) -> None:
@@ -1532,7 +1529,6 @@ class MusicApp(App):
         Args:
             settings: The Kivy settings object to which the panel is added.
         """
-        # Update settings options before showing them
         self.player_widget.update_settings_options()
         settings.add_json_panel(
             "Music Player Settings", self.config, data=json.dumps(self.player_widget.settings_json)
@@ -1554,28 +1550,25 @@ class MusicApp(App):
         """
         if section == "user":
             player = self.player_widget
-            match key:
-                case "volume":
-                    try:
-                        volume_value = float(value)
-                        player.volume = volume_value
-                        player.set_volume(None, volume_value)
-                        # Directly update the slider value to reflect the change from settings
-                        player.volume_slider.value = volume_value
-                    except ValueError:
-                        print(f"Error: Invalid volume value '{value}'. Must be a float.")
-                case "music_dir":
-                    player.music_dir = value
-                    player.update_playlist()
-                case "song_max_playtime":
-                    try:
-                        player.song_max_playtime = int(value)
-                    except ValueError:
-                        print(f"Error: Invalid max playtime value '{value}'. Must be an integer.")
-                case "practice_type":
-                    player.practice_type = value
-                    # set_practice_type will trigger its own playlist update
-                    player.set_practice_type(None, value)
+            if key == "volume":
+                try:
+                    volume_value = float(value)
+                    player.volume = volume_value
+                    player.set_volume(None, volume_value)
+                    player.volume_slider.value = volume_value
+                except ValueError:
+                    print(f"Error: Invalid volume value '{value}'. Must be a float.")
+            elif key == "music_dir":
+                player.music_dir = value
+                player.update_playlist()
+            elif key == "song_max_playtime":
+                try:
+                    player.song_max_playtime = int(value)
+                except ValueError:
+                    print(f"Error: Invalid max playtime value '{value}'. Must be an integer.")
+            elif key == "practice_type":
+                player.practice_type = value
+                player.set_practice_type(None, value)
 
 if __name__ == "__main__":
     MusicApp().run()
