@@ -43,11 +43,11 @@ from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.slider import Slider
 from kivy.uix.settings import SettingsWithSpinner
+from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.config import ConfigParser
 from tinytag import TinyTag, TinyTagException
 
 # --- Imports for ScreenManager and the editor screen ---
-from kivy.uix.screenmanager import ScreenManager, Screen
 from practice_type_editor import PracticeTypeEditorScreen
 
 
@@ -86,6 +86,11 @@ class PlayerConstants:
     ICON_PAUSE = "pause.png"
     ICON_STOP = "stop.png"
     ICON_REPLAY = "replay.png"
+
+    # Practice Type Constants
+    PRACTICE_TYPE_60_MIN = "60min"
+    PRACTICE_TYPE_NC_60_MIN = "NC 60min"
+
 
 # --- Root ScreenManager Widget ---
 class RootManager(ScreenManager):
@@ -194,7 +199,7 @@ class MusicPlayer(BoxLayout):
     playlist = ListProperty([])
     playlist_idx = NumericProperty(0)
     dances = ListProperty([])
-    practice_type = StringProperty("60min")
+    practice_type = StringProperty(PlayerConstants.PRACTICE_TYPE_60_MIN)
     num_selections = NumericProperty(2)
 
     settings_json = [
@@ -242,8 +247,8 @@ class MusicPlayer(BoxLayout):
             "section": "user",
             "key": "practice_type",
             "options": [
-                "60min",
-                "NC 60min",
+                PlayerConstants.PRACTICE_TYPE_60_MIN,
+                PlayerConstants.PRACTICE_TYPE_NC_60_MIN,
             ],
         },
     ]
@@ -367,7 +372,7 @@ class MusicPlayer(BoxLayout):
                 data.get("dance_adjustments", {}),
                 data.get("dance_max_playtimes", {}),
             )
-    
+
     def update_settings_options(self):
         """
         Dynamically updates the options in the settings JSON. Call this
@@ -378,13 +383,13 @@ class MusicPlayer(BoxLayout):
             (item for item in self.settings_json if item.get("key") == "practice_type"), None
         )):
             # Reset options to default before adding custom ones
-            base_options = ["60min", "NC 60min"]
+            base_options = [PlayerConstants.PRACTICE_TYPE_60_MIN, PlayerConstants.PRACTICE_TYPE_NC_60_MIN]
             custom_options = list(custom_types.keys())
             practice_type_setting["options"] = base_options + custom_options
 
             # If current practice type is no longer valid, reset it
             if self.practice_type not in practice_type_setting["options"]:
-                self.practice_type = "60min"
+                self.practice_type = PlayerConstants.PRACTICE_TYPE_60_MIN
 
     def _build_ui(self) -> None:
         """Constructs the main user interface by creating and arranging all widgets.
@@ -511,7 +516,7 @@ class MusicPlayer(BoxLayout):
             size_hint=(None, None),
             size=(50, 50),
         )
-        
+
         self.playlist_button = Button(
             text=f"New Playlist\n({self.practice_type})",
             background_color=(0.2, 0.6, 0.8, 1),
@@ -530,7 +535,7 @@ class MusicPlayer(BoxLayout):
             background_color=(0.2, 0.6, 0.8, 1),
             color=PlayerConstants.DEFAULT_BUTTON_TEXT_COLOR,
         )
-        
+
         manage_practice_types_button = Button(
             text="Manage Practice Types",
             background_color=(0.2, 0.6, 0.8, 1),
@@ -574,7 +579,7 @@ class MusicPlayer(BoxLayout):
         self.bind(practice_type=self.update_playlist_button_text)
         self.bind(practice_type=self.on_practice_type_change)
         self.bind(_playlist_generation_in_progress=self.on_playlist_generation_status_change)
-        
+
     def on_practice_type_change(self, _instance, value: str):
         """
         When the practice_type property changes, update and save the app's config.
@@ -1175,7 +1180,7 @@ class MusicPlayer(BoxLayout):
 
     def _get_song_label(self, song_info: dict) -> str:
         """Generates a descriptive label for a song from its pre-fetched metadata.
-        
+
         For announcements, it only shows the title (e.g. 'Waltz'). For all
         other songs, it returns a label with title, genre, artist, and album.
 
@@ -1368,10 +1373,12 @@ class MusicPlayer(BoxLayout):
             "JSlow": "cap_at_1", "VienneseWaltz": "n-1", "Jive": "n-1", "WCS": "cap_at_2"
         }
         mapping = {
-            "60min": ("default", 2, False, False, False, True, True, default_adjustments, {"VienneseWaltz": 150}),
-            "NC 60min": ("newcomer", 2, False, False, False, True, True, default_adjustments, {"VienneseWaltz": 150}),
+            PlayerConstants.PRACTICE_TYPE_60_MIN: ("default", 2, False, False, False, True, True,
+                      default_adjustments, {"VienneseWaltz": 150}),
+            PlayerConstants.PRACTICE_TYPE_NC_60_MIN: ("newcomer", 2, False, False, False, True, True,
+                         default_adjustments, {"VienneseWaltz": 150}),
         }
-        
+
         mapping |= getattr(self, "custom_practice_mapping", {})
         params = mapping.get(text, ("default", 2, False, True, False, True, False, {}, {}))
 
@@ -1436,7 +1443,7 @@ class MusicApp(App):
     def build(self) -> ScreenManager:
         """Creates and returns the root widget of the application."""
         self.settings_cls = SettingsWithSpinner
-        
+
         # Create the screen manager
         self.manager = RootManager()
 
@@ -1445,7 +1452,7 @@ class MusicApp(App):
         player_screen = Screen(name='player')
         player_screen.add_widget(self.player_widget)
         self.manager.add_widget(player_screen)
-        
+
         # Create and add the editor screen
         self.editor_screen = PracticeTypeEditorScreen(name='editor')
         self.manager.add_widget(self.editor_screen)
@@ -1490,7 +1497,7 @@ class MusicApp(App):
             self.player_widget.song_max_playtime = self.config.getint(
                 user_section, "song_max_playtime", fallback=210
             )
-            
+
             self.player_widget.update_settings_options()
             practice_type_options = next(
                 (
@@ -1501,11 +1508,11 @@ class MusicApp(App):
                 []
             )
             loaded_practice_type = self.config.get(
-                user_section, "practice_type", fallback="60min"
+                user_section, "practice_type", fallback=PlayerConstants.PRACTICE_TYPE_60_MIN
             )
 
             if loaded_practice_type not in practice_type_options:
-                loaded_practice_type = "60min"
+                loaded_practice_type = PlayerConstants.PRACTICE_TYPE_60_MIN
                 self.config.set(user_section, "practice_type", loaded_practice_type)
                 self.config.write()
             self.player_widget.practice_type = loaded_practice_type
@@ -1533,7 +1540,7 @@ class MusicApp(App):
                 "volume": 0.7,
                 "music_dir": self.DEFAULT_MUSIC_DIR,
                 "song_max_playtime": 210,
-                "practice_type": "60min",
+                "practice_type": PlayerConstants.PRACTICE_TYPE_60_MIN,
             },
         )
 
@@ -1566,25 +1573,33 @@ class MusicApp(App):
         """
         if section == "user":
             player = self.player_widget
-            if key == "volume":
-                try:
-                    volume_value = float(value)
-                    player.volume = volume_value
-                    player.set_volume(None, volume_value)
-                    player.volume_slider.value = volume_value
-                except ValueError:
-                    print(f"Error: Invalid volume value '{value}'. Must be a float.")
-            elif key == "music_dir":
-                player.music_dir = value
-                player.update_playlist()
-            elif key == "song_max_playtime":
-                try:
-                    player.song_max_playtime = int(value)
-                except ValueError:
-                    print(f"Error: Invalid max playtime value '{value}'. Must be an integer.")
-            elif key == "practice_type":
-                player.practice_type = value
-                player.set_practice_type(None, value)
+            match key:
+                case "volume":
+                    try:
+                        volume_value = float(value)
+                        player.volume = volume_value
+                        player.set_volume(None, volume_value)
+                        player.volume_slider.value = volume_value
+                    except ValueError:
+                        print(f"Error: Invalid volume value '{value}'. Must be a float.")
+
+                case "music_dir":
+                    player.music_dir = value
+                    player.update_playlist()
+
+                case "song_max_playtime":
+                    try:
+                        player.song_max_playtime = int(value)
+                    except ValueError:
+                        print(f"Error: Invalid max playtime value '{value}'. Must be an integer.")
+
+                case "practice_type":
+                    player.practice_type = value
+                    player.set_practice_type(None, value)
+
+                case _:
+                    # Optional: handle any keys that don't match the cases above
+                    print(f"Warning: Unrecognized key '{key}'")
 
 if __name__ == "__main__":
     MusicApp().run()

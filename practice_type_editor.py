@@ -13,6 +13,7 @@ from kivy.uix.gridlayout import GridLayout
 from kivy.uix.button import Button
 from kivy.uix.label import Label
 from kivy.uix.popup import Popup
+# pylint: disable=no-name-in-module
 from kivy.properties import ObjectProperty, StringProperty
 from kivy.lang import Builder
 
@@ -89,7 +90,7 @@ class PracticeTypeEditorScreen(Screen):
         self.practice_type_list_layout.clear_widgets()
         # When clearing the list, also reset the tracked button
         self._current_button = None
-        
+
         sorted_names = sorted(self.practice_types.keys())
         for name in sorted_names:
             btn = Button(text=name, size_hint_y=None, height=40)
@@ -97,7 +98,7 @@ class PracticeTypeEditorScreen(Screen):
             btn.bind(on_press=partial(self.load_practice_type_into_form, btn, name))
             self.practice_type_list_layout.add_widget(btn)
 
-    def load_practice_type_into_form(self, button_instance, name, *args):
+    def load_practice_type_into_form(self, button_instance, name, *_args):
         """Loads the selected practice type's data into the form and highlights the button."""
         # Reset the color of the previously selected button, if it exists
         if self._current_button:
@@ -106,7 +107,7 @@ class PracticeTypeEditorScreen(Screen):
         # Set the color of the newly clicked button
         button_instance.background_color = (0, 1, 1, 1) # Highlight color (cyan)
         self._current_button = button_instance
-        
+
         self.current_practice_type_name = name
         data = self.practice_types[name]
 
@@ -121,10 +122,16 @@ class PracticeTypeEditorScreen(Screen):
         self.edit_form.adjust_song_counts_input.active = data.get("adjust_song_counts", False)
 
         adjustments = data.get("dance_adjustments", {})
-        self.edit_form.dance_adjustments_input.text = json.dumps(adjustments, indent=4) if adjustments else ""
+        if adjustments:
+            self.edit_form.dance_adjustments_input.text = json.dumps(adjustments, indent=4)
+        else:
+            self.edit_form.dance_adjustments_input.text = ""
 
         playtimes = data.get("dance_max_playtimes", {})
-        self.edit_form.dance_max_playtimes_input.text = json.dumps(playtimes, indent=4) if playtimes else ""
+        if playtimes:
+            self.edit_form.dance_max_playtimes_input.text = json.dumps(playtimes, indent=4)
+        else:
+            self.edit_form.dance_max_playtimes_input.text = ""
 
     def save_current_practice_type(self):
         """Gathers data from the form and saves it to the practice_types dict."""
@@ -153,20 +160,20 @@ class PracticeTypeEditorScreen(Screen):
             }
             self.practice_types[name] = new_data
             self.current_practice_type_name = name
-            
+
             # If a rename of the active type occurred, update the player's state.
             # The binding in MusicPlayer will handle updating the config file.
             if old_name and old_name != name:
                 app = App.get_running_app()
                 player_widget = app.manager.get_screen('player').children[0]
-                
+
                 if player_widget.practice_type == old_name:
                     # Update the live widget property
                     player_widget.practice_type = name
 
             if self.save_practice_types():
                 self.show_popup("Success", "Practice Type saved successfully!")
-        except (ValueError, json.JSONDecodeError) as e:
+        except (ValueError) as e:
             self.show_popup("Error", f"Invalid data format: {e}\nCheck numeric fields and JSON formatting.")
 
     def delete_practice_type(self):
@@ -177,18 +184,18 @@ class PracticeTypeEditorScreen(Screen):
 
         practice_type_name = self.current_practice_type_name
         del self.practice_types[self.current_practice_type_name]
-        
+
         if self.save_practice_types():
             self.show_popup("Success", f"Practice Type '{practice_type_name}' deleted successfully.")
             self.clear_form()
 
-    def clear_form(self, *args):
+    def clear_form(self, *_args):
         """Resets the form to a template for a new practice type."""
         # Reset the color of the previously selected button, if it exists
         if self._current_button:
             self._current_button.background_color = (1, 1, 1, 1) # Default color
             self._current_button = None
-            
+
         self.current_practice_type_name = None
 
         default_data = {
@@ -221,7 +228,7 @@ class PracticeTypeEditorScreen(Screen):
         self.edit_form.dance_adjustments_input.text = json.dumps(default_data["dance_adjustments"], indent=4)
         self.edit_form.dance_max_playtimes_input.text = json.dumps(default_data["dance_max_playtimes"], indent=4)
 
-    def copy_practice_type(self, *args):
+    def copy_practice_type(self, *_args):
         """Copies the currently loaded practice type data to create a new one."""
         if not self.current_practice_type_name:
             self.show_popup("Info", "Please select a Practice Type to copy first.")
@@ -231,12 +238,12 @@ class PracticeTypeEditorScreen(Screen):
         self.current_practice_type_name = None
         self.show_popup("Copied", "Practice Type data copied.\nEnter a new name, edit as needed, and click Save.")
 
-    def reset_current_practice_type(self, *args):
+    def reset_current_practice_type(self, *_args):
         """Resets the form fields to the saved state of the current practice type."""
         if not self.current_practice_type_name:
             self.show_popup("Info", "No Practice Type selected to reset.\nClick 'New' to load a template.")
             return
-        
+
         # We need to find the button associated with the current practice type name
         # to pass it to the load function for re-highlighting.
         button_to_reset = None
@@ -244,7 +251,7 @@ class PracticeTypeEditorScreen(Screen):
             if button.text == self.current_practice_type_name:
                 button_to_reset = button
                 break
-        
+
         if button_to_reset:
             self.load_practice_type_into_form(button_to_reset, self.current_practice_type_name)
             self.show_popup("Reset", f"'{self.current_practice_type_name}' has been reset to its saved state.")
@@ -373,7 +380,7 @@ Builder.load_string("""
             size_hint_y: None
             height: self.texture_size[1]
             text_size: self.width, None
-            padding_x: 10
+            padding: [10, 0]
 
     BoxLayout:
         orientation: 'vertical'
@@ -399,7 +406,7 @@ Builder.load_string("""
             size_hint_y: None
             height: self.texture_size[1]
             text_size: self.width, None
-            padding_x: 10
+            padding: [10, 0]
 
     BoxLayout:
         orientation: 'vertical'
@@ -425,7 +432,7 @@ Builder.load_string("""
             size_hint_y: None
             height: self.texture_size[1]
             text_size: self.width, None
-            padding_x: 10
+            padding: [10, 0]
 
     BoxLayout:
         orientation: 'vertical'
@@ -451,7 +458,7 @@ Builder.load_string("""
             size_hint_y: None
             height: self.texture_size[1]
             text_size: self.width, None
-            padding_x: 10
+            padding: [10, 0]
 
     BoxLayout:
         orientation: 'vertical'
@@ -477,7 +484,7 @@ Builder.load_string("""
             size_hint_y: None
             height: self.texture_size[1]
             text_size: self.width, None
-            padding_x: 10
+            padding: [10, 0]
 
     BoxLayout:
         size_hint_y: None
