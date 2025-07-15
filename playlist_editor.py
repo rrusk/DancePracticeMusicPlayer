@@ -5,16 +5,17 @@ for the Dance Practice Music Player.
 """
 import json
 import os
+from functools import partial
 from kivy.uix.screenmanager import Screen
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
-from kivy.uix.scrollview import ScrollView
+#from kivy.uix.scrollview import ScrollView
 from kivy.uix.button import Button
 from kivy.uix.label import Label
-from kivy.uix.textinput import TextInput
-from kivy.uix.checkbox import CheckBox
+#from kivy.uix.textinput import TextInput
+#from kivy.uix.checkbox import CheckBox
 from kivy.uix.popup import Popup
-from kivy.uix.switch import Switch
+#from kivy.uix.switch import Switch
 from kivy.properties import ObjectProperty, StringProperty
 
 class PlaylistEditorScreen(Screen):
@@ -68,7 +69,8 @@ class PlaylistEditorScreen(Screen):
                 all_data[key] = self.practice_types[key]
 
             # Find keys to delete (present in original file but not in our active dict)
-            keys_to_delete = [k for k in all_data if not k.startswith("__COMMENT__") and k not in self.practice_types]
+            keys_to_delete = [k for k in all_data if not k.startswith("__COMMENT__")
+                              and k not in self.practice_types]
             for key in keys_to_delete:
                 del all_data[key]
 
@@ -86,12 +88,11 @@ class PlaylistEditorScreen(Screen):
         sorted_names = sorted(self.practice_types.keys())
         for name in sorted_names:
             btn = Button(text=name, size_hint_y=None, height=40)
-            btn.bind(on_press=self.select_playlist)
+            btn.bind(on_press=partial(self.load_playlist_into_form, name))
             self.playlist_list_layout.add_widget(btn)
 
-    def select_playlist(self, instance):
+    def load_playlist_into_form(self, name, *args):
         """Loads the selected playlist's data into the form."""
-        name = instance.text
         self.current_playlist_name = name
         data = self.practice_types[name]
 
@@ -124,10 +125,11 @@ class PlaylistEditorScreen(Screen):
             self.show_popup("Error", "Playlist name cannot be empty.")
             return
 
-        # If name changed, remove old entry
-        if self.current_playlist_name and self.current_playlist_name != name:
-            if self.current_playlist_name in self.practice_types:
-                del self.practice_types[self.current_playlist_name]
+        # If name changed, remove old entry (but not if it was a copy)
+        if (self.current_playlist_name and
+                self.current_playlist_name != name and
+                self.current_playlist_name in self.practice_types):
+            del self.practice_types[self.current_playlist_name]
 
         try:
             new_data = {
@@ -158,7 +160,7 @@ class PlaylistEditorScreen(Screen):
         self.clear_form()
 
     def clear_form(self, *args):
-        """Resets the form to a template based on the 60min playlist."""
+        """Resets the form to a template for a new playlist."""
         self.current_playlist_name = None
 
         default_60min_data = {
@@ -185,9 +187,7 @@ class PlaylistEditorScreen(Screen):
             }
         }
 
-        # Keep name blank for the user to fill in
         self.edit_form.name_input.text = ""
-        # Populate the rest of the form with the template data
         self.edit_form.dances_input.text = ", ".join(default_60min_data["dances"])
         self.edit_form.num_selections_input.text = str(default_60min_data["num_selections"])
         self.edit_form.play_all_songs_input.active = default_60min_data["play_all_songs"]
@@ -195,7 +195,6 @@ class PlaylistEditorScreen(Screen):
         self.edit_form.play_single_song_input.active = default_60min_data["play_single_song"]
         self.edit_form.randomize_playlist_input.active = default_60min_data["randomize_playlist"]
         self.edit_form.adjust_song_counts_input.active = default_60min_data["adjust_song_counts"]
-
         self.edit_form.dance_adjustments_input.text = json.dumps(
             default_60min_data["dance_adjustments"], indent=4
         )
@@ -203,6 +202,24 @@ class PlaylistEditorScreen(Screen):
             default_60min_data["dance_max_playtimes"], indent=4
         )
 
+    def copy_playlist(self, *args):
+        """Copies the currently loaded playlist data to create a new one."""
+        if not self.current_playlist_name:
+            self.show_popup("Info", "Please select a playlist to copy first.")
+            return
+
+        self.edit_form.name_input.text = ""
+        self.current_playlist_name = None
+        self.show_popup("Copied", "Playlist data copied.\nEnter a new name, edit as needed, and click Save.")
+
+    def reset_current_playlist(self, *args):
+        """Resets the form fields to the saved state of the current playlist."""
+        if not self.current_playlist_name:
+            self.show_popup("Info", "No playlist selected to reset.\nClick 'New' to load a template.")
+            return
+        
+        self.load_playlist_into_form(self.current_playlist_name)
+        self.show_popup("Reset", f"'{self.current_playlist_name}' has been reset to its saved state.")
 
     def go_back_to_player(self):
         """Switches back to the main music player screen and forces a reload."""
@@ -214,17 +231,12 @@ class PlaylistEditorScreen(Screen):
         content_layout = BoxLayout(orientation='vertical', spacing=10, padding=10)
         message_label = Label(text=message)
         ok_button = Button(text="OK", size_hint_y=None, height='44dp')
-
         content_layout.add_widget(message_label)
         content_layout.add_widget(ok_button)
-
         popup = Popup(title=title,
                       content=content_layout,
                       size_hint=(None, None), size=('400dp', '200dp'))
-
-        # Bind the button's on_press event to dismiss the popup
         ok_button.bind(on_press=popup.dismiss)
-        
         popup.open()
 
 
@@ -537,11 +549,17 @@ Builder.load_string("""
                 size_hint_y: None
                 height: 50
                 padding: 5
-                spacing: 10
+                spacing: 5
 
                 Button:
                     text: 'New'
                     on_press: root.clear_form()
+                Button:
+                    text: 'Copy'
+                    on_press: root.copy_playlist()
+                Button:
+                    text: 'Reset'
+                    on_press: root.reset_current_playlist()
                 Button:
                     text: 'Save'
                     on_press: root.save_current_playlist()
