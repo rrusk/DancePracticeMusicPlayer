@@ -441,7 +441,7 @@ Builder.load_string("""
                 size_hint_x: None
                 width: '60dp'
         Label:
-            text: "Applies rules from 'Dance Adjustments (JSON)' to change song counts."
+            text: "Applies rules from built-in defaults or custom 'Dance Adjustments (JSON)' to change song counts."
             font_size: '11sp'
             color: 0.7, 0.7, 0.7, 1
             size_hint_y: None
