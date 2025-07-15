@@ -58,7 +58,10 @@ class PlaylistEditorScreen(Screen):
 
 
     def save_practice_types(self):
-        """Saves the current practice types back to the JSON file."""
+        """
+        Saves the current practice types back to the JSON file.
+        Returns True on success, False on failure.
+        """
         try:
             # Read original file to preserve comments
             with open(self.json_path, 'r', encoding='utf-8') as f:
@@ -76,10 +79,11 @@ class PlaylistEditorScreen(Screen):
 
             with open(self.json_path, 'w', encoding='utf-8') as f:
                 json.dump(all_data, f, indent=4)
-            self.show_popup("Success", "Playlist saved successfully!")
             self.display_playlist_list() # Refresh the list
+            return True # Indicate success
         except (OSError, TypeError) as e:
             self.show_popup("Error", f"Failed to save playlists: {e}")
+            return False # Indicate failure
 
 
     def display_playlist_list(self):
@@ -145,7 +149,8 @@ class PlaylistEditorScreen(Screen):
             }
             self.practice_types[name] = new_data
             self.current_playlist_name = name
-            self.save_practice_types()
+            if self.save_practice_types():
+                self.show_popup("Success", "Playlist saved successfully!")
         except (ValueError, json.JSONDecodeError) as e:
             self.show_popup("Error", f"Invalid data format: {e}\nCheck numeric fields and JSON formatting.")
 
@@ -155,9 +160,12 @@ class PlaylistEditorScreen(Screen):
             self.show_popup("Error", "No playlist selected to delete.")
             return
 
+        playlist_name = self.current_playlist_name
         del self.practice_types[self.current_playlist_name]
-        self.save_practice_types()
-        self.clear_form()
+        
+        if self.save_practice_types():
+            self.show_popup("Success", f"Playlist '{playlist_name}' deleted successfully.")
+            self.clear_form()
 
     def clear_form(self, *args):
         """Resets the form to a template for a new playlist."""
