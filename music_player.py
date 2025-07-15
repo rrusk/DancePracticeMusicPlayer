@@ -92,16 +92,17 @@ class RootManager(ScreenManager):
     """The root ScreenManager that holds the player and editor screens."""
     def reload_custom_types(self):
         """
-        Finds the music player screen and tells it to reload its custom
-        playlist definitions.
+        Finds the music player screen, tells it to reload its custom
+        playlist definitions, and reapplies the settings for the current
+        practice type.
         """
         player_screen = self.get_screen('player')
         # The MusicPlayer widget is the first child of the Screen
         player_widget = player_screen.children[0]
         player_widget.merge_custom_practice_types()
         player_widget.update_settings_options()
-        # Also update the playlist button text in case the practice type was reset
-        player_widget.update_playlist_button_text(None, player_widget.practice_type)
+        player_widget.set_practice_type(None, player_widget.practice_type)
+        App.get_running_app().destroy_settings()
 
 
 class MusicPlayer(BoxLayout):
