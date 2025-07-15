@@ -317,7 +317,7 @@ Builder.load_string("""
                 size_hint_x: None
                 width: '60dp'
         Label:
-            text: "Plays every song in the dance subfolder, ignoring 'Num Selections'."
+            text: "Includes in the playlist every song in the dance subfolder, ignoring 'Num Selections'."
             font_size: '11sp'
             color: 0.7, 0.7, 0.7, 1
             size_hint_y: None
@@ -369,7 +369,7 @@ Builder.load_string("""
                 size_hint_x: None
                 width: '60dp'
         Label:
-            text: "Stops after each song. Overrides 'Play All' and 'Auto Update'."
+            text: "Stops after each song. Overrides 'Play All Songs' and 'Auto Update'."
             font_size: '11sp'
             color: 0.7, 0.7, 0.7, 1
             size_hint_y: None
@@ -460,7 +460,6 @@ Builder.load_string("""
                 size_hint_y: None
                 height: self.minimum_height
                 font_name: 'RobotoMono-Regular'
-                hint_text: 'e.g.,\\n{\\n    "VienneseWaltz": "n-1",\\n    "PasoDoble": { "2": 1, "default": 2 }\\n}'
 
     BoxLayout:
         size_hint_y: None
@@ -492,7 +491,6 @@ Builder.load_string("""
                 size_hint_y: None
                 height: self.minimum_height
                 font_name: 'RobotoMono-Regular'
-                hint_text: 'e.g.,\\n{\\n    "VienneseWaltz": 150,\\n    "QuickStep": 180\\n}'
 
 <PlaylistEditorScreen>:
     playlist_list_layout: playlist_list_layout
