@@ -582,13 +582,16 @@ class MusicPlayer(BoxLayout):
 
     def on_practice_type_change(self, _instance, value: str):
         """
-        When the practice_type property changes, update and save the app's config.
+        When the practice_type property changes, update and save the app's config
+        and apply the new practice type settings to the player.
         """
         app = App.get_running_app()
         # Update the config only if the value is different to avoid unnecessary writes
         if app.config.get('user', 'practice_type') != value:
             app.config.set('user', 'practice_type', value)
             app.config.write()
+
+        # Apply the new practice type settings to the player
         self.set_practice_type(None, value)
 
     def switch_to_editor(self, _instance: typing.Any = None):

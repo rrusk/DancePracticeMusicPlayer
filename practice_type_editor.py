@@ -34,9 +34,11 @@ class PracticeTypeEditorScreen(Screen):
         self.json_path = os.path.join(self.script_path, "custom_practice_types.json")
         self.practice_types = {}
         self._current_button = None
+        self.changes_saved_since_enter = False
 
     def on_enter(self, *args):
         """Called when the screen is entered. Loads and displays the practice types."""
+        self.changes_saved_since_enter = False
         self.load_practice_types()
         self.display_practice_type_list()
         self.clear_form()
@@ -175,6 +177,7 @@ class PracticeTypeEditorScreen(Screen):
                     player_widget.practice_type = name
 
             if self.save_practice_types():
+                self.changes_saved_since_enter = True
                 self.show_popup("Success", "Practice Type saved successfully!")
         except (ValueError) as e:
             self.show_popup(
@@ -265,20 +268,27 @@ class PracticeTypeEditorScreen(Screen):
 
     def go_back_to_player(self):
         """
-        Switches back to the player. If a different practice type was selected
-        in the editor, it updates the player's active type, triggering a new
-        playlist. Otherwise, it returns without interrupting the current playlist.
+        Switches back to the player. If a different practice type was chosen,
+        or if the current practice type was edited and saved, the playlist is
+        regenerated. Otherwise, it returns without interruption.
         """
         app = App.get_running_app()
         player_widget = app.manager.get_screen('player').children[0]
 
-        # Only update the player's practice type if a different one is selected.
-        # This prevents playlist interruption if the user just browses the editor
-        # or re-selects the currently active type.
-        if (self.current_practice_type_name and
-                self.current_practice_type_name != player_widget.practice_type):
+        # Condition 1: A different practice type was selected.
+        different_type_selected = (self.current_practice_type_name and
+                                   self.current_practice_type_name != player_widget.practice_type)
+
+        if different_type_selected:
+            # The property change will trigger the playlist reset automatically.
             player_widget.practice_type = self.current_practice_type_name
-            # The player's property bindings will handle regenerating the playlist.
+        elif self.changes_saved_since_enter:
+            # Condition 2: The current type's settings were saved.
+            # Force a full reload to apply the new settings from the JSON file.
+            self.manager.reload_custom_types()
+
+        # If neither condition is met, no changes are made and the current
+        # playlist is not interrupted.
         self.manager.current = 'player'
 
     def show_popup(self, title, message):
