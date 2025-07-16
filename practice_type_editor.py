@@ -95,7 +95,8 @@ class PracticeTypeEditorScreen(Screen):
         for name in sorted_names:
             btn = Button(text=name, size_hint_y=None, height=40)
             # Pass the button 'btn' as an argument to the callback
-            btn.bind(on_press=partial(self.load_practice_type_into_form, btn, name))
+            # Pass the button 'btn' as an argument to the callback
+            btn.bind(on_press=partial(self.load_practice_type_into_form, btn, name))  # pylint: disable=no-member
             self.practice_type_list_layout.add_widget(btn)
 
     def load_practice_type_into_form(self, button_instance, name, *_args):
@@ -155,8 +156,10 @@ class PracticeTypeEditorScreen(Screen):
                 "play_single_song": self.edit_form.play_single_song_input.active,
                 "randomize_playlist": self.edit_form.randomize_playlist_input.active,
                 "adjust_song_counts": self.edit_form.adjust_song_counts_input.active,
-                "dance_adjustments": json.loads(self.edit_form.dance_adjustments_input.text or "{}"),
-                "dance_max_playtimes": json.loads(self.edit_form.dance_max_playtimes_input.text or "{}"),
+                "dance_adjustments": json.loads(
+                    self.edit_form.dance_adjustments_input.text or "{}"),
+                "dance_max_playtimes": json.loads(
+                    self.edit_form.dance_max_playtimes_input.text or "{}"),
             }
             self.practice_types[name] = new_data
             self.current_practice_type_name = name
@@ -174,11 +177,13 @@ class PracticeTypeEditorScreen(Screen):
             if self.save_practice_types():
                 self.show_popup("Success", "Practice Type saved successfully!")
         except (ValueError) as e:
-            self.show_popup("Error", f"Invalid data format: {e}\nCheck numeric fields and JSON formatting.")
+            self.show_popup(
+                "Error", f"Invalid data format: {e}\nCheck numeric fields and JSON formatting.")
 
     def delete_practice_type(self):
         """Deletes the currently selected practice type."""
-        if not self.current_practice_type_name or self.current_practice_type_name not in self.practice_types:
+        name = self.current_practice_type_name
+        if not name or name not in self.practice_types:
             self.show_popup("Error", "No Practice Type selected to delete.")
             return
 
@@ -186,7 +191,8 @@ class PracticeTypeEditorScreen(Screen):
         del self.practice_types[self.current_practice_type_name]
 
         if self.save_practice_types():
-            self.show_popup("Success", f"Practice Type '{practice_type_name}' deleted successfully.")
+            self.show_popup(
+                "Success", f"Practice Type '{practice_type_name}' deleted successfully.")
             self.clear_form()
 
     def clear_form(self, *_args):
@@ -225,8 +231,10 @@ class PracticeTypeEditorScreen(Screen):
         self.edit_form.play_single_song_input.active = default_data["play_single_song"]
         self.edit_form.randomize_playlist_input.active = default_data["randomize_playlist"]
         self.edit_form.adjust_song_counts_input.active = default_data["adjust_song_counts"]
-        self.edit_form.dance_adjustments_input.text = json.dumps(default_data["dance_adjustments"], indent=4)
-        self.edit_form.dance_max_playtimes_input.text = json.dumps(default_data["dance_max_playtimes"], indent=4)
+        self.edit_form.dance_adjustments_input.text = json.dumps(
+            default_data["dance_adjustments"], indent=4)
+        self.edit_form.dance_max_playtimes_input.text = json.dumps(
+            default_data["dance_max_playtimes"], indent=4)
 
     def copy_practice_type(self, *_args):
         """Copies the currently loaded practice type data to create a new one."""
@@ -236,25 +244,24 @@ class PracticeTypeEditorScreen(Screen):
 
         self.edit_form.name_input.text = ""
         self.current_practice_type_name = None
-        self.show_popup("Copied", "Practice Type data copied.\nEnter a new name, edit as needed, and click Save.")
+        self.show_popup(
+            "Copied",
+            "Practice Type data copied.\nEnter a new name, edit as needed, and click Save.")
 
     def reset_current_practice_type(self, *_args):
         """Resets the form fields to the saved state of the current practice type."""
         if not self.current_practice_type_name:
-            self.show_popup("Info", "No Practice Type selected to reset.\nClick 'New' to load a template.")
+            self.show_popup(
+                "Info", "No Practice Type selected to reset.\nClick 'New' to load a template.")
             return
 
-        # We need to find the button associated with the current practice type name
-        # to pass it to the load function for re-highlighting.
-        button_to_reset = None
-        for button in self.practice_type_list_layout.children:
-            if button.text == self.current_practice_type_name:
-                button_to_reset = button
-                break
-
-        if button_to_reset:
+        # Use next() to find the first matching button and a named expression (:=)
+        # to assign it to 'button_to_reset' within the if statement.
+        if button_to_reset := next((btn for btn in self.practice_type_list_layout.children
+                                if btn.text == self.current_practice_type_name), None):
             self.load_practice_type_into_form(button_to_reset, self.current_practice_type_name)
-            self.show_popup("Reset", f"'{self.current_practice_type_name}' has been reset to its saved state.")
+            self.show_popup(
+                "Reset", f"'{self.current_practice_type_name}' has been reset to its saved state.")
 
     def go_back_to_player(self):
         """
@@ -275,19 +282,18 @@ class PracticeTypeEditorScreen(Screen):
         """Utility function to show a popup with an OK button."""
         content_layout = BoxLayout(orientation='vertical', spacing=10, padding=10)
         message_label = Label(text=message, text_size=(380, None), size_hint_y=None)
-        message_label.bind(texture_size=message_label.setter('size'))
+        message_label.bind(texture_size=message_label.setter('size'))  # pylint: disable=no-member
         ok_button = Button(text="OK", size_hint_y=None, height='44dp')
         content_layout.add_widget(message_label)
         content_layout.add_widget(ok_button)
-        popup = Popup(title=title, content=content_layout, size_hint=(None, None), size=('400dp', '220dp'))
-        ok_button.bind(on_press=popup.dismiss)
+        popup = Popup(
+            title=title, content=content_layout, size_hint=(None, None), size=('400dp', '220dp'))
+        ok_button.bind(on_press=popup.dismiss)  # pylint: disable=no-member
         popup.open()
 
 
 class EditForm(GridLayout):
     """The layout for the practice type editing form fields."""
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
 
 
 Builder.load_string("""
