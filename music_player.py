@@ -589,6 +589,7 @@ class MusicPlayer(BoxLayout):
         if app.config.get('user', 'practice_type') != value:
             app.config.set('user', 'practice_type', value)
             app.config.write()
+        self.set_practice_type(None, value)
 
     def switch_to_editor(self, _instance: typing.Any = None):
         """Switches the screen to the practice type editor."""

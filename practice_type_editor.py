@@ -265,17 +265,20 @@ class PracticeTypeEditorScreen(Screen):
 
     def go_back_to_player(self):
         """
-        Updates the player's active practice type to the one currently selected
-        in the editor, then switches back to the player screen and forces a reload.
+        Switches back to the player. If a different practice type was selected
+        in the editor, it updates the player's active type, triggering a new
+        playlist. Otherwise, it returns without interrupting the current playlist.
         """
-        # If a practice type is selected in the editor form, update the player
-        if self.current_practice_type_name:
-            app = App.get_running_app()
-            player_widget = app.manager.get_screen('player').children[0]
-            player_widget.practice_type = self.current_practice_type_name
+        app = App.get_running_app()
+        player_widget = app.manager.get_screen('player').children[0]
 
-        # Now, the reload will use the newly set practice type
-        self.manager.reload_custom_types()
+        # Only update the player's practice type if a different one is selected.
+        # This prevents playlist interruption if the user just browses the editor
+        # or re-selects the currently active type.
+        if (self.current_practice_type_name and
+                self.current_practice_type_name != player_widget.practice_type):
+            player_widget.practice_type = self.current_practice_type_name
+            # The player's property bindings will handle regenerating the playlist.
         self.manager.current = 'player'
 
     def show_popup(self, title, message):
