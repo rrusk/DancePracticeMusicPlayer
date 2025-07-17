@@ -272,16 +272,14 @@ class PracticeTypeEditorScreen(Screen):
         or if the current practice type was edited and saved, the playlist is
         regenerated. Otherwise, it returns without interruption.
         """
-        app = App.get_running_app()
-        player_widget = app.manager.get_screen('player').children[0]
+        player_widget = App.get_running_app().manager.get_screen('player').children[0]
 
         # Condition 1: A different practice type was selected.
-        different_type_selected = (self.current_practice_type_name and
-                                   self.current_practice_type_name != player_widget.practice_type)
-
-        if different_type_selected:
+        if ((new_type := self.current_practice_type_name) and
+            new_type != player_widget.practice_type):
+            # Condition 1: A different practice type was selected.
             # The property change will trigger the playlist reset automatically.
-            player_widget.practice_type = self.current_practice_type_name
+            player_widget.practice_type = new_type
         elif self.changes_saved_since_enter:
             # Condition 2: The current type's settings were saved.
             # Force a full reload to apply the new settings from the JSON file.
