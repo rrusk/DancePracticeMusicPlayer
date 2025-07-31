@@ -8,11 +8,13 @@
 
 Main GUI (Linux/macOS/Windows):
 
-![Music_Player_20250706](https://github.com/user-attachments/assets/6b307479-a60a-49b0-8b89-8cfe79a04f2e)
+<img width="1044" height="823" alt="MainGui" src="https://github.com/user-attachments/assets/e0211c85-c7e7-44ee-b17d-88a7f2ecc2ce" />
 
 Settings panel:
+<img width="1044" height="823" alt="MusicSettings" src="https://github.com/user-attachments/assets/340c0c9a-be02-470c-ba34-074a5c0d2965" />
 
-![Music_Settings-20250706](https://github.com/user-attachments/assets/06be1dd6-fee1-41bb-b971-c81317f595f9)
+Manage Custom Practice Types panel:
+<img width="1044" height="823" alt="ManagePracticeTypes" src="https://github.com/user-attachments/assets/33662749-534d-4caf-b4ac-ba5a067271da" />
 
 ---
 
