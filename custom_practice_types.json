@@ -37,10 +37,12 @@
             "Jive"
         ],
         "num_selections": 3,
+        "play_all_songs": false,
         "auto_update": false,
         "play_single_song": false,
         "randomize_playlist": true,
         "adjust_song_counts": true,
+        "dance_adjustments": {},
         "dance_max_playtimes": {
             "VienneseWaltz": 150
         }
@@ -81,6 +83,7 @@
         "dances": [
             "LineDance"
         ],
+        "num_selections": 1,
         "play_all_songs": true,
         "auto_update": false,
         "play_single_song": true,
@@ -121,6 +124,7 @@
             "Jive"
         ],
         "num_selections": 2,
+        "play_all_songs": false,
         "auto_update": false,
         "play_single_song": false,
         "randomize_playlist": true,
@@ -154,10 +158,12 @@
             "PasoDoble"
         ],
         "num_selections": 3,
+        "play_all_songs": false,
         "auto_update": false,
         "play_single_song": false,
         "randomize_playlist": true,
         "adjust_song_counts": true,
+        "dance_adjustments": {},
         "dance_max_playtimes": {
             "VienneseWaltz": 150
         }
@@ -176,11 +182,39 @@
             "Polka",
             "Salsa"
         ],
+        "num_selections": 1,
         "play_all_songs": true,
         "auto_update": false,
         "play_single_song": false,
         "randomize_playlist": true,
-        "adjust_song_counts": false
+        "adjust_song_counts": false,
+        "dance_adjustments": {},
+        "dance_max_playtimes": {}
+    },
+    "OpenHouse": {
+        "dances": [
+            "Waltz",
+            "WCS",
+            "Tango",
+            "Samba",
+            "Foxtrot",
+            "Jive",
+            "VWSlow",
+            "ChaCha",
+            "QuickStep",
+            "PasoDoble",
+            "JSlow",
+            "VienneseWaltz",
+            "Rumba"
+        ],
+        "num_selections": 1,
+        "play_all_songs": false,
+        "auto_update": true,
+        "play_single_song": false,
+        "randomize_playlist": true,
+        "adjust_song_counts": false,
+        "dance_adjustments": {},
+        "dance_max_playtimes": {}
     },
     "Debug": {
         "dances": [
