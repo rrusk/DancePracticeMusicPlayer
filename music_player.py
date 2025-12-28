@@ -90,6 +90,9 @@ class PlayerConstants:
     # Practice Type Constants
     PRACTICE_TYPE_60_MIN = "60min"
     PRACTICE_TYPE_NC_60_MIN = "NC 60min"
+    
+    # Files
+    HISTORY_FILE = "play_history.json"
 
 
 # --- Root ScreenManager Widget ---
@@ -1313,6 +1316,93 @@ class MusicPlayer(BoxLayout):
                     ".mp3", ".ogg", ".m4a", ".flac", ".wav"))])
         return music_paths
 
+    def _get_history_path(self) -> str:
+        """Returns the full path to the history JSON file."""
+        return os.path.join(self.script_path, PlayerConstants.HISTORY_FILE)
+
+    def _load_play_history(self) -> dict:
+        """Loads the play history from disk.
+
+        Returns:
+            dict: A dictionary mapping dance names to lists of played file paths.
+        """
+        history_path = self._get_history_path()
+        if not os.path.exists(history_path):
+            return {}
+
+        try:
+            with open(history_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            print(f"Warning: Could not load play history: {e}")
+            return {}
+
+    def _save_play_history(self, history: dict) -> None:
+        """Saves the updated play history to disk."""
+        try:
+            with open(self._get_history_path(), 'w', encoding='utf-8') as f:
+                json.dump(history, f, indent=2)
+        except OSError as e:
+            print(f"Warning: Could not save play history: {e}")
+
+    def _select_songs_with_history(
+        self,
+        all_paths: list[str],
+        dance: str,
+        count: int,
+        history: dict
+    ) -> list[str]:
+        """Selects songs ensuring no repeats until all have been played.
+
+        If the pool of unplayed songs is exhausted, it resets the history
+        for that dance type.
+        """
+        # 1. Identify what has already been played
+        played_set = set(history.get(dance, []))
+
+        # 2. Determine what is currently available (Set Subtraction)
+        # We assume file paths are unique identifiers
+        unplayed_paths = [p for p in all_paths if p not in played_set]
+
+        selected_paths = []
+
+        # 3. Check if we need to reshuffle
+        if len(unplayed_paths) < count:
+            # Case A: Not enough songs left.
+            # Take what is left, reset history, and fill the rest.
+
+            # Step 3a: Take all remaining unplayed songs
+            selected_paths.extend(unplayed_paths)
+            needed = count - len(selected_paths)
+
+            # Step 3b: Reset history for this dance (reshuffle)
+            # We explicitly clear it so 'all_paths' are now valid candidates again
+            history[dance] = []
+
+            # Step 3c: Fill the remaining slots from the full list
+            # Note: We must exclude the songs we just picked in Step 3a to avoid
+            # immediate repetition in the same playlist.
+            available_for_refill = [p for p in all_paths if p not in selected_paths]
+
+            # Handle edge case: Requesting more songs than exist in total directory
+            needed = min(needed, len(available_for_refill))
+
+            refill_selection = random.sample(available_for_refill, needed)
+            selected_paths.extend(refill_selection)
+
+        else:
+            # Case B: Plenty of unplayed songs. Standard random sample.
+            selected_paths = random.sample(unplayed_paths, count)
+
+        # 4. Update History
+        # We append the newly selected songs to the history
+        current_history = history.get(dance, [])
+        # If we just reset (Case A), current_history is empty, which is correct.
+        # If we didn't reset (Case B), we append to existing.
+        history[dance] = current_history + selected_paths
+
+        return selected_paths
+
     def _get_songs_for_dance(
         self, directory: str, dance: str, num_selections: int, randomize: bool
     ) -> list:
@@ -1344,7 +1434,12 @@ class MusicPlayer(BoxLayout):
             num_to_sample = min(adjusted_num_selections, len(all_music_paths))
 
         if randomize:
-            sampled_paths = random.sample(all_music_paths, k=num_to_sample)
+            # Use history-aware random selection
+            history = self._load_play_history()
+            sampled_paths = self._select_songs_with_history(
+                all_music_paths, dance, num_to_sample, history
+            )
+            self._save_play_history(history)
         else:
             sampled_paths = sorted(all_music_paths)[:num_to_sample]
 
@@ -1607,4 +1702,3 @@ class MusicApp(App):
 
 if __name__ == "__main__":
     MusicApp().run()
-
