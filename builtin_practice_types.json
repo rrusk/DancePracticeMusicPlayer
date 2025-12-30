@@ -215,15 +215,5 @@
         "adjust_song_counts": false,
         "dance_adjustments": {},
         "dance_max_playtimes": {}
-    },
-    "Debug": {
-        "dances": [
-            "Tango"
-        ],
-        "play_all_songs": true,
-        "auto_update": false,
-        "play_single_song": true,
-        "randomize_playlist": false,
-        "adjust_song_counts": false
     }
 }
