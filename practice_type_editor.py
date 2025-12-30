@@ -1,10 +1,11 @@
 # practice_type_editor.py
 """
 Provides a Kivy Screen for creating, editing, and deleting custom practice types
-for the Dance Practice Music Player.
+for the Dance Practice Music Player. Supports separate built-in and user files.
 """
 import json
 import os
+import copy
 from functools import partial
 from kivy.app import App
 from kivy.uix.screenmanager import Screen
@@ -21,8 +22,8 @@ from kivy.lang import Builder
 class PracticeTypeEditorScreen(Screen):
     """
     The main screen widget for the practice type editor. It handles loading
-    practice types from JSON, displaying them in a list, and providing
-    a form to edit the selected practice type.
+    practice types from JSON (merging built-ins and custom overrides),
+    displaying them in a list, and providing a form to edit the selection.
     """
     practice_type_list_layout = ObjectProperty(None)
     edit_form = ObjectProperty(None)
@@ -31,8 +32,15 @@ class PracticeTypeEditorScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.script_path = os.path.dirname(os.path.abspath(__file__))
-        self.json_path = os.path.join(self.script_path, "custom_practice_types.json")
-        self.practice_types = {}
+        
+        # Split paths: one for shipping (read-only), one for user edits (read-write)
+        self.builtin_path = os.path.join(self.script_path, "builtin_practice_types.json")
+        self.custom_path = os.path.join(self.script_path, "custom_practice_types.json")
+        
+        self.builtin_types = {}
+        self.custom_types = {}
+        self.practice_types = {} # This represents the combined/merged view
+        
         self._current_button = None
         self.changes_saved_since_enter = False
 
@@ -43,61 +51,94 @@ class PracticeTypeEditorScreen(Screen):
         self.display_practice_type_list()
         self.clear_form()
 
-    def load_practice_types(self):
-        """Loads the custom practice types from the JSON file."""
+    def _load_json_file(self, path):
+        """Helper to safely load a JSON file."""
+        if not os.path.exists(path):
+            return {}
         try:
-            with open(self.json_path, 'r', encoding='utf-8') as f:
-                all_data = json.load(f)
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
                 # Filter out comment keys
-                self.practice_types = {
-                    k: v for k, v in all_data.items() if not k.startswith("__COMMENT__")
-                }
-        except (FileNotFoundError, json.JSONDecodeError):
-            self.practice_types = {}
-            # If the file doesn't exist or is empty, create a placeholder
-            if not os.path.exists(self.json_path):
-                with open(self.json_path, 'w', encoding='utf-8') as f:
-                    json.dump({}, f)
+                return {k: v for k, v in data.items() if not k.startswith("__COMMENT__")}
+        except (OSError, json.JSONDecodeError) as e:
+            print(f"Warning loading {path}: {e}")
+            return {}
+
+    def load_practice_types(self):
+        """
+        Loads practice types from both the built-in JSON and the user's local 
+        custom JSON, merging them so custom overrides built-in.
+        """
+        self.builtin_types = self._load_json_file(self.builtin_path)
+        
+        # If custom file doesn't exist, we just start with an empty dict for it
+        # (It will be created on first save)
+        self.custom_types = self._load_json_file(self.custom_path)
+
+        # Merge strategy: Built-ins first, then Custom overrides them
+        self.practice_types = self.builtin_types.copy()
+        self.practice_types.update(self.custom_types)
 
     def save_practice_types(self):
         """
-        Saves the current practice types back to the JSON file.
+        Saves ONLY the custom types to the user-writable JSON file.
         Returns True on success, False on failure.
         """
         try:
-            # Read original file to preserve comments
-            with open(self.json_path, 'r', encoding='utf-8') as f:
-                all_data = json.load(f)
+            # 1. Read original custom file to preserve comments (if it exists)
+            current_file_data = {}
+            if os.path.exists(self.custom_path):
+                try:
+                    with open(self.custom_path, 'r', encoding='utf-8') as f:
+                        current_file_data = json.load(f)
+                except (OSError, json.JSONDecodeError):
+                    current_file_data = {}
 
-            # Update only the non-comment keys
-            for key in self.practice_types:
-                all_data[key] = self.practice_types[key]
+            # 2. Update only the non-comment keys based on self.custom_types
+            for key in self.custom_types:
+                current_file_data[key] = self.custom_types[key]
 
-            # Find keys to delete (present in original file but not in our active dict)
-            keys_to_delete = [k for k in all_data if not k.startswith("__COMMENT__")
-                              and k not in self.practice_types]
+            # 3. Find keys to delete (present in file but removed from our active custom dict)
+            # We ignore __COMMENT__ keys so they aren't deleted
+            keys_to_delete = [
+                k for k in current_file_data 
+                if not k.startswith("__COMMENT__") and k not in self.custom_types
+            ]
             for key in keys_to_delete:
-                del all_data[key]
+                del current_file_data[key]
 
-            with open(self.json_path, 'w', encoding='utf-8') as f:
-                json.dump(all_data, f, indent=4)
-            self.display_practice_type_list() # Refresh the list
-            return True # Indicate success
+            # 4. Write back to the custom file
+            with open(self.custom_path, 'w', encoding='utf-8') as f:
+                json.dump(current_file_data, f, indent=4)
+            
+            # Reload to ensure the merged view (self.practice_types) is perfectly synced
+            self.load_practice_types()
+            self.display_practice_type_list()
+            return True 
         except (OSError, TypeError) as e:
             self.show_popup("Error", f"Failed to save Practice Types: {e}")
-            return False # Indicate failure
+            return False
 
     def display_practice_type_list(self):
         """Populates the scroll view with buttons for each practice type."""
         self.practice_type_list_layout.clear_widgets()
-        # When clearing the list, also reset the tracked button
         self._current_button = None
 
         sorted_names = sorted(self.practice_types.keys())
         for name in sorted_names:
-            btn = Button(text=name, size_hint_y=None, height=40)
-            # Pass the button 'btn' as an argument to the callback
-            # Pass the button 'btn' as an argument to the callback
+            # Visual cue: Green text for custom/overridden types, White for built-ins
+            is_custom = name in self.custom_types
+            
+            # Note: We use color (text color) to distinguish, keeping background consistent
+            # unless selected.
+            text_color = (0.5, 1, 0.5, 1) if is_custom else (1, 1, 1, 1)
+            
+            btn = Button(
+                text=name, 
+                size_hint_y=None, 
+                height=40,
+                color=text_color
+            )
             btn.bind(on_press=partial(self.load_practice_type_into_form, btn, name))  # pylint: disable=no-member
             self.practice_type_list_layout.add_widget(btn)
 
@@ -105,10 +146,10 @@ class PracticeTypeEditorScreen(Screen):
         """Loads the selected practice type's data into the form and highlights the button."""
         # Reset the color of the previously selected button, if it exists
         if self._current_button:
-            self._current_button.background_color = (1, 1, 1, 1) # Default color
+            self._current_button.background_color = (1, 1, 1, 1) # Default background
 
         # Set the color of the newly clicked button
-        button_instance.background_color = (0, 1, 1, 1) # Highlight color (cyan)
+        button_instance.background_color = (0, 1, 1, 1) # Highlight background (cyan)
         self._current_button = button_instance
 
         self.current_practice_type_name = name
@@ -137,7 +178,7 @@ class PracticeTypeEditorScreen(Screen):
             self.edit_form.dance_max_playtimes_input.text = ""
 
     def save_current_practice_type(self):
-        """Gathers data from the form and saves it to the practice_types dict."""
+        """Gathers data from the form and saves it to the custom_practice_types dict."""
         name = self.edit_form.name_input.text.strip()
         if not name:
             self.show_popup("Error", "Practice Type name cannot be empty.")
@@ -145,9 +186,11 @@ class PracticeTypeEditorScreen(Screen):
 
         old_name = self.current_practice_type_name
 
-        # If name changed, remove old entry
-        if old_name and old_name != name and old_name in self.practice_types:
-            del self.practice_types[old_name]
+        # If name changed, remove old entry ONLY if it was in custom_types
+        if old_name and old_name != name:
+            if old_name in self.custom_types:
+                del self.custom_types[old_name]
+            # Note: We do NOT delete from builtin_types.
 
         try:
             new_data = {
@@ -163,39 +206,49 @@ class PracticeTypeEditorScreen(Screen):
                 "dance_max_playtimes": json.loads(
                     self.edit_form.dance_max_playtimes_input.text or "{}"),
             }
-            self.practice_types[name] = new_data
+            
+            # Always save to custom types (this creates an override if name matches a built-in)
+            self.custom_types[name] = new_data
             self.current_practice_type_name = name
 
             # If a rename of the active type occurred, update the player's state.
-            # The binding in MusicPlayer will handle updating the config file.
             if old_name and old_name != name:
                 app = App.get_running_app()
                 player_widget = app.manager.get_screen('player').children[0]
 
                 if player_widget.practice_type == old_name:
-                    # Update the live widget property
                     player_widget.practice_type = name
 
             if self.save_practice_types():
                 self.changes_saved_since_enter = True
                 self.show_popup("Success", "Practice Type saved successfully!")
+                
         except (ValueError) as e:
             self.show_popup(
                 "Error", f"Invalid data format: {e}\nCheck numeric fields and JSON formatting.")
 
     def delete_practice_type(self):
-        """Deletes the currently selected practice type."""
+        """Deletes the currently selected practice type (from custom types)."""
         name = self.current_practice_type_name
-        if not name or name not in self.practice_types:
-            self.show_popup("Error", "No Practice Type selected to delete.")
+        if not name:
+            self.show_popup("Error", "No Practice Type selected.")
             return
 
-        practice_type_name = self.current_practice_type_name
-        del self.practice_types[self.current_practice_type_name]
+        # Check if it's strictly a built-in type (not in custom)
+        if name in self.builtin_types and name not in self.custom_types:
+            self.show_popup("Error", "Cannot delete a built-in Practice Type.\nYou can only delete custom types or overrides.")
+            return
+
+        # It is in custom (either a new type or an override), so we can delete it
+        if name in self.custom_types:
+            del self.custom_types[name]
 
         if self.save_practice_types():
-            self.show_popup(
-                "Success", f"Practice Type '{practice_type_name}' deleted successfully.")
+            # Check if we just deleted an override (meaning the built-in version reappears)
+            if name in self.builtin_types:
+                self.show_popup("Reverted", f"Override for '{name}' deleted.\nReverted to built-in default.")
+            else:
+                self.show_popup("Success", f"Practice Type '{name}' deleted successfully.")
             self.clear_form()
 
     def clear_form(self, *_args):

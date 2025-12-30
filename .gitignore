@@ -169,3 +169,8 @@ kivy_venv
 
 # Ignore Music Player settings initialization file
 music.ini
+# Ignore local playlist customizations
+custom_practice_types.json
+play_history.json
+# Defaults (tracked)
+!builtin_practice_types.json

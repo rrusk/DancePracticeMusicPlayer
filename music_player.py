@@ -1,3 +1,4 @@
+# music_player.py
 # pylint: disable=too-many-lines
 """Dance Practice Music Player
 
@@ -313,57 +314,62 @@ class MusicPlayer(BoxLayout):
             self._display_playlist_buttons()
 
     def load_custom_practice_types(self) -> dict:
-        """Load custom practice types from a JSON file in the application directory.
-
-        This method looks for 'custom_practice_types.json' in the script's directory.
-        It parses the JSON, filtering out any keys that start with "__COMMENT__",
-        which allows for comments within the JSON file.
-
-        Returns:
-            A dictionary of custom practice types loaded from the JSON file. Returns an
-            empty dictionary if the file is not found or if a parsing error occurs.
         """
-        custom_types = {}
-        json_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "custom_practice_types.json")
-        if os.path.isfile(json_path):
-            try:
-                with open(json_path, "r", encoding="utf-8") as f:
-                    raw_data = json.load(f)
-                    # Filter out any keys that start with "__COMMENT__"
-                    custom_types = {
-                        k: v for k, v in raw_data.items()
-                        if not k.startswith("__COMMENT__")
-                    }
-            except (OSError, json.JSONDecodeError) as e:
-                print(f"Failed to load custom practice types: {e}")
-        return custom_types
+        Loads practice types from both the built-in JSON (distributed via git)
+        and the user's local custom JSON.
+        """
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        builtin_path = os.path.join(script_dir, "builtin_practice_types.json")
+        custom_path = os.path.join(script_dir, "custom_practice_types.json")
+
+        def load_json(path):
+            data = {}
+            if os.path.isfile(path):
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        raw = json.load(f)
+                        # Filter comments
+                        data = {k: v for k, v in raw.items() if not k.startswith("__COMMENT__")}
+                except (OSError, json.JSONDecodeError) as e:
+                    print(f"Failed to load {path}: {e}")
+            return data
+
+        # Load both
+        builtin_data = load_json(builtin_path)
+        custom_data = load_json(custom_path)
+
+        # Merge: Custom data overrides Built-in data
+        merged_data = builtin_data.copy()
+        merged_data.update(custom_data)
+        
+        return merged_data
 
     def merge_custom_practice_types(self) -> None:
-        """Merge custom practice types into settings and internal dance mappings.
-
-        This method loads custom types from JSON and dynamically updates the 'Practice Type'
-        dropdown in the settings panel. It also populates the `practice_dances` and
-        `custom_practice_mapping` dictionaries, which are used to configure player behavior
-        when a custom practice type is selected.
         """
-        custom_types = self.load_custom_practice_types()
-        if not custom_types:
+        Merge all practice types (built-in + custom) into settings and internal mappings.
+        """
+        all_types = self.load_custom_practice_types()
+        if not all_types:
             return
 
-        # Use named expression for practice_type_setting
+        # 1. Update the 'Practice Type' dropdown options
         if (practice_type_setting := next(
             (item for item in self.settings_json if item.get("key") == "practice_type"), None
         )):
-            for custom_name in custom_types:
-                if custom_name not in practice_type_setting["options"]:
-                    practice_type_setting["options"].append(custom_name)
+            # Ensure we don't duplicate options that are already there
+            for name in all_types:
+                if name not in practice_type_setting["options"]:
+                    practice_type_setting["options"].append(name)
 
-        # Add to practice_dances and mapping
+        # 2. Update internal mappings and practice_dances
         if not hasattr(self, "custom_practice_mapping"):
             self.custom_practice_mapping = {}
-        for name, data in custom_types.items():
+            
+        for name, data in all_types.items():
+            # Update the list of dances for this practice type
             self.practice_dances[name] = data.get("dances", [])
+            
+            # Update the rules/adjustments mapping
             self.custom_practice_mapping[name] = (
                 name,
                 data.get("num_selections", 2),
@@ -378,19 +384,26 @@ class MusicPlayer(BoxLayout):
 
     def update_settings_options(self):
         """
-        Dynamically updates the options in the settings JSON. Call this
-        after practice types have been modified externally.
+        Dynamically updates the options in the settings JSON. 
+        Crucial for ensuring the settings panel reflects changes after a Reload.
         """
-        custom_types = self.load_custom_practice_types()
+        all_types = self.load_custom_practice_types()
+        
         if (practice_type_setting := next(
             (item for item in self.settings_json if item.get("key") == "practice_type"), None
         )):
-            # Reset options to default before adding custom ones
-            base_options = [PlayerConstants.PRACTICE_TYPE_60_MIN, PlayerConstants.PRACTICE_TYPE_NC_60_MIN]
-            custom_options = list(custom_types.keys())
-            practice_type_setting["options"] = base_options + custom_options
+            # Start with the hardcoded base options
+            options = [PlayerConstants.PRACTICE_TYPE_60_MIN, PlayerConstants.PRACTICE_TYPE_NC_60_MIN]
+            
+            # Append loaded types ONLY if they aren't already in the list.
+            # This prevents "60min" from appearing twice (once as hardcoded base, once from JSON).
+            for name in all_types:
+                if name not in options:
+                    options.append(name)
+            
+            practice_type_setting["options"] = options
 
-            # If current practice type is no longer valid, reset it
+            # If current practice type is no longer valid (e.g. was deleted), reset it
             if self.practice_type not in practice_type_setting["options"]:
                 self.practice_type = PlayerConstants.PRACTICE_TYPE_60_MIN
 
