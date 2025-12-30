@@ -5,7 +5,6 @@ for the Dance Practice Music Player. Supports separate built-in and user files.
 """
 import json
 import os
-import copy
 from functools import partial
 from kivy.app import App
 from kivy.uix.screenmanager import Screen
@@ -17,13 +16,14 @@ from kivy.uix.popup import Popup
 # pylint: disable=no-name-in-module
 from kivy.properties import ObjectProperty, StringProperty
 from kivy.lang import Builder
+from kivy.clock import Clock
 
 
 class PracticeTypeEditorScreen(Screen):
     """
     The main screen widget for the practice type editor. It handles loading
-    practice types from JSON (merging built-ins and custom overrides),
-    displaying them in a list, and providing a form to edit the selection.
+    practice types from both Built-in (Read-only) and Custom (Read-write) sources,
+    merging them for display.
     """
     practice_type_list_layout = ObjectProperty(None)
     edit_form = ObjectProperty(None)
@@ -45,11 +45,24 @@ class PracticeTypeEditorScreen(Screen):
         self.changes_saved_since_enter = False
 
     def on_enter(self, *args):
-        """Called when the screen is entered. Loads and displays the practice types."""
+        """Called when the screen is entered."""
         self.changes_saved_since_enter = False
+        
+        # Schedule loading with a small buffer (0.1s) to allow 
+        # OS file locks to clear and widgets to initialize.
+        Clock.schedule_once(self._deferred_load_and_display, 0.1)
+
+    def _deferred_load_and_display(self, dt):
+        """Load data and update UI after screen has fully initialized."""
+        # 1. Load Data (now safe from race conditions)
         self.load_practice_types()
-        self.display_practice_type_list()
-        self.clear_form()
+        
+        # 2. Update UI (now safe from widget binding issues)
+        if self.practice_type_list_layout:
+            self.display_practice_type_list()
+            self.clear_form()
+        else:
+            print("WARNING: Layout not ready even after delay.")
 
     def _load_json_file(self, path):
         """Helper to safely load a JSON file."""
