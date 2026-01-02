@@ -1,114 +1,230 @@
 #!/usr/bin/env python3
 import os
+import sys
+import shlex
+import locale
+import copy
 from mutagen.id3 import (
     ID3, TIT2, TPE1, TALB, TCON,
     ID3NoHeaderError
 )
 
-REPLAYGAIN_FRAMES = (
-    "TXXX:replaygain_track_gain",
-    "TXXX:replaygain_track_peak",
-    "TXXX:replaygain_album_gain",
-    "TXXX:replaygain_album_peak",
-)
+# -----------------------------------------------------------------------------
+# Configuration & Setup
+# -----------------------------------------------------------------------------
 
-def load_tags(file):
+try:
+    locale.setlocale(locale.LC_ALL, '')
+except locale.Error:
+    pass
+
+# -----------------------------------------------------------------------------
+# Core Logic
+# -----------------------------------------------------------------------------
+
+def load_tags(file_path):
+    """
+    Loads ID3 tags from a file, returning the ID3 object and a dictionary
+    of simplified tag values.
+    """
     try:
-        audio = ID3(file)
+        audio = ID3(file_path)
     except ID3NoHeaderError:
         audio = ID3()
 
-    def get(tag):
-        f = audio.getall(tag)
-        return f[0].text[0] if f else ""
+    def get_text(frame_name):
+        frames = audio.getall(frame_name)
+        if frames and frames[0].text:
+            return frames[0].text[0]
+        return ""
 
-    return audio, {
-        "title": get("TIT2"),
-        "artist": get("TPE1"),
-        "album": get("TALB"),
-        "genre": get("TCON"),
+    tags = {
+        "title": get_text("TIT2"),
+        "artist": get_text("TPE1"),
+        "album": get_text("TALB"),
+        "genre": get_text("TCON"),
     }
+    return audio, tags
 
-def find_replaygain(audio):
-    found = []
-    for key in audio.keys():
-        if key.lower().startswith("txxx:replaygain"):
-            found.append(key)
-    return found
+def find_replaygain_keys(audio):
+    """Returns a list of ReplayGain TXXX keys present in the audio object."""
+    return [
+        key for key in audio.keys()
+        if key.lower().startswith("txxx:replaygain")
+    ]
 
-def prompt(field, current):
-    return input(f"{field.capitalize()} [{current}]: ").strip() or current
-
-def edit_album(files, replaygain_log):
-    edited = []
-
-    for file in files:
-        audio, tags = load_tags(file)
-
-        rg = find_replaygain(audio)
-        if rg:
-            print(f"\n⚠ ReplayGain detected in {os.path.basename(file)}")
-            for r in rg:
-                print(f"  - {r}")
-            print("  → Will be removed for safe tagging\n")
-            replaygain_log.append(file)
-
-        print(f"File: {os.path.basename(file)}")
-        tags["title"] = prompt("title", tags["title"])
-        tags["artist"] = prompt("artist", tags["artist"])
-        tags["album"] = prompt("album", tags["album"])
-        tags["genre"] = prompt("genre", tags["genre"])
-
-        edited.append((file, audio, tags))
-
-    return edited
-
-def confirm_album(edited):
-    print("\n=== Album Summary ===")
-    for file, _, tags in edited:
-        print(f"\n{os.path.basename(file)}")
-        for k, v in tags.items():
-            print(f"  {k.capitalize()}: {v}")
-
+def prompt_input(field_name, current_value, allow_empty=True):
     while True:
-        choice = input("\nAccept these tags? [y]es / [e]dit again / [q]uit: ").lower()
-        if choice in ("y", "e", "q"):
-            return choice
+        user_input = input(f"{field_name.capitalize()} [{current_value}]: ").strip()
+        result = user_input or current_value
+        
+        if result or allow_empty:
+            return result
+        print(f"  ⚠ {field_name.capitalize()} cannot be empty. Please enter a value.")
 
-def write_tags(edited):
-    for file, audio, tags in edited:
-        # Remove replay-gain frames
-        for key in list(audio.keys()):
-            if key.lower().startswith("txxx:replaygain"):
-                audio.delall(key)
+def apply_tags_to_audio(audio, tags):
+    """Helper to modify the ID3 object in memory (does not save)."""
+    audio.delall("TIT2")
+    audio.delall("TPE1")
+    audio.delall("TALB")
+    audio.delall("TCON")
 
-        audio.delall("TIT2")
-        audio.add(TIT2(encoding=3, text=tags["title"]))
+    if tags["title"]: audio.add(TIT2(encoding=3, text=tags["title"]))
+    if tags["artist"]: audio.add(TPE1(encoding=3, text=tags["artist"]))
+    if tags["album"]: audio.add(TALB(encoding=3, text=tags["album"]))
+    if tags["genre"]: audio.add(TCON(encoding=3, text=tags["genre"]))
 
-        audio.delall("TPE1")
-        audio.add(TPE1(encoding=3, text=tags["artist"]))
+def handle_save_exception(file_path, audio, error):
+    """
+    Handles exceptions during save. Checks for ReplayGain and prompts user.
+    Returns True if retry was successful (and ReplayGain was removed), False otherwise.
+    """
+    print(f"\n⚠ Error saving {os.path.basename(file_path)}")
+    print(f"  Reason: {error}")
+    
+    rg_keys = find_replaygain_keys(audio)
+    
+    if not rg_keys:
+        print("  No ReplayGain tags detected to clean up.")
+        return False
 
-        audio.delall("TALB")
-        audio.add(TALB(encoding=3, text=tags["album"]))
+    print(f"  Detected {len(rg_keys)} ReplayGain frame(s). These may be causing corruption.")
+    choice = input("  Remove ReplayGain tags and retry? [y]es / [n]o / [q]uit program: ").lower()
 
-        audio.delall("TCON")
-        audio.add(TCON(encoding=3, text=tags["genre"]))
+    if choice == 'q':
+        print("Exiting program.")
+        sys.exit(1)
+    
+    if choice == 'y':
+        for key in rg_keys:
+            audio.delall(key)
+        
+        try:
+            audio.save(file_path, v2_version=3)
+            print("  ✔ Retry successful.")
+            return True
+        except Exception as retry_err:
+            print(f"  ✘ Retry failed: {retry_err}")
+            return False
+            
+    return False
 
-        audio.save(file, v2_version=3)
+def write_file_changes(file_path, audio, tags):
+    """
+    Attempts to write changes to a single file immediately.
+    Returns: (success: bool, error_reason: str|None)
+    If error_reason is returned, it means we had to clean the file.
+    """
+    apply_tags_to_audio(audio, tags)
+    
+    try:
+        audio.save(file_path, v2_version=3)
+        print(f"✔ Saved: {os.path.basename(file_path)}")
+        return True, None
+    except Exception as e:
+        # If this returns True, it means we successfully cleaned and saved
+        if handle_save_exception(file_path, audio, e):
+            return True, str(e) # Return the original error reason for the log
+        return False, None
 
-    print("\n✔ Tags written successfully.")
+def process_files_interactively(files):
+    """
+    Main loop: Iterates, edits, checks for changes, and writes immediately.
+    Returns the incident log.
+    """
+    incident_log = []
+    total_files = len(files)
 
-def replaygain_summary(replaygain_log):
-    if not replaygain_log:
+    for index, file_path in enumerate(files, 1):
+        audio, original_tags = load_tags(file_path)
+        
+        # Deep copy to allow comparison later
+        current_tags = copy.deepcopy(original_tags)
+
+        # Per-song Edit/Confirm Loop
+        while True:
+            print(f"\n--- File {index}/{total_files}: {os.path.basename(file_path)} ---")
+            
+            # 1. Edit Tags
+            current_tags["title"] = prompt_input("title", current_tags["title"], allow_empty=False)
+            current_tags["artist"] = prompt_input("artist", current_tags["artist"])
+            current_tags["album"] = prompt_input("album", current_tags["album"])
+            current_tags["genre"] = prompt_input("genre", current_tags["genre"])
+
+            # 2. Check for changes logic
+            if current_tags == original_tags:
+                # Ask user what to do since no changes were found
+                choice = input("\n  ⚠ No changes detected. [s]kip / [e]dit again [s]: ").lower().strip()
+                
+                if choice == 'e':
+                    print("   Re-editing...")
+                    continue  # Restart the loop for this file
+                else:
+                    # Default is 's' (skip) on empty string or explicit 's'
+                    print("   Skipping file...")
+                    break  # Break inner loop, move to next file
+
+            # 3. Show Summary (only if changes exist)
+            print(f"\n   Summary for {os.path.basename(file_path)}:")
+            print(f"     Title:  {current_tags['title']}")
+            print(f"     Artist: {current_tags['artist']}")
+            print(f"     Album:  {current_tags['album']}")
+            print(f"     Genre:  {current_tags['genre']}")
+
+            # 4. Confirm & Write Immediately
+            choice = input("\n   Write these changes? [y]es / [e]dit again / [q]uit: ").lower()
+
+            if choice == 'y':
+                success, error_reason = write_file_changes(file_path, audio, current_tags)
+                
+                if success and error_reason:
+                    incident_log.append({
+                        'file': file_path,
+                        'reason': error_reason
+                    })
+                break  # Move to next file
+                
+            elif choice == 'e':
+                print("   Re-editing...")
+                continue
+                
+            elif choice == 'q':
+                print("Exiting program.")
+                # We return whatever logs we collected so far before exiting
+                if incident_log:
+                    print_summary_report(incident_log)
+                sys.exit(0)
+    
+    return incident_log
+
+def print_summary_report(incident_log):
+    if not incident_log:
         return
 
-    print("\n=== ReplayGain Removal Summary ===")
-    print("The following files had ReplayGain tags removed and should be re-scanned:\n")
-    for f in replaygain_log:
-        print(f"  {os.path.basename(f)}")
+    print("\n" + "="*40)
+    print("=== ReplayGain Action Required ===")
+    print("="*40)
+    
+    print("\nReplayGain tags were removed from the following files due to write errors:\n")
 
-    print("\nRecommended next step:")
-    print("  Run your ReplayGain scanner on this album once tagging is complete.\n")
+    for entry in incident_log:
+        fname = os.path.basename(entry['file'])
+        print(f"• {fname}")
+        print(f"  Reason: {entry['reason']}")
+    
+    print("\n" + "-"*40)
+    print("To restore ReplayGain for these files, run:")
+    print("-"*40 + "\n")
+
+    print("mp3gain -r -d 3 -c \\")
+    
+    count = len(incident_log)
+    for i, entry in enumerate(incident_log):
+        suffix = " \\" if i < count - 1 else ""
+        quoted_file = shlex.quote(entry['file'])
+        print(f"  {quoted_file}{suffix}")
+
+    print("\n(Verify 'mp3gain' is installed and in your PATH)")
 
 def main():
     folder = input("Folder containing MP3s: ").strip()
@@ -116,31 +232,33 @@ def main():
         print("Invalid folder.")
         return
 
-    files = sorted(
-        os.path.join(folder, f)
-        for f in os.listdir(folder)
-        if f.lower().endswith(".mp3")
-    )
+    try:
+        files = sorted([
+            os.path.join(folder, f)
+            for f in os.listdir(folder)
+            if f.lower().endswith(".mp3")
+        ], key=locale.strxfrm)
+    except Exception:
+        files = sorted([
+            os.path.join(folder, f)
+            for f in os.listdir(folder)
+            if f.lower().endswith(".mp3")
+        ])
 
     if not files:
         print("No MP3 files found.")
         return
 
-    replaygain_log = []
-
-    while True:
-        edited = edit_album(files, replaygain_log)
-        decision = confirm_album(edited)
-
-        if decision == "y":
-            write_tags(edited)
-            replaygain_summary(replaygain_log)
-            break
-        elif decision == "e":
-            continue
-        else:
-            print("Aborted. No changes written.")
-            break
+    incident_log = process_files_interactively(files)
+    
+    if incident_log:
+        print_summary_report(incident_log)
+    else:
+        print("\nAll operations completed.")
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nInterrupted by user.")
+        sys.exit(0)
