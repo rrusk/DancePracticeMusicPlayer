@@ -32,6 +32,8 @@ def parse_arguments():
     parser.add_argument("--artist", help="Global Artist to apply")
     parser.add_argument("--album", help="Global Album to apply")
     parser.add_argument("--genre", help="Global Genre to apply")
+    parser.add_argument("--remove-art", action="store_true", help="Remove all embedded cover art")
+    parser.add_argument("--no-embed", action="store_true", help="Do not auto-embed cover art")
     return parser.parse_args()
 
 def load_tags(file_path):
@@ -72,7 +74,6 @@ def prompt_input(field_name, current_value, allow_empty=True):
     - If user types something, returns that new value.
     """
     while True:
-        # The value in [] is what gets used if you just hit Enter
         user_input = input(f"{field_name.capitalize()} [{current_value}]: ").strip()
         result = user_input or current_value
         
@@ -193,9 +194,9 @@ def embed_cover_art_if_exists(file_path):
     except Exception:
         pass 
 
-def apply_batch_updates(files, global_overrides):
+def apply_batch_updates(files, global_overrides, remove_art=False, no_embed=False):
     """
-    Applies global overrides to all files immediately (Non-Interactive).
+    Applies global overrides and optionally removes art.
     """
     incident_log = []
     
@@ -205,17 +206,28 @@ def apply_batch_updates(files, global_overrides):
         
         changes_needed = False
         
-        # Check if globals are different from current file tags
+        # 1. Apply Global Tags
         for key, val in global_overrides.items():
             if val and current_tags[key] != val:
                 current_tags[key] = val
                 changes_needed = True
         
-        # Always check for art embedding in batch mode
-        embed_cover_art_if_exists(file_path)
+        # 2. Handle Art (Remove vs Embed)
+        if remove_art:
+            # Check if any APIC frames exist
+            if audio.getall("APIC"):
+                audio.delall("APIC")
+                changes_needed = True
+                # We don't print here to keep batch output clean, 
+                # but the final write confirmation implies update.
+        else:
+            # Only attempt to embed if we are NOT removing art AND NOT disabled
+            if not no_embed:
+                embed_cover_art_if_exists(file_path)
 
+        # 3. Save if needed
         if changes_needed:
-            # Silent=True, AutoFix=True because this is batch mode
+            # Silent=True, AutoFix=True because this is batch/setup mode
             success, error_reason = write_file_changes(
                 file_path, audio, current_tags, 
                 silent=True, 
@@ -245,8 +257,6 @@ def process_files_interactively(files):
             print(f"\n--- File {index}/{total_files}: {os.path.basename(file_path)} ---")
             
             # Edit Tags
-            # The second argument is the default value.
-            # If user presses Enter, prompt_input returns that default.
             current_tags["title"] = prompt_input("title", current_tags["title"], allow_empty=False)
             current_tags["artist"] = prompt_input("artist", current_tags["artist"])
             current_tags["album"] = prompt_input("album", current_tags["album"])
@@ -321,12 +331,12 @@ def main():
     args = parse_arguments()
 
     # --- 1. Mode Detection ---
-    # If any tagging arguments are provided, we assume Batch (Non-Interactive) Mode.
-    batch_mode = any([args.artist, args.album, args.genre])
+    # Batch Mode if any tag arguments OR remove-art is set
+    batch_mode = any([args.artist, args.album, args.genre, args.remove_art])
 
     # --- 2. Folder Validation ---
     if batch_mode and not args.folder:
-        print("Error: --folder is required when providing tag arguments.")
+        print("Error: --folder is required when providing tag/action arguments.")
         sys.exit(1)
     
     folder = args.folder
@@ -365,7 +375,13 @@ def main():
             "genre": args.genre if args.genre else ""
         }
         
-        incident_log = apply_batch_updates(files, global_overrides)
+        # Pass remove_art and no_embed flags
+        incident_log = apply_batch_updates(
+            files, 
+            global_overrides, 
+            remove_art=args.remove_art,
+            no_embed=args.no_embed
+        )
         
         if incident_log:
             print_summary_report(incident_log)
