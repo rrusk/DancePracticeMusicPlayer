@@ -84,6 +84,7 @@ def prompt_input(field_name, current_value, allow_empty=True):
 def configure_globals(args):
     """
     Interactively setup global overrides for Artist, Album, and Genre.
+    Also asks about global art embedding preference.
     Only runs in Interactive Mode.
     """
     print("\n--- Global Settings Configuration ---")
@@ -96,14 +97,33 @@ def configure_globals(args):
         "genre": ""
     }
 
+    # Text Tags
     for field in ["artist", "album", "genre"]:
         prompt = f"Set global {field.capitalize()}? [y/N]: "
         choice = input(prompt).strip().lower()
 
         if choice == 'y':
              globals[field] = input(f"  Enter global {field.capitalize()}: ").strip()
-        
-    return {k: v for k, v in globals.items() if v}
+    
+    overrides = {k: v for k, v in globals.items() if v}
+
+    # Cover Art Preference
+    # Returns: 'yes' (all), 'no' (none), 'ask' (per file)
+    print("-" * 40)
+    print("Embed 'cover.jpg' if missing?")
+    print("  [y]es  : Embed in ALL files immediately")
+    print("  [n]o   : Do not embed in any file")
+    print("  [a]sk  : Ask for each file individually")
+    art_choice = input("Choice [a]: ").strip().lower()
+
+    if art_choice.startswith('y'):
+        overrides['_embed_mode'] = 'yes'
+    elif art_choice.startswith('n'):
+        overrides['_embed_mode'] = 'no'
+    else:
+        overrides['_embed_mode'] = 'ask'
+
+    return overrides
 
 def apply_tags_to_audio(audio, tags):
     """Helper to modify the ID3 object in memory (does not save)."""
@@ -170,17 +190,21 @@ def write_file_changes(file_path, audio, tags, silent=False, auto_fix=False):
             return True, str(e)
         return False, None
 
-def embed_cover_art_if_exists(file_path):
-    """Checks for cover.jpg in the same folder and embeds it."""
+def attach_cover_art(audio, file_path):
+    """
+    Checks for cover.jpg and attaches it to the audio object in memory.
+    Returns True if art was added, False otherwise.
+    Does NOT save the file.
+    """
     cover_path = os.path.join(os.path.dirname(file_path), "cover.jpg")
     if not os.path.exists(cover_path):
-        return
+        return False
+
+    # Check if art already exists
+    if audio.getall("APIC"):
+        return False
 
     try:
-        audio = ID3(file_path)
-        if audio.getall("APIC"):
-            return
-
         with open(cover_path, 'rb') as albumart:
             audio.add(APIC(
                 encoding=3,
@@ -189,14 +213,13 @@ def embed_cover_art_if_exists(file_path):
                 desc='Cover',
                 data=albumart.read()
             ))
-        audio.save(v2_version=3)
-        print(f"  + Embedded cover art into {os.path.basename(file_path)}")
+        return True
     except Exception:
-        pass 
+        return False 
 
-def apply_batch_updates(files, global_overrides, remove_art=False, no_embed=False):
+def apply_batch_updates(files, global_overrides, remove_art=False, auto_embed=False):
     """
-    Applies global overrides and optionally removes art.
+    Applies global overrides and optionally removes/adds art.
     """
     incident_log = []
     
@@ -208,26 +231,25 @@ def apply_batch_updates(files, global_overrides, remove_art=False, no_embed=Fals
         
         # 1. Apply Global Tags
         for key, val in global_overrides.items():
+            # Skip internal control keys starting with _
+            if key.startswith('_'): continue
+            
             if val and current_tags[key] != val:
                 current_tags[key] = val
                 changes_needed = True
         
         # 2. Handle Art (Remove vs Embed)
         if remove_art:
-            # Check if any APIC frames exist
             if audio.getall("APIC"):
                 audio.delall("APIC")
                 changes_needed = True
-                # We don't print here to keep batch output clean, 
-                # but the final write confirmation implies update.
-        else:
-            # Only attempt to embed if we are NOT removing art AND NOT disabled
-            if not no_embed:
-                embed_cover_art_if_exists(file_path)
+        elif auto_embed:
+            # Only attempt to embed if requested
+            if attach_cover_art(audio, file_path):
+                changes_needed = True
 
         # 3. Save if needed
         if changes_needed:
-            # Silent=True, AutoFix=True because this is batch/setup mode
             success, error_reason = write_file_changes(
                 file_path, audio, current_tags, 
                 silent=True, 
@@ -240,9 +262,10 @@ def apply_batch_updates(files, global_overrides, remove_art=False, no_embed=Fals
 
     return incident_log
 
-def process_files_interactively(files):
+def process_files_interactively(files, embed_mode='ask'):
     """
     Main loop: Iterates, edits, checks for changes, and writes immediately.
+    embed_mode: 'yes' (handled in batch), 'no' (never), 'ask' (prompt user)
     """
     incident_log = []
     total_files = len(files)
@@ -253,6 +276,10 @@ def process_files_interactively(files):
         audio, original_tags = load_tags(file_path)
         current_tags = copy.deepcopy(original_tags)
 
+        # Check for cover art availability
+        cover_path = os.path.join(os.path.dirname(file_path), "cover.jpg")
+        can_embed = os.path.exists(cover_path)
+
         while True:
             print(f"\n--- File {index}/{total_files}: {os.path.basename(file_path)} ---")
             
@@ -262,8 +289,20 @@ def process_files_interactively(files):
             current_tags["album"] = prompt_input("album", current_tags["album"])
             current_tags["genre"] = prompt_input("genre", current_tags["genre"])
 
+            # Art Logic (Ask per file)
+            art_added_this_session = False
+            has_art = True if audio.getall("APIC") else False
+
+            if embed_mode == 'ask' and can_embed and not has_art:
+                choice = input("   Embed 'cover.jpg'? [y/N]: ").strip().lower()
+                if choice == 'y':
+                    if attach_cover_art(audio, file_path):
+                        art_added_this_session = True
+                        has_art = True # Update for summary
+
             # Check for changes
-            if current_tags == original_tags:
+            # Note: We must check if art was added, as tags might be identical
+            if current_tags == original_tags and not art_added_this_session:
                 choice = input("\n  ⚠ No changes detected. [s]kip / [e]dit again [s]: ").lower().strip()
                 if choice == 'e':
                     continue
@@ -271,14 +310,14 @@ def process_files_interactively(files):
                     break 
 
             # Summary
-            has_art = "Yes" if audio.getall("APIC") else "No"
+            art_status = "Yes" if has_art else "No"
             
             print(f"\n   Summary for {os.path.basename(file_path)}:")
             print(f"     Title:   {current_tags['title']}")
             print(f"     Artist:  {current_tags['artist']}")
             print(f"     Album:   {current_tags['album']}")
             print(f"     Genre:   {current_tags['genre']}")
-            print(f"     Has Art: {has_art}")
+            print(f"     Has Art: {art_status}")
 
             # Confirm
             choice = input("\n   Write these changes? [y]es / [e]dit again / [q]uit: ").lower()
@@ -290,6 +329,11 @@ def process_files_interactively(files):
                 break 
                 
             elif choice == 'e':
+                # If user wants to edit again, and we added art in memory, 
+                # we technically should revert it or reload, but simplest is 
+                # to just continue (art is still attached to 'audio' object).
+                # To be safe, we reload if they edit again to clear 'art_added_this_session'
+                audio, _ = load_tags(file_path)
                 continue
                 
             elif choice == 'q':
@@ -375,12 +419,14 @@ def main():
             "genre": args.genre if args.genre else ""
         }
         
-        # Pass remove_art and no_embed flags
+        # Batch Mode determines embedding purely via flags
+        auto_embed = not args.no_embed
+        
         incident_log = apply_batch_updates(
             files, 
             global_overrides, 
             remove_art=args.remove_art,
-            no_embed=args.no_embed
+            auto_embed=auto_embed
         )
         
         if incident_log:
@@ -392,10 +438,21 @@ def main():
         # --- INTERACTIVE PATH ---
         global_overrides = configure_globals(args)
         
+        # Extract the special Embed Mode key
+        embed_mode = global_overrides.pop('_embed_mode', 'ask')
+        
         incident_log = []
-        if global_overrides:
+        if global_overrides or embed_mode == 'yes':
             print("\nApplying interactive global settings first...")
-            incident_log = apply_batch_updates(files, global_overrides)
+            
+            # If user said 'yes' to embed globally, we do it here
+            should_auto_embed = (embed_mode == 'yes')
+            
+            incident_log = apply_batch_updates(
+                files, 
+                global_overrides, 
+                auto_embed=should_auto_embed
+            )
             print("Globals applied.")
 
             print("\n" + "-"*60)
@@ -404,7 +461,10 @@ def main():
                 if incident_log: print_summary_report(incident_log)
                 sys.exit(0)
 
-        interactive_log = process_files_interactively(files)
+        # Pass the embed_mode ('ask', 'no', 'yes') to the interactive loop
+        # Note: if 'yes', art is already added, so loop will see has_art=True
+        interactive_log = process_files_interactively(files, embed_mode=embed_mode)
+        
         total_log = incident_log + interactive_log
         
         if total_log:
