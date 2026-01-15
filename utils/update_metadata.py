@@ -34,6 +34,7 @@ def parse_arguments():
     parser.add_argument("--genre", help="Global Genre to apply")
     parser.add_argument("--remove-art", action="store_true", help="Remove all embedded cover art")
     parser.add_argument("--no-embed", action="store_true", help="Do not auto-embed cover art")
+    parser.add_argument("--clean", action="store_true", help="Auto-clean non-printable chars in batch mode")
     return parser.parse_args()
 
 def load_tags(file_path):
@@ -66,6 +67,105 @@ def find_replaygain_keys(audio):
         key for key in audio.keys()
         if key.lower().startswith("txxx:replaygain")
     ]
+
+def fix_encoding_mismatch(text):
+    """
+    Attempts to fix 'Mojibake' where Latin-1/Windows-1252 bytes were 
+    incorrectly decoded as UTF-8 (resulting in surrogates or garbage).
+    Returns the fixed text if successful, or the original text if not.
+    """
+    try:
+        # 1. Reverse the UTF-8 decode using 'surrogateescape' to get original bytes
+        #    (This works if the OS loaded the filename with surrogates for invalid bytes)
+        raw_bytes = text.encode('utf-8', 'surrogateescape')
+        
+        # 2. Re-decode using Windows-1252 (covers Latin-1 + extra chars)
+        fixed_text = raw_bytes.decode('cp1252')
+        
+        # 3. Verify the fix actually changed something and looks valid
+        if fixed_text != text:
+            return fixed_text
+    except Exception:
+        pass
+    return text
+
+def has_garbage(text):
+    """
+    Checks for Unicode Replacement Character, Surrogates, or non-printable chars.
+    """
+    if not text:
+        return False
+    if '\ufffd' in text:  # The replacement character
+        return True
+    
+    # Check for surrogate characters (indicating encoding errors on Linux)
+    # Surrogates range from 0xD800 to 0xDFFF
+    for char in text:
+        if 0xD800 <= ord(char) <= 0xDFFF:
+            return True
+            
+    # Check for other control characters (keeping standard whitespace)
+    return any(not c.isprintable() for c in text)
+
+def strip_garbage(text):
+    """
+    Removes \ufffd and non-printable characters.
+    Used primarily in batch mode as a fallback.
+    """
+    if not text:
+        return ""
+    
+    # Try fixing encoding first!
+    fixed = fix_encoding_mismatch(text)
+    if not has_garbage(fixed):
+        return fixed
+        
+    # If still garbage, strip it
+    clean = text.replace('\ufffd', '')
+    return "".join(c for c in clean if c.isprintable()).strip()
+
+def repair_string(text):
+    """
+    Interactively repairs a string by stopping at invalid characters 
+    and asking the user for a replacement.
+    """
+    # 1. First, try to auto-fix the encoding (Latin-1 -> UTF-8)
+    fixed_attempt = fix_encoding_mismatch(text)
+    
+    if fixed_attempt != text and not has_garbage(fixed_attempt):
+        print(f"  ⚠ Detected potential encoding error (e.g. Latin-1 decoded as UTF-8).")
+        print(f"  Proposed fix: '{text}'  -->  '{fixed_attempt}'")
+        choice = input("  Accept this fix? [Y/n]: ").strip().lower()
+        if choice == '' or choice == 'y':
+            return fixed_attempt
+
+    if not has_garbage(text):
+        return text
+
+    print(f"\n  Original String: '{text}'")
+    print("  ⚠ Invalid characters detected. Starting interactive repair...")
+    
+    chars = list(text)
+    repaired_chars = []
+    
+    for i, char in enumerate(chars):
+        if has_garbage(char):
+            # Print context up to the bad character
+            so_far = "".join(repaired_chars)
+            print(f"  Valid so far:    \"{so_far}\"")
+            
+            # Prompt for replacement
+            # Showing hex allows user to identify if it's a specific invisible char
+            bad_hex = hex(ord(char))
+            prompt = f"  Replace invalid char ({bad_hex}) with [Enter to delete]: "
+            replacement = input(prompt)
+            
+            if replacement:
+                repaired_chars.append(replacement)
+        else:
+            repaired_chars.append(char)
+            
+    return "".join(repaired_chars)
 
 def prompt_input(field_name, current_value, allow_empty=True):
     """
@@ -217,17 +317,38 @@ def attach_cover_art(audio, file_path):
     except Exception:
         return False 
 
-def apply_batch_updates(files, global_overrides, remove_art=False, auto_embed=False):
+def apply_batch_updates(files, global_overrides, remove_art=False, auto_embed=False, auto_clean=False):
     """
     Applies global overrides and optionally removes/adds art.
     """
     incident_log = []
     
     for file_path in files:
+        # Pre-cleanup in batch mode if requested
+        if auto_clean:
+            fname = os.path.basename(file_path)
+            
+            # Try to smart-fix encoding first, then strip if that fails
+            if has_garbage(fname):
+                clean_name = strip_garbage(fname)
+                if clean_name != fname:
+                    try:
+                        new_path = os.path.join(os.path.dirname(file_path), clean_name)
+                        os.rename(file_path, new_path)
+                        print(f"Renamed: {fname} -> {clean_name}")
+                        file_path = new_path
+                    except OSError as e:
+                        print(f"Error renaming {fname}: {e}")
+
         audio, tags = load_tags(file_path)
         current_tags = copy.deepcopy(tags)
         
         changes_needed = False
+        
+        # Cleanup Title in batch mode
+        if auto_clean and has_garbage(current_tags['title']):
+             current_tags['title'] = strip_garbage(current_tags['title'])
+             changes_needed = True
         
         # 1. Apply Global Tags
         for key, val in global_overrides.items():
@@ -273,15 +394,68 @@ def process_files_interactively(files, embed_mode='ask'):
     print(f"\n--- Starting Interactive Fine-Tuning ---")
 
     for index, file_path in enumerate(files, 1):
+        # ---------------------------------------------------------
+        # 1. Clean Garbage Characters (Iterative Repair)
+        # ---------------------------------------------------------
+
+        # Separate Filename from Extension
+        directory = os.path.dirname(file_path)
+        current_filename = os.path.basename(file_path)
+        name_root, ext = os.path.splitext(current_filename)
+
+        filename_was_changed = False
+
+        # Check Filename
+        if has_garbage(name_root):
+            print(f"\n⚠ Encoding issues detected in Filename {index}/{total_files}")
+            new_root = repair_string(name_root)
+
+            if new_root != name_root:
+                new_filename = new_root + ext
+                new_path = os.path.join(directory, new_filename)
+
+                try:
+                    os.rename(file_path, new_path)
+                    print(f"  ✔ File renamed to: {new_filename}")
+                    file_path = new_path
+                    filename_was_changed = True
+                    # Update variable for this iteration
+                    current_filename = new_filename
+                    name_root = new_root
+                except OSError as e:
+                    print(f"  ✘ Rename failed: {e}")
+
+        # Load Tags (from potentially renamed file)
         audio, original_tags = load_tags(file_path)
         current_tags = copy.deepcopy(original_tags)
+
+        # Sync Filename to Title or Repair Title
+        if filename_was_changed:
+            # If we fixed the filename, ask if we should apply it to the title
+            print(f"  Title currently: '{current_tags['title']}'")
+            prompt = f"  Use cleaned filename '{name_root}' for Track Title? [Y/n]: "
+            choice = input(prompt).strip().lower()
+            if choice == '' or choice == 'y':
+                current_tags['title'] = name_root
+            elif has_garbage(current_tags['title']):
+                # User said No, but title is dirty, so repair it manually
+                current_tags['title'] = repair_string(current_tags['title'])
+        else:
+            # Filename wasn't changed, but title might be dirty
+            if has_garbage(current_tags['title']):
+                print(f"\n⚠ Encoding issues detected in Track Title")
+                current_tags['title'] = repair_string(current_tags['title'])
+
+        # ---------------------------------------------------------
+        # 2. Standard Tag Editing
+        # ---------------------------------------------------------
 
         # Check for cover art availability
         cover_path = os.path.join(os.path.dirname(file_path), "cover.jpg")
         can_embed = os.path.exists(cover_path)
 
         while True:
-            print(f"\n--- File {index}/{total_files}: {os.path.basename(file_path)} ---")
+            print(f"\n--- File {index}/{total_files}: {current_filename} ---")
             
             # Edit Tags
             current_tags["title"] = prompt_input("title", current_tags["title"], allow_empty=False)
@@ -302,7 +476,9 @@ def process_files_interactively(files, embed_mode='ask'):
 
             # Check for changes
             # Note: We must check if art was added, as tags might be identical
-            if current_tags == original_tags and not art_added_this_session:
+            tags_changed = (current_tags != original_tags)
+
+            if not tags_changed and not art_added_this_session:
                 choice = input("\n  ⚠ No changes detected. [s]kip / [e]dit again [s]: ").lower().strip()
                 if choice == 'e':
                     continue
@@ -312,7 +488,7 @@ def process_files_interactively(files, embed_mode='ask'):
             # Summary
             art_status = "Yes" if has_art else "No"
             
-            print(f"\n   Summary for {os.path.basename(file_path)}:")
+            print(f"\n   Summary for {current_filename}:")
             print(f"     Title:   {current_tags['title']}")
             print(f"     Artist:  {current_tags['artist']}")
             print(f"     Album:   {current_tags['album']}")
@@ -426,7 +602,8 @@ def main():
             files, 
             global_overrides, 
             remove_art=args.remove_art,
-            auto_embed=auto_embed
+            auto_embed=auto_embed,
+            auto_clean=args.clean
         )
         
         if incident_log:
@@ -451,7 +628,8 @@ def main():
             incident_log = apply_batch_updates(
                 files, 
                 global_overrides, 
-                auto_embed=should_auto_embed
+                auto_embed=should_auto_embed,
+                auto_clean=args.clean
             )
             print("Globals applied.")
 
