@@ -2,20 +2,21 @@
 
 # ==============================================================================
 # Script Name: batch_update_albums.sh
-# Description: Automates the process of tagging MP3 albums.
+# Description: Automates the process of tagging and renaming audio files.
 #              1. Iterates through all subdirectories in the current folder.
 #              2. Only updates specific tags explicitly requested via flags.
 #              3. Can set Album tag to match the directory name (requires -t).
-#              4. ENSURES cover.jpg files are NEVER embedded.
+#              4. Can RENAME files based on the Title tag (requires --rename).
+#              5. ENSURES cover.jpg files are NEVER embedded.
 #
-# Usage:       batch_update_albums.sh [-a "Artist"] [-g "Genre"] [-t] [-r]
+# Usage:       batch_update_albums.sh [-a "Artist"] [-g "Genre"] [--rename]
 # ==============================================================================
 
 # Strict Mode
 set -euo pipefail
 
 # -----------------------------------------------------------------------------
-# Configuration & Defaults (Empty by default)
+# Configuration & Defaults
 # -----------------------------------------------------------------------------
 
 TOOL_NAME="update_metadata.py"
@@ -25,6 +26,7 @@ TARGET_ARTIST=""
 TARGET_GENRE=""
 SET_ALBUM_FROM_DIR=false  # Default: Do not change album tag
 REMOVE_ART=false          # Default: Do not remove art
+RENAME_FILES=false        # Default: Do not rename files
 
 # -----------------------------------------------------------------------------
 # Helper Functions
@@ -33,7 +35,7 @@ REMOVE_ART=false          # Default: Do not remove art
 print_usage() {
     echo "Usage: $(basename "$0") [OPTIONS]"
     echo ""
-    echo "Updates MP3 metadata in all subdirectories of the current folder."
+    echo "Updates audio metadata in all subdirectories of the current folder."
     echo "NOTE: No tags are changed unless explicitly requested."
     echo ""
     echo "Options:"
@@ -41,12 +43,12 @@ print_usage() {
     echo "  -g, --genre GENRE      Set global Genre"
     echo "  -t, --tag-album        Set Album tag to match the subdirectory name"
     echo "  -r, --remove-art       Remove all embedded cover art"
+    echo "  -n, --rename           Rename files based on Title tag (e.g. '01 - Title.ogg')"
     echo "  -h, --help             Show this help message"
     echo ""
     echo "Examples:"
-    echo "  $(basename "$0") -a \"Lyle Lovett\"              (Update Artist only)"
-    echo "  $(basename "$0") -t                             (Update Album tag only)"
-    echo "  $(basename "$0") -a \"The Beatles\" -g \"Rock\" -t (Update Artist, Genre, and Album)"
+    echo "  $(basename "$0") --rename                       (Batch rename only)"
+    echo "  $(basename "$0") -a \"Lyle Lovett\" --rename      (Set Artist and Rename)"
 }
 
 # -----------------------------------------------------------------------------
@@ -81,6 +83,10 @@ while [[ $# -gt 0 ]]; do
             REMOVE_ART=true
             shift 1
             ;;
+        -n|--rename)
+            RENAME_FILES=true
+            shift 1
+            ;;
         -h|--help)
             print_usage
             exit 0
@@ -101,9 +107,10 @@ done
 if [[ -z "$TARGET_ARTIST" ]] && \
    [[ -z "$TARGET_GENRE" ]] && \
    [[ "$SET_ALBUM_FROM_DIR" == false ]] && \
-   [[ "$REMOVE_ART" == false ]]; then
+   [[ "$REMOVE_ART" == false ]] && \
+   [[ "$RENAME_FILES" == false ]]; then
     echo "Error: No actions specified."
-    echo "You must provide at least one option to change tags (e.g., -a, -g, -t, or -r)."
+    echo "You must provide at least one option (e.g., --artist, --rename, -t)."
     echo ""
     print_usage
     exit 1
@@ -154,6 +161,12 @@ else
     echo "Target Album:      [No Change]"
 fi
 
+if [[ "$RENAME_FILES" == true ]]; then
+    echo "File Renaming:     ENABLED (Title -> Filename)"
+else
+    echo "File Renaming:     [No Change]"
+fi
+
 if [[ "$REMOVE_ART" == true ]]; then
     echo "Cover Art:         REMOVE ALL EMBEDDED ART"
 else
@@ -202,6 +215,10 @@ for dir_path in */; do
 
     if [[ "$SET_ALBUM_FROM_DIR" == true ]]; then
         cmd+=(--album "$album_title")
+    fi
+
+    if [[ "$RENAME_FILES" == true ]]; then
+        cmd+=(--rename)
     fi
 
     if [[ "$REMOVE_ART" == true ]]; then
