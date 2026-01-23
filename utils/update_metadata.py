@@ -7,6 +7,7 @@ import copy
 import argparse
 import re
 import base64
+import subprocess
 import mutagen
 from mutagen.id3 import (
     ID3, TIT2, TPE1, TALB, TCON, APIC,
@@ -447,14 +448,60 @@ def write_file_changes(file_path, audio, tags, silent=False, auto_fix=False):
             return True, str(e)
         return False, None
 
+def get_optimized_cover_art(directory):
+    """
+    Ensures 'cover_embed.jpg' exists and is up-to-date relative to 'cover.jpg'.
+    Resizes 'cover.jpg' to max 600x600 using ffmpeg if needed.
+    Returns path to 'cover_embed.jpg' if available, else None.
+    """
+    master_path = os.path.join(directory, "cover.jpg")
+    embed_path = os.path.join(directory, "cover_embed.jpg")
+
+    # If no master exists, check if we have an orphan embed to fallback on
+    if not os.path.exists(master_path):
+        if os.path.exists(embed_path):
+            return embed_path 
+        return None
+
+    # Check if we need to regenerate
+    needs_update = False
+    if not os.path.exists(embed_path):
+        needs_update = True
+    else:
+        # Check timestamps: if master is newer than embed
+        if os.path.getmtime(master_path) > os.path.getmtime(embed_path):
+            needs_update = True
+            
+    if needs_update:
+        try:
+            # ffmpeg -i input -vf scale=600:600:force_original_aspect_ratio=decrease -y output
+            cmd = [
+                'ffmpeg', '-i', master_path,
+                '-vf', 'scale=600:600:force_original_aspect_ratio=decrease',
+                '-y', # Overwrite without asking
+                '-loglevel', 'error', # Quiet
+                embed_path
+            ]
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            print(f"  ➜ Generated optimized art: cover_embed.jpg")
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            print("  ⚠ Failed to resize cover art using ffmpeg. Skipping embed.")
+            return None
+
+    return embed_path
+
 def attach_cover_art(audio, file_path):
     """
-    Checks for cover.jpg and attaches it to the audio object in memory.
+    Checks for cover art (optimizing it if needed) and attaches it.
     Returns True if art was added, False otherwise.
     Does NOT save the file.
     """
-    cover_path = os.path.join(os.path.dirname(file_path), "cover.jpg")
-    if not os.path.exists(cover_path):
+    directory = os.path.dirname(file_path)
+    
+    # Retrieve optimized path (generates it if missing/stale)
+    cover_path = get_optimized_cover_art(directory)
+    
+    if not cover_path or not os.path.exists(cover_path):
         return False
 
     try:
@@ -666,8 +713,9 @@ def process_files_interactively(files, embed_mode='ask', rename_files=False):
         # ---------------------------------------------------------
 
         # Check for cover art availability
-        cover_path = os.path.join(os.path.dirname(file_path), "cover.jpg")
-        can_embed = os.path.exists(cover_path)
+        # We check for EITHER the master cover.jpg OR an existing optimized version
+        can_embed = os.path.exists(os.path.join(directory, "cover.jpg")) or \
+                    os.path.exists(os.path.join(directory, "cover_embed.jpg"))
 
         while True:
             print(f"\n--- File {index}/{total_files}: {current_filename} ---")
