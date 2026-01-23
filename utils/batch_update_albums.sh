@@ -4,30 +4,27 @@
 # Script Name: batch_update_albums.sh
 # Description: Automates the process of tagging MP3 albums.
 #              1. Iterates through all subdirectories in the current folder.
-#              2. Uses the directory name as the 'Album' tag.
-#              3. Applies global 'Artist' and 'Genre' tags to all files.
-#              4. Supports a "Remove Art Only" mode that preserves existing tags.
-#              5. ENSURES cover.jpg files are NEVER embedded.
+#              2. Only updates specific tags explicitly requested via flags.
+#              3. Can set Album tag to match the directory name (requires -t).
+#              4. ENSURES cover.jpg files are NEVER embedded.
 #
-# Usage:       batch_update_albums.sh [-a "Artist"] [-g "Genre"] [--remove-art-only]
+# Usage:       batch_update_albums.sh [-a "Artist"] [-g "Genre"] [-t] [-r]
 # ==============================================================================
 
 # Strict Mode
 set -euo pipefail
 
 # -----------------------------------------------------------------------------
-# Configuration & Defaults
+# Configuration & Defaults (Empty by default)
 # -----------------------------------------------------------------------------
 
-DEFAULT_ARTIST="Various Artists"
-DEFAULT_GENRE="Country"
 TOOL_NAME="update_metadata.py"
 
 # State Variables
-TARGET_ARTIST="$DEFAULT_ARTIST"
-TARGET_GENRE="$DEFAULT_GENRE"
-UPDATE_TAGS=true        # Default: Yes, update the text tags
-REMOVE_ART_FLAG=""      # Default: No, do not remove art
+TARGET_ARTIST=""
+TARGET_GENRE=""
+SET_ALBUM_FROM_DIR=false  # Default: Do not change album tag
+REMOVE_ART=false          # Default: Do not remove art
 
 # -----------------------------------------------------------------------------
 # Helper Functions
@@ -37,15 +34,19 @@ print_usage() {
     echo "Usage: $(basename "$0") [OPTIONS]"
     echo ""
     echo "Updates MP3 metadata in all subdirectories of the current folder."
-    echo "This script explicitly PREVENTS embedding cover art."
+    echo "NOTE: No tags are changed unless explicitly requested."
     echo ""
     echo "Options:"
-    echo "  -a, --artist ARTIST    Set global Artist (default: '$DEFAULT_ARTIST')"
-    echo "  -g, --genre GENRE      Set global Genre (default: '$DEFAULT_GENRE')"
-    echo "  -r, --remove-art-only  Remove embedded art WITHOUT changing any text tags"
-    echo "                         (Ignores -a, -g and preserves Album titles)"
+    echo "  -a, --artist ARTIST    Set global Artist"
+    echo "  -g, --genre GENRE      Set global Genre"
+    echo "  -t, --tag-album        Set Album tag to match the subdirectory name"
+    echo "  -r, --remove-art       Remove all embedded cover art"
     echo "  -h, --help             Show this help message"
     echo ""
+    echo "Examples:"
+    echo "  $(basename "$0") -a \"Lyle Lovett\"              (Update Artist only)"
+    echo "  $(basename "$0") -t                             (Update Album tag only)"
+    echo "  $(basename "$0") -a \"The Beatles\" -g \"Rock\" -t (Update Artist, Genre, and Album)"
 }
 
 # -----------------------------------------------------------------------------
@@ -72,9 +73,12 @@ while [[ $# -gt 0 ]]; do
                 exit 1
             fi
             ;;
-        -r|--remove-art-only)
-            UPDATE_TAGS=false
-            REMOVE_ART_FLAG="--remove-art"
+        -t|--tag-album)
+            SET_ALBUM_FROM_DIR=true
+            shift 1
+            ;;
+        -r|--remove-art|--remove-art-only)
+            REMOVE_ART=true
             shift 1
             ;;
         -h|--help)
@@ -93,7 +97,19 @@ done
 # Pre-flight Checks
 # -----------------------------------------------------------------------------
 
-# Check if tool exists in PATH
+# 1. Ensure at least one action is specified
+if [[ -z "$TARGET_ARTIST" ]] && \
+   [[ -z "$TARGET_GENRE" ]] && \
+   [[ "$SET_ALBUM_FROM_DIR" == false ]] && \
+   [[ "$REMOVE_ART" == false ]]; then
+    echo "Error: No actions specified."
+    echo "You must provide at least one option to change tags (e.g., -a, -g, -t, or -r)."
+    echo ""
+    print_usage
+    exit 1
+fi
+
+# 2. Check if tool exists in PATH
 if ! command -v "$TOOL_NAME" &> /dev/null; then
     echo "Error: '$TOOL_NAME' was not found in your PATH." >&2
     exit 1
@@ -102,7 +118,7 @@ fi
 # Resolve path for display
 TOOL_PATH=$(command -v "$TOOL_NAME")
 
-# Check for directories
+# 3. Check for directories
 dir_count=$(find . -maxdepth 1 -type d -not -path '.' | wc -l)
 if [[ "$dir_count" -eq 0 ]]; then
     echo "Error: No subdirectories found in current location." >&2
@@ -118,20 +134,33 @@ echo "      Batch Metadata Update Review        "
 echo "=========================================="
 echo "Working Directory: $(pwd)"
 echo "Using Tool:        $TOOL_PATH"
+echo "------------------------------------------"
 
-if [ "$UPDATE_TAGS" = true ]; then
-    echo "Mode:              UPDATE TAGS (Artist/Genre/Album)"
+if [[ -n "$TARGET_ARTIST" ]]; then
     echo "Target Artist:     $TARGET_ARTIST"
-    echo "Target Genre:      $TARGET_GENRE"
-    echo "Target Album:      (Set to subdirectory name)"
-    echo "Art Embedding:     DISABLED (Using --no-embed)"
 else
-    echo "Mode:              REMOVE ART ONLY"
-    echo "Target Artist:     (Preserve existing)"
-    echo "Target Genre:      (Preserve existing)"
-    echo "Target Album:      (Preserve existing)"
+    echo "Target Artist:     [No Change]"
 fi
 
+if [[ -n "$TARGET_GENRE" ]]; then
+    echo "Target Genre:      $TARGET_GENRE"
+else
+    echo "Target Genre:      [No Change]"
+fi
+
+if [[ "$SET_ALBUM_FROM_DIR" == true ]]; then
+    echo "Target Album:      [Set to Subdirectory Name]"
+else
+    echo "Target Album:      [No Change]"
+fi
+
+if [[ "$REMOVE_ART" == true ]]; then
+    echo "Cover Art:         REMOVE ALL EMBEDDED ART"
+else
+    echo "Cover Art:         [No Change]"
+fi
+
+echo "------------------------------------------"
 echo "Albums (Dirs):     $dir_count detected"
 echo "=========================================="
 echo ""
@@ -156,22 +185,27 @@ for dir_path in */; do
     
     echo "Processing Album: [$album_title]"
 
-    # Build the command dynamically using a Bash Array
+    # Start building the command
     cmd=("$TOOL_NAME" "$dir_path")
 
-    # 1. Handle Art Removal
-    if [[ -n "$REMOVE_ART_FLAG" ]]; then
-        cmd+=("$REMOVE_ART_FLAG")
+    # 1. Always disable auto-embedding in batch script to be safe
+    cmd+=(--no-embed)
+
+    # 2. Conditionally add flags based on user input
+    if [[ -n "$TARGET_ARTIST" ]]; then
+        cmd+=(--artist "$TARGET_ARTIST")
     fi
 
-    # 2. Handle Text Tags
-    if [ "$UPDATE_TAGS" = true ]; then
-        cmd+=(--artist "$TARGET_ARTIST")
+    if [[ -n "$TARGET_GENRE" ]]; then
         cmd+=(--genre "$TARGET_GENRE")
+    fi
+
+    if [[ "$SET_ALBUM_FROM_DIR" == true ]]; then
         cmd+=(--album "$album_title")
-        
-        # ALWAYS pass --no-embed when updating tags to prevent touching cover.jpg
-        cmd+=(--no-embed)
+    fi
+
+    if [[ "$REMOVE_ART" == true ]]; then
+        cmd+=(--remove-art)
     fi
 
     # Execute the constructed command
