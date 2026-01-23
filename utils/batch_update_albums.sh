@@ -7,9 +7,9 @@
 #              2. Only updates specific tags explicitly requested via flags.
 #              3. Can set Album tag to match the directory name (requires -t).
 #              4. Can RENAME files based on the Title tag (requires --rename).
-#              5. ENSURES cover.jpg files are NEVER embedded.
+#              5. Cover Art is IGNORED by default (Opt-in via --embed).
 #
-# Usage:       batch_update_albums.sh [-a "Artist"] [-g "Genre"] [--rename]
+# Usage:       batch_update_albums.sh [-a "Artist"] [-g "Genre"] [--rename] [--embed]
 # ==============================================================================
 
 # Strict Mode
@@ -27,6 +27,7 @@ TARGET_GENRE=""
 SET_ALBUM_FROM_DIR=false  # Default: Do not change album tag
 REMOVE_ART=false          # Default: Do not remove art
 RENAME_FILES=false        # Default: Do not rename files
+EMBED_ART=false           # Default: Do not embed art
 
 # -----------------------------------------------------------------------------
 # Helper Functions
@@ -44,6 +45,7 @@ print_usage() {
     echo "  -t, --tag-album        Set Album tag to match the subdirectory name"
     echo "  -r, --remove-art       Remove all embedded cover art"
     echo "  -n, --rename           Rename files based on Title tag (e.g. '01 - Title.ogg')"
+    echo "  -e, --embed            Embed 'cover.jpg' if found (Opt-in)"
     echo "  -h, --help             Show this help message"
     echo ""
     echo "Examples:"
@@ -87,6 +89,10 @@ while [[ $# -gt 0 ]]; do
             RENAME_FILES=true
             shift 1
             ;;
+        -e|--embed)
+            EMBED_ART=true
+            shift 1
+            ;;
         -h|--help)
             print_usage
             exit 0
@@ -108,7 +114,8 @@ if [[ -z "$TARGET_ARTIST" ]] && \
    [[ -z "$TARGET_GENRE" ]] && \
    [[ "$SET_ALBUM_FROM_DIR" == false ]] && \
    [[ "$REMOVE_ART" == false ]] && \
-   [[ "$RENAME_FILES" == false ]]; then
+   [[ "$RENAME_FILES" == false ]] && \
+   [[ "$EMBED_ART" == false ]]; then
     echo "Error: No actions specified."
     echo "You must provide at least one option (e.g., --artist, --rename, -t)."
     echo ""
@@ -169,8 +176,10 @@ fi
 
 if [[ "$REMOVE_ART" == true ]]; then
     echo "Cover Art:         REMOVE ALL EMBEDDED ART"
+elif [[ "$EMBED_ART" == true ]]; then
+    echo "Cover Art:         AUTO-EMBED 'cover.jpg' IF FOUND"
 else
-    echo "Cover Art:         [No Change]"
+    echo "Cover Art:         [No Change / Ignore]"
 fi
 
 echo "------------------------------------------"
@@ -201,10 +210,7 @@ for dir_path in */; do
     # Start building the command
     cmd=("$TOOL_NAME" "$dir_path")
 
-    # 1. Always disable auto-embedding in batch script to be safe
-    cmd+=(--no-embed)
-
-    # 2. Conditionally add flags based on user input
+    # 1. Conditionally add flags based on user input
     if [[ -n "$TARGET_ARTIST" ]]; then
         cmd+=(--artist "$TARGET_ARTIST")
     fi
@@ -223,6 +229,10 @@ for dir_path in */; do
 
     if [[ "$REMOVE_ART" == true ]]; then
         cmd+=(--remove-art)
+    fi
+
+    if [[ "$EMBED_ART" == true ]]; then
+        cmd+=(--embed)
     fi
 
     # Execute the constructed command
