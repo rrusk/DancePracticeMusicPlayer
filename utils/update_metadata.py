@@ -5,6 +5,7 @@ import shlex
 import locale
 import copy
 import argparse
+import re
 from mutagen.id3 import (
     ID3, TIT2, TPE1, TALB, TCON, APIC,
     ID3NoHeaderError
@@ -79,6 +80,11 @@ def fix_encoding_mismatch(text):
         #    (This works if the OS loaded the filename with surrogates for invalid bytes)
         raw_bytes = text.encode('utf-8', 'surrogateescape')
         
+        # Guard clause: If the bytes contain the UTF-8 replacement char sequence (EF BF BD),
+        # decoding them as cp1252 produces "ï¿½", which is garbage. Ignore this case.
+        if b'\xef\xbf\xbd' in raw_bytes:
+            return text
+        
         # 2. Re-decode using Windows-1252 (covers Latin-1 + extra chars)
         fixed_text = raw_bytes.decode('cp1252')
         
@@ -123,6 +129,16 @@ def strip_garbage(text):
     # If still garbage, strip it
     clean = text.replace('\ufffd', '')
     return "".join(c for c in clean if c.isprintable()).strip()
+
+def remove_track_number(text):
+    """
+    Removes leading track numbers (e.g. "01 - ", "12. ") from the text.
+    """
+    if not text:
+        return text
+    # Match start, 1+ digits, separator characters (space . -), then more text
+    # This handles "01 - Title", "01. Title", "01 Title"
+    return re.sub(r'^\d+[\s.-]+', '', text).strip()
 
 def repair_string(text):
     """
@@ -431,12 +447,14 @@ def process_files_interactively(files, embed_mode='ask'):
 
         # Sync Filename to Title or Repair Title
         if filename_was_changed:
-            # If we fixed the filename, ask if we should apply it to the title
+            # Smart Logic: remove track number before suggesting title
+            suggested_title = remove_track_number(name_root)
+            
             print(f"  Title currently: '{current_tags['title']}'")
-            prompt = f"  Use cleaned filename '{name_root}' for Track Title? [Y/n]: "
+            prompt = f"  Use cleaned filename '{suggested_title}' for Track Title? [Y/n]: "
             choice = input(prompt).strip().lower()
             if choice == '' or choice == 'y':
-                current_tags['title'] = name_root
+                current_tags['title'] = suggested_title
             elif has_garbage(current_tags['title']):
                 # User said No, but title is dirty, so repair it manually
                 current_tags['title'] = repair_string(current_tags['title'])
