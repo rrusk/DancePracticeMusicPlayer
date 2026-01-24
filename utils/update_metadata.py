@@ -16,6 +16,7 @@ from mutagen.id3 import (
 from mutagen.flac import FLAC, Picture as FlacPicture
 from mutagen.oggvorbis import OggVorbis
 from mutagen.oggopus import OggOpus
+from mutagen.mp4 import MP4, MP4Cover
 
 # -----------------------------------------------------------------------------
 # Configuration & Setup
@@ -34,7 +35,7 @@ def parse_arguments():
     """
     Parses command line arguments.
     """
-    parser = argparse.ArgumentParser(description="Interactive generic audio tag editor (MP3/FLAC/OGG/OPUS).")
+    parser = argparse.ArgumentParser(description="Interactive generic audio tag editor (MP3/FLAC/OGG/OPUS/M4A).")
     parser.add_argument("folder", nargs="?", help="Folder containing audio files")
     parser.add_argument("--artist", help="Global Artist to apply")
     parser.add_argument("--album", help="Global Album to apply")
@@ -53,7 +54,7 @@ def is_id3_based(audio):
 
 def load_tags(file_path):
     """
-    Loads tags from a file (MP3, FLAC, OGG, OPUS), returning the Mutagen object 
+    Loads tags from a file (MP3, FLAC, OGG, OPUS, M4A), returning the Mutagen object 
     and a dictionary of simplified tag values.
     """
     try:
@@ -89,6 +90,17 @@ def load_tags(file_path):
         tags["artist"] = get_text("TPE1")
         tags["album"] = get_text("TALB")
         tags["genre"] = get_text("TCON")
+
+    # --- M4A / MP4 Logic ---
+    elif isinstance(audio, MP4):
+        # M4A uses specific atoms: \xa9nam (Title), \xa9ART (Artist), \xa9alb (Album), \xa9gen (Genre)
+        def get_m4a_text(atom):
+            return audio.tags.get(atom, [""])[0]
+
+        tags["title"] = get_m4a_text("\xa9nam")
+        tags["artist"] = get_m4a_text("\xa9ART")
+        tags["album"] = get_m4a_text("\xa9alb")
+        tags["genre"] = get_m4a_text("\xa9gen")
 
     # --- FLAC / Ogg / Vorbis / Opus Logic ---
     else:
@@ -361,7 +373,22 @@ def apply_tags_to_audio(audio, tags):
         if tags["album"]: container.add(TALB(encoding=3, text=tags["album"]))
         if tags["genre"]: container.add(TCON(encoding=3, text=tags["genre"]))
     
-    # --- FLAC / Ogg / Vorbis Logic ---
+    # --- M4A / MP4 Logic ---
+    elif isinstance(audio, MP4):
+        # M4A uses specific atoms: \xa9nam, \xa9ART, \xa9alb, \xa9gen
+        mapping = {
+            "title": "\xa9nam",
+            "artist": "\xa9ART",
+            "album": "\xa9alb",
+            "genre": "\xa9gen"
+        }
+        for key, atom in mapping.items():
+            if tags[key]:
+                audio.tags[atom] = [tags[key]]
+            elif atom in audio.tags:
+                del audio.tags[atom]
+
+    # --- FLAC / Ogg / Vorbis / Opus Logic ---
     else:
         # Standard Vorbis comments
         mapping = {
@@ -524,6 +551,16 @@ def attach_cover_art(audio, file_path):
         ))
         return True
 
+    # --- M4A / MP4 Logic ---
+    elif isinstance(audio, MP4):
+        # M4A stores art in 'covr' atom as a list of MP4Cover objects
+        if "covr" in audio.tags: return False # Already exists
+        
+        # We assume JPEG because get_optimized_cover_art always produces JPEGs
+        cover = MP4Cover(image_data, imageformat=MP4Cover.FORMAT_JPEG)
+        audio.tags["covr"] = [cover]
+        return True
+
     # --- FLAC Logic ---
     elif isinstance(audio, FLAC):
         if audio.pictures: return False # Already exists
@@ -606,6 +643,10 @@ def apply_batch_updates(files, global_overrides, remove_art=False, auto_embed=Fa
                 container = audio.tags if hasattr(audio, 'tags') else audio
                 if container.getall("APIC"):
                     container.delall("APIC")
+                    changes_needed = True
+            elif isinstance(audio, MP4):
+                if "covr" in audio.tags:
+                    del audio.tags["covr"]
                     changes_needed = True
             elif isinstance(audio, FLAC):
                 if audio.pictures:
@@ -735,6 +776,8 @@ def process_files_interactively(files, embed_mode='ask', rename_files=False):
             if is_id3_based(audio):
                 container = audio.tags if hasattr(audio, 'tags') else audio
                 has_art = bool(container.getall("APIC"))
+            elif isinstance(audio, MP4):
+                has_art = "covr" in audio.tags
             elif isinstance(audio, FLAC):
                 has_art = bool(audio.pictures)
             elif isinstance(audio, (OggVorbis, OggOpus)):
