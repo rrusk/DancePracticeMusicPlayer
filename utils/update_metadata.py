@@ -15,6 +15,7 @@ from mutagen.id3 import (
 )
 from mutagen.flac import FLAC, Picture as FlacPicture
 from mutagen.oggvorbis import OggVorbis
+from mutagen.oggopus import OggOpus
 
 # -----------------------------------------------------------------------------
 # Configuration & Setup
@@ -33,7 +34,7 @@ def parse_arguments():
     """
     Parses command line arguments.
     """
-    parser = argparse.ArgumentParser(description="Interactive generic audio tag editor (MP3/FLAC/OGG).")
+    parser = argparse.ArgumentParser(description="Interactive generic audio tag editor (MP3/FLAC/OGG/OPUS).")
     parser.add_argument("folder", nargs="?", help="Folder containing audio files")
     parser.add_argument("--artist", help="Global Artist to apply")
     parser.add_argument("--album", help="Global Album to apply")
@@ -52,7 +53,7 @@ def is_id3_based(audio):
 
 def load_tags(file_path):
     """
-    Loads tags from a file (MP3, FLAC, OGG), returning the Mutagen object 
+    Loads tags from a file (MP3, FLAC, OGG, OPUS), returning the Mutagen object 
     and a dictionary of simplified tag values.
     """
     try:
@@ -89,7 +90,7 @@ def load_tags(file_path):
         tags["album"] = get_text("TALB")
         tags["genre"] = get_text("TCON")
 
-    # --- FLAC / Ogg / Vorbis Logic ---
+    # --- FLAC / Ogg / Vorbis / Opus Logic ---
     else:
         # Mutagen Dict-like access (keys are usually 'title', 'artist' etc.)
         def get_val(keys):
@@ -534,8 +535,8 @@ def attach_cover_art(audio, file_path):
         audio.add_picture(p)
         return True
 
-    # --- Ogg Vorbis Logic ---
-    elif isinstance(audio, OggVorbis):
+    # --- Ogg Vorbis / Opus Logic ---
+    elif isinstance(audio, (OggVorbis, OggOpus)):
         # Ogg stores art in the metadata block encoded as base64
         if 'metadata_block_picture' in audio: return False
         
@@ -610,7 +611,7 @@ def apply_batch_updates(files, global_overrides, remove_art=False, auto_embed=Fa
                 if audio.pictures:
                     audio.clear_pictures()
                     changes_needed = True
-            elif isinstance(audio, OggVorbis):
+            elif isinstance(audio, (OggVorbis, OggOpus)):
                 if 'metadata_block_picture' in audio:
                     del audio['metadata_block_picture']
                     changes_needed = True
@@ -736,7 +737,7 @@ def process_files_interactively(files, embed_mode='ask', rename_files=False):
                 has_art = bool(container.getall("APIC"))
             elif isinstance(audio, FLAC):
                 has_art = bool(audio.pictures)
-            elif isinstance(audio, OggVorbis):
+            elif isinstance(audio, (OggVorbis, OggOpus)):
                 has_art = 'metadata_block_picture' in audio
 
             if embed_mode == 'ask' and can_embed and not has_art:
@@ -845,7 +846,7 @@ def main():
         sys.exit(1)
 
     # --- 3. Scan Files ---
-    supported_exts = (".mp3", ".flac", ".ogg", ".m4a")
+    supported_exts = (".mp3", ".flac", ".ogg", ".opus", ".m4a")
     try:
         files = sorted([
             os.path.join(folder, f)
@@ -860,7 +861,7 @@ def main():
         ])
 
     if not files:
-        print("No supported audio files (MP3/FLAC/OGG/M4A) found.")
+        print("No supported audio files (MP3/FLAC/OGG/OPUS/M4A) found.")
         return
 
     # --- 4. Execution ---
