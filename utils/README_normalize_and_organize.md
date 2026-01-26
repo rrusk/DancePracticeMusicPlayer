@@ -74,7 +74,7 @@ By adhering to this schema, the operating system sorts the files naturally:
 4. `Jive42mpm-...`
 5. `Jive44mpm-...`
 
-*Note: The script does not calculate BPM. It relies entirely on the user populating the `Genre` tag with this pre-formatted string.  The string can contains spaces.  For instance, "Jive 44 mpm" will become "Jive44mpm".*
+*Note: The script does not calculate BPM. It relies entirely on the user populating the `Genre` tag with this pre-formatted string.  The string can contain spaces.  For instance, "Jive 44 mpm" will become "Jive44mpm".*
 
 ---
 
