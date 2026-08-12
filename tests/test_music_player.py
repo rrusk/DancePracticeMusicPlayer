@@ -16,6 +16,7 @@ os.environ["KIVY_NO_ARGS"] = "1"
 from music_player import MusicPlayer, MusicApp, PlayerConstants
 from kivy.config import ConfigParser
 from song_cache import SongCache
+from tests.support import filesystem_is_case_sensitive
 import app_paths
 import practice_type_rules
 
@@ -2651,19 +2652,60 @@ class TestCaseInsensitiveLookup(unittest.TestCase):
         self._make_dance("WALTZ", songs=2)
         self.assertEqual(len(self.player._collect_music_files(self.music, "Waltz")), 2)
 
+    def _require_case_sensitivity(self):
+        if not filesystem_is_case_sensitive(self.tmp):
+            self.skipTest("this filesystem cannot hold two names differing only "
+                          "in case, so the situation cannot arise here")
+
     def test_an_exact_match_still_wins(self):
+        self._require_case_sensitivity()
         self._make_dance("Waltz", songs=2)
         self._make_dance("waltz", songs=5)
         found = self.player._collect_music_files(self.music, "Waltz")
         self.assertEqual(len(found), 2, "the exact spelling must be preferred")
 
     def test_an_ambiguous_match_is_stable_and_warned_about(self):
+        self._require_case_sensitivity()
         self._make_dance("Quickstep", songs=1)
         self._make_dance("quickstep", songs=3)
         first = self.player._collect_music_files(self.music, "QuickStep")
         second = self.player._collect_music_files(self.music, "QuickStep")
         self.assertEqual(len(first), 1, "picks the first by name, not by directory order")
         self.assertEqual(first, second, "and picks the same one every time")
+
+    def test_the_selection_rule_prefers_an_exact_match(self):
+        """The rule itself, without needing two real folders to exist."""
+        with patch("music_player.os.listdir",
+                   return_value=["quickstep", "QuickStep", "Quickstep"]), \
+             patch("music_player.os.path.isdir", return_value=True):
+            chosen = self.player._entry_ignoring_case(
+                self.music, "QuickStep", want_dir=True)
+        self.assertEqual(os.path.basename(chosen), "QuickStep")
+
+    def test_the_selection_rule_is_stable_without_an_exact_match(self):
+        with patch("music_player.os.listdir",
+                   return_value=["quickstep", "Quickstep"]), \
+             patch("music_player.os.path.isdir",
+                   side_effect=lambda path: not path.endswith("QuickStep")):
+            chosen = self.player._entry_ignoring_case(
+                self.music, "QuickStep", want_dir=True)
+        self.assertEqual(os.path.basename(chosen), "Quickstep",
+                         "the first by name, not by directory order")
+
+    def test_the_selection_rule_warns_when_it_has_to_choose(self):
+        with patch("music_player.os.listdir",
+                   return_value=["quickstep", "Quickstep"]), \
+             patch("music_player.os.path.isdir",
+                   side_effect=lambda path: not path.endswith("QuickStep")), \
+             patch("music_player.Logger.warning") as warned:
+            self.player._entry_ignoring_case(self.music, "QuickStep", want_dir=True)
+        self.assertTrue(warned.called)
+        self.assertIn("differing only in case", warned.call_args[0][0])
+
+    def test_a_directory_is_not_matched_when_a_file_is_wanted(self):
+        os.makedirs(os.path.join(self.music, "Waltz.ogg"))
+        self.assertIsNone(
+            self.player._entry_ignoring_case(self.music, "Waltz.ogg", want_dir=False))
 
     def test_a_missing_dance_is_still_missing(self):
         self._make_dance("Waltz")

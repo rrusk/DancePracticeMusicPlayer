@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "utils"))
 # pylint: disable=wrong-import-position
 import build_song_cache as script
 from song_cache import SongCache
+from tests.support import filesystem_is_case_sensitive
 
 
 class ScriptTestCase(unittest.TestCase):
@@ -336,6 +337,8 @@ class TestCheckLibrary(ScriptTestCase):
 
     def test_two_folders_differing_only_in_case_are_a_problem(self):
         """On Linux both exist and the player can only read one of them."""
+        if not filesystem_is_case_sensitive(self.tmp):
+            self.skipTest("this filesystem cannot hold two names differing only in case")
         self._add_dance("Tango")
         self._add_dance("tango")
         problems, output = self._check()
@@ -344,6 +347,8 @@ class TestCheckLibrary(ScriptTestCase):
 
     def test_the_ambiguous_message_names_the_folder_the_player_picks(self):
         """An exact match wins, so the message must not just say the first by name."""
+        if not filesystem_is_case_sensitive(self.tmp):
+            self.skipTest("this filesystem cannot hold two names differing only in case")
         self._add_dance("Tango")
         self._add_dance("tango")
         lower = {"P": {"dances": ["tango"], "num_selections": 1}}
@@ -353,6 +358,8 @@ class TestCheckLibrary(ScriptTestCase):
 
     def test_songs_are_counted_from_the_folder_the_player_would_read(self):
         """Not merged across case variants, which would overstate the count."""
+        if not filesystem_is_case_sensitive(self.tmp):
+            self.skipTest("this filesystem cannot hold two names differing only in case")
         self._add_dance("Tango", songs=1)
         self._add_dance("tango", songs=9)
         thin = {"P": {"dances": ["Tango"], "num_selections": 5}}
