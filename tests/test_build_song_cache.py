@@ -314,7 +314,7 @@ class TestCheckLibrary(ScriptTestCase):
             code = script.main()
         return code, " ".join(str(call) for call in printed.call_args_list)
 
-    def _add_dance(self, name, songs=3, duration_source=None):
+    def _add_dance(self, name, songs=3):
         folder = os.path.join(self.tmp, "music", name)
         os.makedirs(folder, exist_ok=True)
         for index in range(songs):
@@ -322,18 +322,42 @@ class TestCheckLibrary(ScriptTestCase):
                 handle.write(b"x" * 100)
         return folder
 
-    def test_a_wrongly_cased_folder_is_reported(self):
-        """Works on Windows, finds nothing on Linux -- the rebuild's worst trap."""
-        self._add_dance("tango")
-        problems, output = self._check()
-        self.assertIn("WRONG CASE", output)
-        self.assertIn("Tango", output)
-        self.assertGreater(problems, 0)
-
     def test_a_wrongly_cased_folder_is_not_also_called_unused(self):
         self._add_dance("tango")
         _, output = self._check()
         self.assertNotIn("no practice type uses", output)
+
+    def test_a_differently_cased_folder_is_only_a_note(self):
+        """The player matches either way, so this is untidy rather than broken."""
+        self._add_dance("tango")
+        problems, output = self._check()
+        self.assertIn("note: practice types use 'Tango'", output)
+        self.assertEqual(problems, 0)
+
+    def test_two_folders_differing_only_in_case_are_a_problem(self):
+        """On Linux both exist and the player can only read one of them."""
+        self._add_dance("Tango")
+        self._add_dance("tango")
+        problems, output = self._check()
+        self.assertIn("AMBIGUOUS", output)
+        self.assertGreater(problems, 0)
+
+    def test_the_ambiguous_message_names_the_folder_the_player_picks(self):
+        """An exact match wins, so the message must not just say the first by name."""
+        self._add_dance("Tango")
+        self._add_dance("tango")
+        lower = {"P": {"dances": ["tango"], "num_selections": 1}}
+        _, output = self._check(practice_types=lower)
+        self.assertIn("The player uses 'tango'", output)
+        self.assertNotIn("The player uses 'Tango'", output)
+
+    def test_songs_are_counted_from_the_folder_the_player_would_read(self):
+        """Not merged across case variants, which would overstate the count."""
+        self._add_dance("Tango", songs=1)
+        self._add_dance("tango", songs=9)
+        thin = {"P": {"dances": ["Tango"], "num_selections": 5}}
+        _, output = self._check(practice_types=thin)
+        self.assertIn("but the folder has 1", output)
 
     def test_a_missing_dance_is_reported(self):
         problems, output = self._check()          # no Tango folder at all
@@ -345,7 +369,7 @@ class TestCheckLibrary(ScriptTestCase):
         problems, output = self._check()
         self.assertEqual(problems, 0)
         self.assertNotIn("MISSING", output)
-        self.assertNotIn("WRONG CASE", output)
+        self.assertNotIn("AMBIGUOUS", output)
 
     def test_an_unused_folder_is_noted_but_not_a_problem(self):
         self._add_dance("Tango")

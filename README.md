@@ -428,8 +428,8 @@ python utils/build_song_cache.py --check-library  # audit the library itself
 `--check-library` reports the things that make a dance quietly smaller or absent
 rather than failing loudly, so none of them is noticeable at a practice:
 
-- a dance folder whose name differs only in **case** from what the practice types
-  use — this works on Windows and finds nothing on Linux
+- **two folders differing only in case**, where the player can read only one of
+  them and the music in the other is invisible (possible on Linux only)
 - a dance a practice type uses with **no folder at all**
 - files with **no readable duration**, which the player skips
 - folders with **too few songs** for the practice types that use them, where the
@@ -437,8 +437,20 @@ rather than failing loudly, so none of them is noticeable at a practice:
 - titles that look **double-encoded**, which is how they appear in the playlist
 
 It exits 2 when it finds problems, so it can be used from a script. Notes about
-short songs, unused folders and mojibake are informational and do not affect the
-exit status.
+short songs, unused folders, mojibake and folder names spelled differently from
+the practice types are informational and do not affect the exit status.
+
+Dance folder names are matched **without regard to case**, so a library built on
+one platform works on the others. A folder named `quickstep`, `Quickstep` or
+`QuickStep` all serve a `QuickStep` practice type, and the same applies to the
+announcement and cue audio.
+
+The matching is done by the player rather than left to the filesystem, so it
+behaves the same everywhere: Windows and macOS usually ignore case themselves,
+Linux does not, and macOS can be configured either way. Where a folder matching
+exactly exists it is always preferred; where two folders differ only in case —
+possible on a case-sensitive filesystem — the player reads one of them and
+`--check-library` reports the other as invisible.
 
 It reads the music directory from `music.ini`, so it normally needs no arguments, and it
 also caches the `announce/` and `cues/` audio since those are used by every playlist.

@@ -289,22 +289,38 @@ def check_library(music_dir: str, cache: SongCache, paths: list,
 
     folders = {name for name in os.listdir(music_dir)
                if os.path.isdir(os.path.join(music_dir, name))}
-    folders_lower = {name.lower(): name for name in folders}
+    by_lower = {}
+    for name in folders:
+        by_lower.setdefault(name.casefold(), []).append(name)
 
-    # 1. Dances a practice type uses but the library does not have. A folder
-    # that differs only in case is called out separately: it is the one that
-    # works on the machine it was made on and fails on the other.
-    missing, miscased = [], []
-    for dance in sorted(referenced - folders):
-        if (actual := folders_lower.get(dance.lower())) is not None:
-            miscased.append((dance, actual))
-        else:
+    # 1. Dances a practice type uses but the library does not have. The player
+    # matches folder names without regard to case, so a different spelling is
+    # only untidy -- but two folders differing only in case are a real problem:
+    # on Linux both exist and the player can only pick one.
+    # The folder the player would actually read for each dance: an exact match
+    # if there is one, otherwise the first by name, which is what the player's
+    # _entry_ignoring_case settles on. Worked out once so that the diagnostics
+    # and the song counts below cannot disagree about it.
+    chosen_folder = {}
+    missing, miscased, ambiguous = [], [], []
+    for dance in sorted(referenced):
+        matches = sorted(by_lower.get(dance.casefold(), []))
+        if not matches:
             missing.append(dance)
+            continue
+        chosen_folder[dance] = dance if dance in matches else matches[0]
+        if len(matches) > 1:
+            ambiguous.append((dance, matches))
+        elif matches[0] != dance:
+            miscased.append((dance, matches[0]))
 
-    for dance, actual in miscased:
+    for dance, matches in ambiguous:
         problems += 1
-        print(f"  WRONG CASE: practice types use '{dance}' but the folder is "
-              f"'{actual}'. This works on Windows and finds nothing on Linux.")
+        others = [name for name in matches if name != chosen_folder[dance]]
+        print(f"  AMBIGUOUS: {len(matches)} folders named '{dance}' differing only "
+              f"in case ({', '.join(matches)}). The player uses "
+              f"'{chosen_folder[dance]}'; the music in {', '.join(others)} is "
+              "invisible.")
 
     if missing:
         problems += len(missing)
@@ -312,9 +328,14 @@ def check_library(music_dir: str, cache: SongCache, paths: list,
         print(f"  MISSING: {len(missing)} dance(s) have no folder and are silently "
               f"left out of any practice type using them: {shown}")
 
-    # 2. Folders nothing uses. Not a problem, but easy to lose track of. A
-    # wrongly-cased folder is already reported above, so it is not repeated.
-    accounted = referenced | {actual for _, actual in miscased}
+    for dance, actual in miscased:
+        print(f"  note: practice types use '{dance}' but the folder is '{actual}'. "
+              "The player matches either way; renaming one to match the other "
+              "just keeps things tidy.")
+
+    # 2. Folders nothing uses. Not a problem, but easy to lose track of.
+    referenced_lower = {dance.casefold() for dance in referenced}
+    accounted = {name for name in folders if name.casefold() in referenced_lower}
     if unused := sorted(folders - accounted):
         print(f"  note: {len(unused)} folder(s) no practice type uses: "
               f"{', '.join(unused[:8])}{'...' if len(unused) > 8 else ''}")
@@ -328,6 +349,8 @@ def check_library(music_dir: str, cache: SongCache, paths: list,
         # folder the file happens to sit in: a song may be filed under an album,
         # and the player collects those recursively.
         relative = os.path.relpath(path, music_dir).split(os.sep)
+        # Keyed by the folder as it exists, so that two folders differing only
+        # in case are counted separately -- the player only ever reads one.
         dance = relative[0] if len(relative) > 1 else None
 
         entry = cache.get(path)
@@ -380,8 +403,8 @@ def check_library(music_dir: str, cache: SongCache, paths: list,
             print(f"      {title}   ->   {fixed}")
 
     # 4. Dances with too few songs for the practice types that use them.
-    for dance in sorted(referenced & folders):
-        lengths = lengths_by_dance.get(dance, [])
+    for dance in sorted(chosen_folder):
+        lengths = lengths_by_dance.get(chosen_folder[dance], [])
         available = len(lengths)
         for name, definition in practice_types.items():
             wanted = songs_wanted(definition, dance, lengths)

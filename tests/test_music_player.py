@@ -2618,6 +2618,81 @@ class TestEnormousAndPreciseNumbers(unittest.TestCase):
         self.assertEqual(practice_type_rules.strict_int("7", "count"), 7)
 
 
+class TestCaseInsensitiveLookup(unittest.TestCase):
+    """Folder and file names match without regard to case, on every platform.
+
+    Windows and macOS do this themselves; Linux does not, so a library built on
+    one and used on the other would silently lose a whole dance. "QuickStep"
+    against a "Quickstep" folder is the case that prompted it.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.music = os.path.join(self.tmp, "music")
+        os.makedirs(self.music)
+        self.player = MusicPlayer.__new__(MusicPlayer)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _make_dance(self, folder_name, songs=2):
+        folder = os.path.join(self.music, folder_name)
+        os.makedirs(folder, exist_ok=True)
+        for index in range(songs):
+            with open(os.path.join(folder, f"{index}.mp3"), "wb") as handle:
+                handle.write(b"x")
+        return folder
+
+    def test_a_differently_cased_folder_is_found(self):
+        self._make_dance("quickstep", songs=3)
+        self.assertEqual(len(self.player._collect_music_files(self.music, "QuickStep")), 3)
+
+    def test_an_upper_case_folder_is_found(self):
+        self._make_dance("WALTZ", songs=2)
+        self.assertEqual(len(self.player._collect_music_files(self.music, "Waltz")), 2)
+
+    def test_an_exact_match_still_wins(self):
+        self._make_dance("Waltz", songs=2)
+        self._make_dance("waltz", songs=5)
+        found = self.player._collect_music_files(self.music, "Waltz")
+        self.assertEqual(len(found), 2, "the exact spelling must be preferred")
+
+    def test_an_ambiguous_match_is_stable_and_warned_about(self):
+        self._make_dance("Quickstep", songs=1)
+        self._make_dance("quickstep", songs=3)
+        first = self.player._collect_music_files(self.music, "QuickStep")
+        second = self.player._collect_music_files(self.music, "QuickStep")
+        self.assertEqual(len(first), 1, "picks the first by name, not by directory order")
+        self.assertEqual(first, second, "and picks the same one every time")
+
+    def test_a_missing_dance_is_still_missing(self):
+        self._make_dance("Waltz")
+        self.assertEqual(self.player._collect_music_files(self.music, "Tango"), [])
+
+    def test_a_file_is_not_mistaken_for_a_dance_folder(self):
+        with open(os.path.join(self.music, "Waltz"), "wb") as handle:
+            handle.write(b"not a folder")
+        self.assertEqual(self.player._collect_music_files(self.music, "Waltz"), [])
+
+    def test_announcements_are_found_regardless_of_case(self):
+        for spelling in ("quickstep", "QUICKSTEP", "QuickStep"):
+            path = self.player._get_announce_path(spelling)
+            self.assertIsNotNone(path)
+            self.assertTrue(os.path.basename(path).lower().startswith("quickstep"),
+                            f"{spelling} found {path}")
+
+    def test_an_unknown_dance_still_falls_back_to_the_generic_announcement(self):
+        path = self.player._get_announce_path("NoSuchDance")
+        self.assertEqual(os.path.basename(path), "Generic.ogg")
+
+    def test_cue_audio_is_found_regardless_of_case(self):
+        self.assertIsNotNone(self.player._get_cue_path("ROUND_GAP"))
+        self.assertIsNotNone(self.player._get_cue_path("Gap_20"))
+
+    def test_a_missing_cue_is_still_missing(self):
+        self.assertIsNone(self.player._get_cue_path("no_such_cue"))
+
+
 if __name__ == '__main__':
     # The verbosity argument increases the detail of the test output.
     unittest.main(verbosity=2)

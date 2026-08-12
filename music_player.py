@@ -1999,16 +1999,54 @@ class MusicPlayer(BoxLayout):
         Returns:
             The file path to the announcement audio, or None if not found.
         """
-        announce_dir = os.path.join(self.script_path, "announce")
-        specific_announce_path = os.path.join(announce_dir, f"{dance_name}.ogg")
-        generic_announce_path = os.path.join(announce_dir, "Generic.ogg")
+        announce_dir = app_paths.app_path("announce")
+        if specific := self._entry_ignoring_case(
+                announce_dir, f"{dance_name}.ogg", want_dir=False):
+            return specific
+        return self._entry_ignoring_case(announce_dir, "Generic.ogg", want_dir=False)
 
-        if os.path.isfile(specific_announce_path):
-            return specific_announce_path
-        elif os.path.isfile(generic_announce_path):
-            return generic_announce_path
-        else:
+    @staticmethod
+    def _entry_ignoring_case(folder: str, name: str, want_dir: bool) -> typing.Optional[str]:
+        """Finds `name` in `folder`, ignoring case, as Windows and macOS would.
+
+        Windows and macOS match file and folder names without regard to case;
+        Linux does not. A library built on one and used on the other would
+        otherwise silently lose a whole dance -- the historical "QuickStep"
+        spelling against a "Quickstep" folder being exactly that case.
+
+        Args:
+            folder: The folder to look in.
+            name: The name being looked for, in whatever case.
+            want_dir: True to match a directory, False to match a file.
+
+        Returns:
+            The full path as it exists on disk, or None if there is no match.
+        """
+        exact = os.path.join(folder, name)
+        check = os.path.isdir if want_dir else os.path.isfile
+        if check(exact):
+            return exact
+
+        try:
+            entries = os.listdir(folder)
+        except OSError:
             return None
+
+        # casefold rather than lower: the stronger form for comparing names,
+        # identical for the ASCII names in use and correct if that ever changes.
+        wanted = name.casefold()
+        matches = sorted(entry for entry in entries
+                         if entry.casefold() == wanted and check(os.path.join(folder, entry)))
+        if not matches:
+            return None
+        if len(matches) > 1:
+            # Only reachable on a case-sensitive filesystem. Picking the first
+            # keeps the choice stable rather than depending on directory order.
+            Logger.warning(
+                f"MusicPlayer: {folder} contains {len(matches)} entries named "
+                f"'{name}' differing only in case: {', '.join(matches)}. "
+                f"Using '{matches[0]}'.")
+        return os.path.join(folder, matches[0])
 
     def _collect_music_files(self, directory: str, dance: str) -> list[str]:
         """Scans a directory for all valid music files.
@@ -2022,8 +2060,8 @@ class MusicPlayer(BoxLayout):
         """
         if not directory or not os.path.isdir(directory):
             return []
-        subdir = os.path.join(directory, dance)
-        if not os.path.isdir(subdir):
+        subdir = self._entry_ignoring_case(directory, dance, want_dir=True)
+        if subdir is None:
             return []
 
         music_paths = []
@@ -2170,11 +2208,11 @@ class MusicPlayer(BoxLayout):
         Returns:
             The path to the cue audio, or None if it is missing.
         """
-        cue_dir = os.path.join(self.script_path, PlayerConstants.CUES_DIR)
+        cue_dir = app_paths.app_path(PlayerConstants.CUES_DIR)
         for extension in (".ogg", ".mp3", ".wav", ".flac", ".m4a"):
-            candidate = os.path.join(cue_dir, f"{name}{extension}")
-            if os.path.isfile(candidate):
-                return candidate
+            if found := self._entry_ignoring_case(
+                    cue_dir, f"{name}{extension}", want_dir=False):
+                return found
         return None
 
     def _get_cue_info(self, name: str, label: typing.Optional[str] = None) -> typing.Optional[dict]:
