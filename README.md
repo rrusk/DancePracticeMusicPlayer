@@ -416,11 +416,29 @@ To move the first-read cost off the practice laptop — worth doing after adding
 new music — run:
 
 ```bash
-python utils/build_song_cache.py            # add and refresh entries
-python utils/build_song_cache.py --prune    # also drop entries for deleted files
-python utils/build_song_cache.py --rebuild  # re-read everything
-python utils/build_song_cache.py --verify   # cross-check durations against ffprobe
+python utils/build_song_cache.py                  # add and refresh entries
+python utils/build_song_cache.py --prune          # also drop entries for deleted files
+python utils/build_song_cache.py --rebuild        # re-read everything
+python utils/build_song_cache.py --verify         # cross-check durations against ffprobe
+python utils/build_song_cache.py --check-library  # audit the library itself
 ```
+
+### Checking the library after a rebuild
+
+`--check-library` reports the things that make a dance quietly smaller or absent
+rather than failing loudly, so none of them is noticeable at a practice:
+
+- a dance folder whose name differs only in **case** from what the practice types
+  use — this works on Windows and finds nothing on Linux
+- a dance a practice type uses with **no folder at all**
+- files with **no readable duration**, which the player skips
+- folders with **too few songs** for the practice types that use them, where the
+  same songs will repeat
+- titles that look **double-encoded**, which is how they appear in the playlist
+
+It exits 2 when it finds problems, so it can be used from a script. Notes about
+short songs, unused folders and mojibake are informational and do not affect the
+exit status.
 
 It reads the music directory from `music.ini`, so it normally needs no arguments, and it
 also caches the `announce/` and `cues/` audio since those are used by every playlist.
