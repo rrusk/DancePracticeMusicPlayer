@@ -172,5 +172,7 @@ music.ini
 # Ignore local playlist customizations
 custom_practice_types.json
 play_history.json
+song_metadata_cache.json
+song_metadata_cache.json.tmp
 # Defaults (tracked)
 !builtin_practice_types.json

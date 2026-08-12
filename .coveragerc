@@ -1,0 +1,39 @@
+# Coverage configuration for the Dance Practice Music Player.
+#
+# Run the whole suite with coverage using:
+#
+#     python -m pytest --cov --cov-report=term-missing
+#
+# from the repository root. The tests live in tests/; pytest finds them without
+# arguments, and tests/conftest.py puts the root on sys.path so they can import
+# the application modules.
+#
+# The utils/ directory is added to sys.path by test_build_song_cache.py, so
+# build_song_cache is imported under its bare name; naming it here as a file
+# pattern reports it correctly instead of warning that "utils.build_song_cache
+# was never imported".
+#
+# `include` rather than `source`: source takes packages or directories, and
+# listing .py paths there makes coverage hang. include takes file patterns,
+# which is what is wanted -- only the modules the player actually runs, so the
+# total does not move when an unrelated maintenance script is added.
+
+[run]
+branch = True
+include =
+    music_player.py
+    practice_type_editor.py
+    practice_type_rules.py
+    song_cache.py
+    app_paths.py
+    utils/build_song_cache.py
+
+[report]
+# Windows-only branches are deliberately NOT excluded. They are the least
+# exercised code in the project and the hardest to observe when they go wrong,
+# so they should keep showing up as uncovered until they are tested on Windows.
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:
+precision = 0
+skip_empty = True

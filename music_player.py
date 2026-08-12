@@ -4,6 +4,40 @@
 
 A Kivy-based application for managing and playing playlists for ballroom and line dance practice.
 Supports configurable practice types, playlist management, and platform-specific audio handling.
+
+Competition rounds
+------------------
+A practice type may define `segments` instead of relying on the `dances` list.
+A segment is either a round of dances or a cue::
+
+    "segments": [
+        {"cue": "round_gap", "label": "2:00 break - next: Final #1"},
+        {"round": ["Waltz", "Tango", "VienneseWaltz", "Foxtrot", "QuickStep"],
+         "count": 1, "clip_seconds": 90, "gap_seconds": 20}
+    ]
+
+This models a real competition rather than a practice: each dance is cut off at a
+fixed length with no fade, there are no spoken announcements, dances are separated
+by a short gap, and rounds are separated by a longer gap carrying a warning tone.
+
+Cues are ordinary audio files in `cues/`, so gaps and warnings need no special
+handling during playback -- they are playlist items like any other. Generate them
+with `cues/make_cues.sh`.
+
+Timed practice blocks
+---------------------
+A practice type may define `dance_minutes`, e.g.::
+
+    "dance_minutes": {"Waltz": 13, "Tango": 13, "VienneseWaltz": 8}
+
+A dance listed there is filled to that many minutes of playing time instead of
+being given a fixed song count. Songs are drawn until the block budget is met,
+then a single uniform trim is spread across every song in the block so the block
+lands exactly on its budget. Each song keeps its own natural length minus that
+shared trim, so a block is not a run of equal-length clips.
+
+Dances not listed in `dance_minutes` keep using `num_selections` /
+`dance_adjustments`, so practice types that do not use the key are unaffected.
 """
 import os
 import platform
@@ -11,9 +45,15 @@ import pathlib
 import random
 import json
 import sys
+import time
 import typing
 import threading
 from functools import partial
+
+# Started before the Kivy imports so that startup timing includes them; they are
+# the slowest part of launching on an older laptop. Set DPMP_TIMING=1 to report.
+_START_TIME = time.perf_counter()
+TIMING_ENABLED = bool(os.environ.get("DPMP_TIMING"))
 
 # IMPORTANT: Kivy Config.set for graphics must be called BEFORE importing any other Kivy modules.
 from kivy.config import Config
@@ -46,7 +86,12 @@ from kivy.uix.slider import Slider
 from kivy.uix.settings import SettingsWithSpinner
 from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.config import ConfigParser
+from kivy.logger import Logger
 from tinytag import TinyTag, TinyTagException
+
+import app_paths
+import practice_type_rules
+from song_cache import SongCache
 
 # --- Imports for ScreenManager and the editor screen ---
 from practice_type_editor import PracticeTypeEditorScreen
@@ -60,6 +105,29 @@ if sys.platform == "win32":
 else:
     # Ensure ctypes is defined for all platforms to suppress PyLint warnings
     ctypes = None  # pylint: disable=invalid-name
+
+
+def timing_mark(label: str, since: float = None) -> None:
+    """Reports how long startup has taken so far, when DPMP_TIMING is set.
+
+    Written through the Kivy logger rather than print, because the console window
+    is hidden on Windows and these measurements are wanted from the practice
+    laptops, where the log file is the only way to get them back.
+
+    Args:
+        label: What has just finished.
+        since: A perf_counter value to report the elapsed time from, for timing a
+            single operation rather than everything up to this point.
+    """
+    if not TIMING_ENABLED:
+        return
+    if since is None:
+        Logger.info(f"Timing: {time.perf_counter() - _START_TIME:7.3f}s total  {label}")
+    else:
+        Logger.info(f"Timing: {time.perf_counter() - since:7.3f}s         {label}")
+
+
+timing_mark("kivy and tinytag imported")
 
 
 # Constants for better readability
@@ -82,6 +150,26 @@ class PlayerConstants:
 
     FADE_TIME = 10  # 10s fade out
 
+    # --- Timed practice blocks ---
+    # Largest uniform trim applied to each song to make a block fit its budget.
+    # If the trim would exceed this, the last song is dropped and the block runs
+    # short instead, rather than audibly chopping every song in the block.
+    # How long a song may take to actually start playing before the attempt is
+    # judged to have failed. Comfortably longer than the 0.1s Windows delay.
+    PLAYBACK_START_GRACE = 2.0
+    # Consecutive failed starts before giving up rather than walking the playlist.
+    MAX_CONSECUTIVE_START_FAILURES = 3
+
+    MAX_TRIM_SECONDS = 45
+    MIN_SONG_PLAY_SECONDS = 60  # A song is never trimmed below this.
+
+    # --- Song selection ---
+    # Songs shorter than this are passed over when a practice type picks a fixed
+    # number of selections per dance, where a very short track would just make the
+    # practice end early. Timed blocks are unaffected: a short song there simply
+    # means one more song in the block, which still lands on its budget.
+    MIN_SONG_LENGTH_SECONDS = 90
+
     # Icon filenames as constants
     ICON_PLAY = "play.png"
     ICON_PAUSE = "pause.png"
@@ -92,8 +180,17 @@ class PlayerConstants:
     PRACTICE_TYPE_60_MIN = "60min"
     PRACTICE_TYPE_NC_60_MIN = "NC 60min"
     
+    # --- Competition rounds ---
+    CUES_DIR = "cues"  # Folder holding gap/warning audio, see cues/make_cues.sh
+    ROUND_GAP_CUE = "round_gap"  # 2:00 between rounds, warning tone at 1:40
+    # Playback advances this many seconds before an item's natural end. Cues are
+    # timing devices, so they get a tighter margin than music does.
+    END_MARGIN = 1.0
+    CUE_END_MARGIN = 0.2
+
     # Files
     HISTORY_FILE = "play_history.json"
+    SONG_CACHE_FILE = "song_metadata_cache.json"
 
 
 # --- Root ScreenManager Widget ---
@@ -141,6 +238,12 @@ class MusicPlayer(BoxLayout):
         current_dance_adjustments (DictProperty): Rules for adjusting song counts for the
             active practice type.
         current_dance_max_playtimes (DictProperty): Per-dance overrides for maximum playtime.
+        current_dance_minutes (DictProperty): Per-dance block budgets in minutes for the
+            active practice type. A dance listed here is filled to that many minutes
+            instead of being given a fixed song count.
+        current_segments (ListProperty): Competition rounds and cues for the active
+            practice type. When non-empty the playlist is built from these instead
+            of from the `dances` list.
         playlist (ListProperty): The current list of songs to be played.
         playlist_idx (NumericProperty): The index of the current song in the playlist.
         dances (ListProperty): The ordered list of dances for the current practice type.
@@ -165,6 +268,8 @@ class MusicPlayer(BoxLayout):
     adjust_song_counts_for_playlist = BooleanProperty(False)
     current_dance_adjustments = DictProperty({})
     current_dance_max_playtimes = DictProperty({})
+    current_dance_minutes = DictProperty({})
+    current_segments = ListProperty([])
 
     practice_dances = DictProperty(
         {
@@ -270,6 +375,24 @@ class MusicPlayer(BoxLayout):
     playlist_button = ObjectProperty(None)
     _playlist_generation_in_progress = BooleanProperty(False)
     _is_first_load = BooleanProperty(True)
+    _song_cache = None  # Lazily created SongCache, shared by all reads
+    # Settings frozen for the duration of one background generation, so that
+    # changing practice type mid-generation cannot produce a hybrid playlist.
+    _generation_config = None
+    _regeneration_pending = False
+    _regeneration_start_playback = False
+    _pending_play_event = None  # Scheduled delayed play on Windows, if any
+    # True once the backend has been seen actually playing the current item, so
+    # that a later stop can be told apart from one the user asked for.
+    _playback_observed = False
+    # When playback was last asked to start. A decoder that fails within the
+    # first tick never sets _playback_observed, so a start that has not produced
+    # playing state by PLAYBACK_START_GRACE is treated as a failed start.
+    _playback_requested_at = None
+    _consecutive_start_failures = 0
+    # Names of the songs that failed to start, reported together rather than one
+    # modal popup at a time. A tuple so the class-level default cannot be shared.
+    _failed_start_songs = ()
 
 
     def __init__(self, **kwargs):
@@ -308,6 +431,8 @@ class MusicPlayer(BoxLayout):
         self._build_ui()
         self._bind_properties()
 
+        timing_mark("player widget built")
+
         if self.music_dir:
             self.update_playlist()
         else:
@@ -318,9 +443,8 @@ class MusicPlayer(BoxLayout):
         Loads practice types from both the built-in JSON (distributed via git)
         and the user's local custom JSON.
         """
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        builtin_path = os.path.join(script_dir, "builtin_practice_types.json")
-        custom_path = os.path.join(script_dir, "custom_practice_types.json")
+        builtin_path = app_paths.app_path("builtin_practice_types.json")
+        custom_path = app_paths.user_path("custom_practice_types.json")
 
         def load_json(path):
             data = {}
@@ -328,10 +452,21 @@ class MusicPlayer(BoxLayout):
                 try:
                     with open(path, "r", encoding="utf-8") as f:
                         raw = json.load(f)
-                        # Filter comments
-                        data = {k: v for k, v in raw.items() if not k.startswith("__COMMENT__")}
                 except (OSError, json.JSONDecodeError) as e:
                     print(f"Failed to load {path}: {e}")
+                    return data
+
+                # Valid JSON is not necessarily a practice type file. This runs
+                # while the widget is being constructed, so an AttributeError
+                # here stops the application from starting at all, and no amount
+                # of restarting helps until the file is fixed.
+                if not isinstance(raw, dict):
+                    print(f"Ignoring {os.path.basename(path)}: it must contain a JSON "
+                          f"object, not {type(raw).__name__}.")
+                    return data
+
+                # Filter comments
+                data = {k: v for k, v in raw.items() if not k.startswith("__COMMENT__")}
             return data
 
         # Load both
@@ -341,14 +476,14 @@ class MusicPlayer(BoxLayout):
         # Merge: Custom data overrides Built-in data
         merged_data = builtin_data.copy()
         merged_data.update(custom_data)
-        
+
         return merged_data
 
     def merge_custom_practice_types(self) -> None:
         """
         Merge all practice types (built-in + custom) into settings and internal mappings.
         """
-        all_types = self.load_custom_practice_types()
+        all_types = self._valid_practice_types()
         if not all_types:
             return
 
@@ -380,15 +515,39 @@ class MusicPlayer(BoxLayout):
                 data.get("adjust_song_counts", False),
                 data.get("dance_adjustments", {}),
                 data.get("dance_max_playtimes", {}),
+                data.get("dance_minutes", {}),
+                data.get("segments", []),
             )
+
+    @staticmethod
+    def _normalize_practice_type(name: str, data: typing.Any) -> typing.Optional[dict]:
+        """Checks and repairs one practice type definition.
+
+        See `practice_type_rules.normalize_practice_type`, which the editor uses
+        too so that it cannot save something the player would have to repair.
+        """
+        return practice_type_rules.normalize_practice_type(name, data)
+
+    def _valid_practice_types(self) -> dict:
+        """Loads the practice types, keeping only the definitions that are usable.
+
+        Names are taken from this rather than from the raw file, so a definition
+        that had to be skipped cannot appear in the settings list as something
+        selectable that then falls back to default behaviour.
+        """
+        valid = {}
+        for name, data in self.load_custom_practice_types().items():
+            if (clean := self._normalize_practice_type(name, data)) is not None:
+                valid[name] = clean
+        return valid
 
     def update_settings_options(self):
         """
         Dynamically updates the options in the settings JSON. 
         Crucial for ensuring the settings panel reflects changes after a Reload.
         """
-        all_types = self.load_custom_practice_types()
-        
+        all_types = self._valid_practice_types()
+
         if (practice_type_setting := next(
             (item for item in self.settings_json if item.get("key") == "practice_type"), None
         )):
@@ -652,10 +811,66 @@ class MusicPlayer(BoxLayout):
         """
         if self._playlist_generation_in_progress:
             return # Don't allow play/pause while playlist is generating
-        if self.sound and self.sound.state == "play":
+        if self.sound and self._sound_state() == "play":
             self.pause_sound()
         else:
             self.play_sound()
+
+    def _load_sound(self, path: str) -> typing.Any:
+        """Loads a sound file, returning None if the backend cannot handle it."""
+        try:
+            load_started = time.perf_counter()
+            sound = SoundLoader.load(path)
+            if self._is_first_load:
+                # The first load pays for initialising the audio backend, which on
+                # some machines costs more than everything else in startup.
+                timing_mark("first SoundLoader.load (audio backend init)", load_started)
+            return sound
+        except Exception as error:  # pylint: disable=broad-except
+            Logger.warning(f"MusicPlayer: could not load {path}: {error}")
+            return None
+
+    def _skip_unplayable_songs(self) -> list:
+        """Advances past songs that are missing or cannot be loaded.
+
+        Leaves `playlist_idx` on the first playable song with `self.sound` loaded,
+        or past the end of the playlist if there is none.
+
+        Returns:
+            A list of (path, reason) for everything skipped.
+        """
+        skipped = []
+        while self.playlist_idx < len(self.playlist):
+            path = self.playlist[self.playlist_idx]['path']
+
+            if not os.path.exists(path):
+                skipped.append((path, "not found"))
+            else:
+                if self.sound is None:
+                    self.sound = self._load_sound(path)
+                if self.sound:
+                    return skipped
+                skipped.append((path, "could not be loaded"))
+
+            # Move on without recursing back into play_sound.
+            self.sound = None
+            self._playing_position = 0
+            self.playlist_idx += 1
+
+        return skipped
+
+    def _report_skipped_songs(self, skipped: list) -> None:
+        """Reports skipped songs in a single popup rather than one popup each."""
+        for path, reason in skipped:
+            Logger.warning(f"MusicPlayer: skipped {path} ({reason})")
+
+        shown = skipped[:5]
+        lines = "\n".join(f"{os.path.basename(path)} - {reason}" for path, reason in shown)
+        if len(skipped) > len(shown):
+            lines += f"\n...and {len(skipped) - len(shown)} more"
+        self.show_error_popup(
+            f"Skipped {len(skipped)} unplayable "
+            f"{'song' if len(skipped) == 1 else 'songs'}:\n{lines}")
 
     def play_sound(self) -> None:
         """Handles the logic for playing a song.
@@ -669,29 +884,27 @@ class MusicPlayer(BoxLayout):
             self.restart_playlist()
             return
 
+        # Skip over anything unplayable in one pass. Recursing through
+        # _advance_playlist instead would stack one modal popup per bad file,
+        # which is what a missing codec looks like: every song in the playlist.
+        self._playback_observed = False
+        skipped = self._skip_unplayable_songs()
+        if skipped:
+            self._report_skipped_songs(skipped)
+        if self.playlist_idx >= len(self.playlist):
+            self.restart_playlist()
+            return
+
         current_song = self.playlist[self.playlist_idx]
         current_song_path = current_song['path']
         self.music_file = current_song_path # Keep for reference if needed
 
-        if not os.path.exists(current_song_path):
-            self.show_error_popup(f"Song file not found: {current_song_path}")
-            self._advance_playlist()
-            return
+        if self._sound_state() == "play":
+            self._playing_position = self._sound_position()
+        if self._sound_state() != "stop":
+            self._sound_stop()
 
-        if self.sound is None:
-            self.sound = SoundLoader.load(current_song_path)
-
-        if not self.sound:
-            self.show_error_popup(f"Could not load song: {current_song_path}")
-            self._advance_playlist()
-            return
-
-        if self.sound.state == "play":
-            self._playing_position = self.sound.get_pos()
-        if self.sound.state != "stop":
-            self.sound.stop()
-
-        self.sound.volume = self.volume
+        self._sound_set_volume(self.volume)
         self._total_time = self._get_song_duration_str(current_song['duration'])
         self.song_title = self._get_song_label(current_song)[:120]  # Limit to 120 characters
 
@@ -701,6 +914,7 @@ class MusicPlayer(BoxLayout):
         self._unschedule_progress_update()
         self._schedule_progress_update(current_song['duration'])
 
+        self._playback_requested_at = time.perf_counter()
         self._apply_platform_specific_play()
 
         # Update the Play/Pause button icon to Pause
@@ -712,9 +926,12 @@ class MusicPlayer(BoxLayout):
         It stores the current playback position and stops the sound. The play/pause button
         icon is updated to show 'Play', indicating that playback can be resumed.
         """
-        if self.sound and self.sound.state == "play":
-            self._playing_position = self.sound.get_pos()
-            self.sound.stop()
+        self._cancel_pending_play()
+        self._playback_observed = False
+        self._playback_requested_at = None
+        if self.sound and self._sound_state() == "play":
+            self._playing_position = self._sound_position()
+            self._sound_stop()
             # Update the Play/Pause button icon to Play
             self.play_pause_button.background_normal = self._get_icon_path(
                 PlayerConstants.ICON_PLAY)
@@ -729,9 +946,13 @@ class MusicPlayer(BoxLayout):
         Args:
             _instance: The widget instance that triggered the event (unused).
         """
+        self._cancel_pending_play()
+        self._playback_observed = False
+        self._playback_requested_at = None
+        self._reset_start_failures()
         if self.sound:
-            self.sound.stop()
-            self.sound.unload()
+            self._sound_stop()
+            self._sound_unload()
         self._unschedule_progress_update()
         self.progress_value = 0
         self._playing_position = 0
@@ -749,9 +970,13 @@ class MusicPlayer(BoxLayout):
             _instance: The widget instance that triggered the event (unused).
         """
         if self.sound:
-            self.sound.stop()
+            self._sound_stop()
             self._playing_position = 0
-            self.sound.play()
+            self._playback_observed = False
+            self._playback_requested_at = time.perf_counter()
+            if not self._start_sound(self.sound, 0):
+                self._handle_failed_start()
+                return
             self.play_pause_button.background_normal = self._get_icon_path(
                 PlayerConstants.ICON_PAUSE)
 
@@ -766,8 +991,7 @@ class MusicPlayer(BoxLayout):
             volume_value: The new volume, a float between 0.0 and 1.0.
         """
         self.volume = volume_value
-        if self.sound:
-            self.sound.volume = volume_value
+        self._sound_set_volume(volume_value)
 
     def update_volume_label(self, _instance: typing.Any, value: float) -> None:
         """Updates the text of the volume label to reflect the current volume.
@@ -824,7 +1048,7 @@ class MusicPlayer(BoxLayout):
         """
         if self.sound and instance.collide_point(*touch.pos):
             self._playing_position = self.progress_bar.value
-            self.sound.seek(self._playing_position)
+            self._sound_seek(self._playing_position)
 
     def _unschedule_progress_update(self) -> None:
         """Cancels the scheduled `update_progress` clock event, if it exists.
@@ -850,26 +1074,160 @@ class MusicPlayer(BoxLayout):
         )
         self.progress_max = round(duration)
 
+    @staticmethod
+    def _safe_sound_call(description: str, function, *args, default=None):
+        """Calls into the audio backend, containing any exception it raises.
+
+        stop, unload, seek and get_pos can all raise from GStreamer or SDL. An
+        exception escaping into Kivy's event loop is invisible on Windows, where
+        the console is hidden, and can leave the player in a half-stopped state.
+
+        Args:
+            description: What was being attempted, for the log.
+            function: The backend call.
+            *args: Arguments for it.
+            default: Returned if the call fails.
+
+        Returns:
+            The call's result, or `default` if it raised.
+        """
+        try:
+            return function(*args)
+        except Exception as error:  # pylint: disable=broad-except
+            Logger.warning(f"MusicPlayer: {description} failed: {error}")
+            return default
+
+    def _sound_stop(self, sound=None) -> bool:
+        """Stops a sound, tolerating a backend failure. True if it succeeded."""
+        if (sound := sound or self.sound) is None:
+            return False
+
+        def stop():
+            sound.stop()
+            return True
+
+        return bool(self._safe_sound_call("stopping playback", stop, default=False))
+
+    def _sound_unload(self, sound=None) -> bool:
+        """Unloads a sound, tolerating a backend failure. True if it succeeded."""
+        if (sound := sound or self.sound) is None:
+            return False
+
+        def unload():
+            sound.unload()
+            return True
+
+        return bool(self._safe_sound_call("unloading the song", unload, default=False))
+
+    def _sound_state(self, sound=None, default: str = "stop") -> str:
+        """Reads a sound's state, tolerating a backend failure.
+
+        Normally a plain Kivy attribute rather than a backend call, so this is
+        the least likely of these to raise; it is wrapped so that no interaction
+        with a sound object is left unguarded.
+        """
+        if (sound := sound or self.sound) is None:
+            return default
+        return self._safe_sound_call(
+            "reading the playback state", lambda: sound.state, default=default)
+
+    def _sound_position(self) -> float:
+        """Returns the current playback position, or the last known one."""
+        if self.sound is None:
+            return self._playing_position
+        return self._safe_sound_call(
+            "reading the playback position", self.sound.get_pos,
+            default=self._playing_position)
+
+    def _sound_volume(self, sound=None, default: float = 1.0) -> float:
+        """Reads a sound's volume, tolerating a backend failure."""
+        if (sound := sound or self.sound) is None:
+            return default
+        return self._safe_sound_call(
+            "reading the volume", lambda: sound.volume, default=default)
+
+    def _sound_set_volume(self, value: float, sound=None) -> None:
+        """Sets a sound's volume, tolerating a backend failure."""
+        if (sound := sound or self.sound) is None:
+            return
+
+        def assign():
+            sound.volume = value
+
+        self._safe_sound_call(f"setting the volume to {value:.2f}", assign)
+
+    def _sound_seek(self, position: float) -> None:
+        """Seeks, tolerating a backend failure."""
+        if self.sound is not None:
+            self._safe_sound_call(f"seeking to {position:.0f}s", self.sound.seek, position)
+
+    def _cancel_pending_play(self) -> None:
+        """Cancels a delayed play that has not fired yet.
+
+        Called by anything that changes what should be playing, so that a start
+        scheduled 100ms ago cannot arrive after the user has already stopped,
+        paused, or chosen a different song.
+        """
+        if self._pending_play_event is not None:
+            self._pending_play_event.cancel()
+            self._pending_play_event = None
+
+    def _start_sound(self, sound: typing.Any, position: float) -> bool:
+        """Starts `sound`, seeking to `position` first if needed.
+
+        Backend calls are isolated here: a failure inside GStreamer or SDL would
+        otherwise escape into Kivy's event loop, where on Windows the traceback
+        goes to a console that has been hidden.
+
+        Returns:
+            True if playback was started.
+        """
+        try:
+            if position > 0:
+                sound.seek(position)
+            sound.play()
+            if position > 0:
+                # Some backends ignore a seek made before playback has begun.
+                sound.seek(position)
+            return True
+        except Exception as error:  # pylint: disable=broad-except
+            # Logged only: the caller decides whether this is one bad song or a
+            # broken audio backend, and reports once rather than per song.
+            Logger.warning(f"MusicPlayer: could not start playback: {error}")
+            return False
+
     def _apply_platform_specific_play(self) -> None:
         """Applies platform-specific workarounds for sound playback.
 
         On Windows, there can be a delay before `sound.play()` takes effect, which can
-        cause a subsequent `sound.seek()` to fail. This method schedules the play
-        command with a slight delay on Windows to avoid this issue, while on other
-        platforms it plays immediately.
-        """
-        def play_after_delay(_dt):
-            self.sound.play()
-            if self._playing_position > 0:
-                self.sound.seek(self._playing_position)
+        cause a subsequent `sound.seek()` to fail, so the play command is scheduled
+        with a slight delay; other platforms play immediately.
 
-        if platform.system() == "Windows":
-            # Use Kivy's Clock to wait 0.1s without blocking
-            Clock.schedule_once(play_after_delay, 0.1)
-        else:
-            # For other systems, play immediately
-            self.sound.seek(self._playing_position)
-            self.sound.play()
+        The delayed call captures the sound and playlist position it was scheduled
+        for and does nothing if either has changed in the meantime. Without that, a
+        stop during the delay starts a sound that has been unloaded, and choosing
+        another song during the delay starts the wrong one.
+        """
+        sound = self.sound
+        index = self.playlist_idx
+        position = self._playing_position
+
+        if platform.system() != "Windows":
+            if not self._start_sound(sound, position):
+                self._handle_failed_start()
+            return
+
+        def play_after_delay(_dt):
+            self._pending_play_event = None
+            if self.sound is not sound or self.playlist_idx != index:
+                # Superseded while waiting; whatever replaced it starts itself.
+                return
+            if not self._start_sound(sound, position):
+                self._handle_failed_start()
+
+        # Use Kivy's Clock to wait 0.1s without blocking
+        self._cancel_pending_play()
+        self._pending_play_event = Clock.schedule_once(play_after_delay, 0.1)
 
     def _update_song_button_highlight(self) -> None:
         """Updates the visual highlight for the currently playing song in the playlist.
@@ -905,10 +1263,29 @@ class MusicPlayer(BoxLayout):
         Args:
             _dt: The time delta in seconds since the last call (unused).
         """
-        if self.sound is None or self.sound.state != "play":
+        if self.sound is None:
             return
 
-        self._playing_position = self.sound.get_pos()
+        if self._sound_state() != "play":
+            if self._playback_observed:
+                # The backend stopped on its own: the stream ended or failed to
+                # decode. Nothing else advances the playlist, so without this the
+                # player sits on a stopped song indefinitely.
+                self._handle_unexpected_stop()
+            elif (self._playback_requested_at is not None
+                  and time.perf_counter() - self._playback_requested_at
+                  > PlayerConstants.PLAYBACK_START_GRACE):
+                # Asked to play, never played. A decoder that gives up inside the
+                # first tick never sets _playback_observed, so the unexpected-stop
+                # path above would never run for it.
+                Logger.warning("MusicPlayer: playback never started; skipping this song")
+                self._handle_failed_start()
+            return
+
+        self._playback_observed = True
+        self._playback_requested_at = None
+        self._reset_start_failures()
+        self._playing_position = self._sound_position()
         self.progress_value = round(self._playing_position)
         current_time_str = self._secs_to_time_str(self._playing_position)
         self.progress_text = f"{current_time_str} / {self._total_time}"
@@ -918,19 +1295,31 @@ class MusicPlayer(BoxLayout):
                 song_info = self.playlist[self.playlist_idx]
                 current_dance = song_info.get('dance', 'unknown')
 
-                # Announcements should just play out; their natural duration is their max playtime.
-                if current_dance == 'announce':
-                    max_playtime = song_info.get('duration', self.song_max_playtime)
-                else:
-                    max_playtime = self.current_dance_max_playtimes.get(
-                        current_dance, self.song_max_playtime
-                    )
+                # 'max_playtime' is stamped on each song when the playlist is built, so
+                # a timed block can shorten individual songs. Fall back to the old
+                # per-dance lookup for any song dict that predates that.
+                if (max_playtime := song_info.get('max_playtime')) is None:
+                    if current_dance in ('announce', 'cue'):
+                        max_playtime = song_info.get('duration', self.song_max_playtime)
+                    else:
+                        max_playtime = self.current_dance_max_playtimes.get(
+                            current_dance, self.song_max_playtime
+                        )
+
+                # Competition rounds cut off hard rather than fading, so the fade
+                # length is a property of the item, not a global constant.
+                fade = song_info.get('fade_seconds', PlayerConstants.FADE_TIME)
+                margin = (PlayerConstants.CUE_END_MARGIN
+                          if current_dance in ('announce', 'cue')
+                          else PlayerConstants.END_MARGIN)
             except (IndexError, AttributeError):
                 # Fallback if playlist structure is unexpected or index is out of bounds
                 max_playtime = self.song_max_playtime
+                fade = PlayerConstants.FADE_TIME
+                margin = PlayerConstants.END_MARGIN
 
-            self._handle_fade_out(max_playtime)
-            self._check_and_advance_song(max_playtime)
+            self._handle_fade_out(max_playtime, fade)
+            self._check_and_advance_song(max_playtime, fade, margin)
 
         elif ( # if play_single_song is True, stop at the end and set icon to play
                 self._playing_position >= self.progress_max - 1
@@ -939,27 +1328,100 @@ class MusicPlayer(BoxLayout):
             self.play_pause_button.background_normal = self._get_icon_path(
                 PlayerConstants.ICON_PLAY)
 
-    def _handle_fade_out(self, max_playtime: float) -> None:
+    def _reset_start_failures(self) -> None:
+        """Forgets the run of failed starts.
+
+        Called on a successful start and whenever the user intervenes, so that
+        "consecutive" means what it says: stopping, or building a new playlist,
+        breaks the run rather than carrying two failures into the next attempt.
+        """
+        self._consecutive_start_failures = 0
+        self._failed_start_songs = ()
+
+    def _handle_failed_start(self) -> None:
+        """Recovers after a song fails to start playing.
+
+        Leaving the Pause icon showing on a song that never started is the state
+        the user has to work out for themselves; and since playback was never
+        observed, the unexpected-stop path will not fire either. Move on, but
+        stop after a few failures in a row rather than walking the whole playlist
+        when the backend itself is broken.
+        """
+        self._playback_observed = False
+        self._playback_requested_at = None
+        self._consecutive_start_failures += 1
+
+        if 0 <= self.playlist_idx < len(self.playlist):
+            song = self.playlist[self.playlist_idx]
+            self._failed_start_songs = tuple(self._failed_start_songs) + (
+                os.path.basename(song.get('path', song.get('title', 'unknown'))),)
+
+        self._sound_stop()
+        self._sound_unload()
+        self.sound = None
+        self.play_pause_button.background_normal = self._get_icon_path(
+            PlayerConstants.ICON_PLAY)
+
+        if self._consecutive_start_failures >= PlayerConstants.MAX_CONSECUTIVE_START_FAILURES:
+            Logger.warning("MusicPlayer: too many songs failed to start; stopping")
+            names = "\n".join(self._failed_start_songs)
+            self._reset_start_failures()
+            self._unschedule_progress_update()
+            self.show_error_popup(
+                f"{PlayerConstants.MAX_CONSECUTIVE_START_FAILURES} songs in a row "
+                f"failed to play:\n{names}\n\nPlayback has stopped. This usually "
+                "means an audio problem rather than a problem with the songs.")
+            return
+
+        self._advance_playlist()
+
+    def _handle_unexpected_stop(self) -> None:
+        """Handles the backend stopping without being asked to.
+
+        Reached when a song ends before the position reaches the end the metadata
+        claimed -- a duration tag that is slightly too long, a VBR file the
+        backend measures differently, or a decoding failure part way through.
+        """
+        Logger.info("MusicPlayer: playback stopped before the expected end; advancing")
+        self._playback_observed = False
+
+        if self.play_single_song:
+            self.stop_sound()
+            self.play_pause_button.background_normal = self._get_icon_path(
+                PlayerConstants.ICON_PLAY)
+            return
+
+        self._advance_playlist()
+
+    def _handle_fade_out(self, max_playtime: float,
+                         fade: float = PlayerConstants.FADE_TIME) -> None:
         """Reduces the volume gradually when a song nears its max playtime.
 
         If the current playback position is beyond the `max_playtime`, this method calculates
         a fade factor and applies it to the sound's volume, creating a smooth fade-out effect
-        over the duration defined by `PlayerConstants.FADE_TIME`.
+        over `fade` seconds.
+
+        A `fade` of 0 means the item stops dead instead of fading. Competition
+        rounds use that, since a round is timed against a stopwatch and a fade
+        would make the clip longer than the length it is supposed to be.
 
         Args:
             max_playtime: The time in seconds at which the fade-out should begin.
+            fade: Length of the fade in seconds; 0 for a hard cut.
         """
-        if self._playing_position >= max_playtime and PlayerConstants.FADE_TIME > 0:
+        if self._playing_position >= max_playtime and fade > 0:
             fade_factor = max(
                 0,
                 1
                 + self._schedule_interval
                 * (max_playtime - self._playing_position)
-                / PlayerConstants.FADE_TIME,
+                / fade,
             )
-            self.sound.volume = self.sound.volume * fade_factor
+            self._sound_set_volume(self._sound_volume() * fade_factor)
 
-    def _check_and_advance_song(self, max_playtime: float) -> None:
+    def _check_and_advance_song(self, max_playtime: float,
+                                fade: float = PlayerConstants.FADE_TIME,
+                                margin: float = PlayerConstants.END_MARGIN) -> None:
         """Checks if the song should be advanced to the next one.
 
         A song is advanced if it reaches its natural end or if its playback time exceeds
@@ -967,17 +1429,22 @@ class MusicPlayer(BoxLayout):
 
         Args:
             max_playtime: The maximum configured playtime for the song.
+            fade: Length of the fade in seconds; 0 for a hard cut.
+            margin: How far before the natural end to advance. Cues are timing
+                devices, so they use a tighter margin than music does.
         """
         if (
-            self._playing_position >= self.progress_max - 1
-            or self._playing_position > max_playtime + PlayerConstants.FADE_TIME
+            self._playing_position >= self.progress_max - margin
+            or self._playing_position >= max_playtime + fade
         ):
             self._advance_playlist()
 
     def _advance_playlist(self) -> None:
         """Advances to the next song in the playlist."""
+        self._cancel_pending_play()
+        self._playback_observed = False
         if self.sound:
-            self.sound.unload()
+            self._sound_unload()
         self.playlist_idx += 1
         self._playing_position = 0
         self.sound = None
@@ -1060,13 +1527,82 @@ class MusicPlayer(BoxLayout):
         else:
             self.playlist_button.disabled = False
 
+    # Settings the background worker reads. They are frozen for the duration of a
+    # generation because a practice type change rewrites all of them at once, and
+    # a worker reading some old and some new values would build a playlist that
+    # matches no practice type at all.
+    GENERATION_SETTINGS = (
+        "music_dir",
+        "dances",
+        "num_selections",
+        "randomize_playlist",
+        "practice_type",
+        "play_all_songs",
+        "play_single_song",
+        "adjust_song_counts_for_playlist",
+        "current_dance_adjustments",
+        "current_dance_max_playtimes",
+        "current_dance_minutes",
+        "current_segments",
+        "song_max_playtime",
+    )
+
+    def _snapshot_generation_settings(self) -> dict:
+        """Copies the settings a playlist generation depends on.
+
+        Lists and dicts are copied so that comparing two snapshots compares
+        values rather than the same object with itself.
+        """
+        snapshot = {}
+        for name in self.GENERATION_SETTINGS:
+            value = getattr(self, name)
+            if isinstance(value, dict):
+                snapshot[name] = dict(value)
+            elif isinstance(value, list):
+                snapshot[name] = list(value)
+            else:
+                snapshot[name] = value
+        return snapshot
+
+    def _setting(self, name: str) -> typing.Any:
+        """Reads a generation setting.
+
+        While a playlist is being built this returns the value frozen when the
+        generation started; otherwise the live property. Code outside generation,
+        and tests that set properties directly, are unaffected.
+
+        Args:
+            name: One of `GENERATION_SETTINGS`.
+
+        Returns:
+            The frozen value if a generation is in flight, else the current one.
+        """
+        config = self._generation_config
+        if config is not None and name in config:
+            return config[name]
+        return getattr(self, name)
+
     def update_playlist(self, _instance: typing.Any = None, start_playback: bool = False) -> None:
-        """Triggers the generation of a new playlist in a background thread."""
+        """Triggers the generation of a new playlist in a background thread.
+
+        A request that arrives while a generation is already running is queued,
+        so a settings change made during a slow generation still takes effect.
+        A request whose settings match the generation already running is dropped
+        instead: startup applies the practice type twice, and regenerating for
+        that would double the work on exactly the slow machines this avoids.
+        """
         if self._playlist_generation_in_progress:
+            if (not start_playback
+                    and self._snapshot_generation_settings() == self._generation_config):
+                return  # Nothing changed; the playlist being built is still correct.
+            self._regeneration_pending = True
+            self._regeneration_start_playback = (
+                self._regeneration_start_playback or start_playback)
             return
 
         self.stop_sound()
         self._playlist_generation_in_progress = True
+        self._generation_config = self._snapshot_generation_settings()
 
         thread = threading.Thread(
             target=self._generate_playlist_in_background,
@@ -1085,11 +1621,88 @@ class MusicPlayer(BoxLayout):
         self, directory: str, dances: list, num_selections: int,
         randomize: bool, start_playback: bool
     ) -> None:
-        """Performs the blocking I/O of scanning files and reading metadata."""
+        """Performs the blocking I/O of scanning files and reading metadata.
+
+        Any failure here is caught and reported rather than killing the worker
+        thread. An uncaught exception would leave the generating flag set, which
+        disables the New Playlist button, play/pause and song selection, and on
+        Windows the traceback goes to a hidden console -- the player would look
+        simply frozen, with restarting the only way out.
+        """
+        try:
+            self._build_playlist_in_background(
+                directory, dances, num_selections, randomize, start_playback)
+        except Exception as error:  # pylint: disable=broad-except
+            Logger.exception(f"MusicPlayer: playlist generation failed: {error}")
+            Clock.schedule_once(partial(self._abort_playlist_generation, error))
+
+    def _abort_playlist_generation(self, error: Exception, _dt: float) -> None:
+        """Recovers the UI after a failed generation, keeping the old playlist.
+
+        Runs on the Kivy thread. The previous playlist is still intact because
+        nothing is assigned until generation succeeds, so the practice can carry
+        on with it.
+        """
+        self._playlist_generation_in_progress = False
+        self._generation_config = None
+        self._regeneration_pending = False
+        self._regeneration_start_playback = False
+
+        self._display_playlist_buttons()
+        self.show_error_popup(
+            f"Could not build the playlist:\n{type(error).__name__}: {error}\n\n"
+            "The previous playlist is still loaded.")
+
+    def _build_playlist_in_background(
+        self, directory: str, dances: list, num_selections: int,
+        randomize: bool, start_playback: bool
+    ) -> None:
+        """Builds the playlist. See `_generate_playlist_in_background`."""
+        started = time.perf_counter()
+
+        # A practice type with segments is a competition round sequence, built
+        # from those instead of from the dances list.
+        segments = self._setting('current_segments')
+        if segments:
+            new_playlist = self._build_segment_playlist(
+                directory, segments, randomize)
+            self._finish_background_generation(new_playlist, start_playback, started)
+            return
+
+        timed = bool(self._setting('current_dance_minutes'))
+        if timed:
+            print(f"Building timed playlist for '{self._setting('practice_type')}':")
+
         new_playlist = []
         for dance in dances:
             new_playlist.extend(self._get_songs_for_dance(
                 directory, dance, num_selections, randomize))
+
+        if timed:
+            total = sum(
+                min(song.get('duration', 0),
+                    song.get('max_playtime', self._setting('song_max_playtime'))
+                    + PlayerConstants.FADE_TIME)
+                for song in new_playlist
+            )
+            print(f"  Total: {self._secs_to_time_str(total)}")
+
+        self._finish_background_generation(new_playlist, start_playback, started)
+
+    def _finish_background_generation(self, new_playlist: list, start_playback: bool,
+                                      started: float) -> None:
+        """Persists the metadata cache and hands the playlist to the UI thread.
+
+        The cache is written here rather than per song so that one generation
+        costs at most one file write, and nothing at all if every song was
+        already cached.
+        """
+        if MusicPlayer._song_cache is not None:
+            MusicPlayer._song_cache.save()
+            timing_mark(f"playlist generated ({len(new_playlist)} items, "
+                        f"song cache: {MusicPlayer._song_cache.stats()})", started)
+        else:
+            timing_mark(f"playlist generated ({len(new_playlist)} items)", started)
 
         # Schedule the UI update to run on the main Kivy thread
         Clock.schedule_once(partial(
@@ -1103,8 +1716,19 @@ class MusicPlayer(BoxLayout):
         self.playlist_idx = 0
         self.sound = None
         self._display_playlist_buttons()
+        timing_mark("playlist displayed")
         self.restart_playlist()
         self._playlist_generation_in_progress = False
+        self._generation_config = None
+
+        if self._regeneration_pending:
+            # Settings changed while this playlist was being built; it is already
+            # out of date, so rebuild it with the current settings.
+            self._regeneration_pending = False
+            queued_start_playback = self._regeneration_start_playback
+            self._regeneration_start_playback = False
+            self.update_playlist(start_playback=queued_start_playback or start_playback)
+            return
 
         # If triggered by an auto-update, start playing the first song.
         if start_playback and self.playlist:
@@ -1124,19 +1748,24 @@ class MusicPlayer(BoxLayout):
             print("Priming GStreamer audio backend silently...")
             if (temp_sound := SoundLoader.load(self.playlist[0]['path'])):
                 # Set volume to 0 to make the priming inaudible
-                temp_sound.volume = 0
-                temp_sound.play()
+                self._sound_set_volume(0, temp_sound)
+                self._safe_sound_call("priming the audio backend", temp_sound.play)
 
                 # Let it play for a tiny fraction of a second then stop and unload
                 def silent_stop(_dt):
-                    temp_sound.stop()
-                    temp_sound.unload()
-                    print("GStreamer priming successful.")
+                    # Runs after the enclosing try has returned, so it needs its
+                    # own guard; otherwise a cleanup failure reaches Kivy's loop.
+                    stopped = self._sound_stop(temp_sound)
+                    unloaded = self._sound_unload(temp_sound)
+                    print("GStreamer priming successful." if stopped and unloaded
+                          else "GStreamer priming finished, but cleanup failed.")
 
                 Clock.schedule_once(silent_stop, 0.1)
 
         except (IndexError, OSError, AttributeError, TypeError) as e:
             print(f"Non-critical error during GStreamer priming: {e}")
+
+
 
     def _display_playlist_buttons(self, playlist: typing.Optional[list] = None) -> None:
         """Renders the buttons for each song in the playlist view.
@@ -1214,23 +1843,34 @@ class MusicPlayer(BoxLayout):
         if song_info.get('dance') == 'announce':
             return song_info.get('title', "Announcement")
 
+        # Cues (gaps, warnings) carry their own descriptive label.
+        if song_info.get('dance') == 'cue':
+            return song_info.get('cue_label', song_info.get('title', "Cue"))
+
         # Otherwise, build the full label for a regular song.
         title = song_info.get('title', "Title Unspecified")
         genre = song_info.get('genre', "Genre Unspecified")
         artist = song_info.get('artist', "Artist Unspecified")
         album = song_info.get('album', "Album Unspecified")
 
-        return f"{title} / {genre} / {artist} / {album}"
+        label = f"{title} / {genre} / {artist} / {album}"
+
+        # Round songs have no announcement before them, so the dance and the clip
+        # length go on the button instead.
+        if prefix := song_info.get('label_prefix'):
+            return f"{prefix}  |  {label}"
+        return label
 
     def _get_adjusted_song_count(self, dance: str, num_selections: int) -> int:
         """
         Adjusts the number of songs for a dance based on rules defined in the
         current practice type's 'dance_adjustments' dictionary.
         """
-        if not self.adjust_song_counts_for_playlist or dance not in self.current_dance_adjustments:
+        adjustments = self._setting('current_dance_adjustments')
+        if not self._setting('adjust_song_counts_for_playlist') or dance not in adjustments:
             return num_selections
 
-        rule = self.current_dance_adjustments[dance]
+        rule = adjustments[dance]
 
         # Rule is a direct mapping (e.g., {"1": 0, "2": 1, "default": 2})
         if isinstance(rule, dict):
@@ -1250,8 +1890,52 @@ class MusicPlayer(BoxLayout):
 
         return num_selections
 
+    def _get_song_cache(self) -> SongCache:
+        """Returns the shared metadata cache, creating it on first use."""
+        if MusicPlayer._song_cache is None:
+            MusicPlayer._song_cache = SongCache(
+                app_paths.user_path(PlayerConstants.SONG_CACHE_FILE))
+        return MusicPlayer._song_cache
+
+    def _read_tags(self, path: str) -> dict:
+        """Returns a song's tag fields, from the cache when possible.
+
+        This is the only place the player opens a music file for metadata, so it
+        is the only place that needs to know a cache exists. A miss reads the file
+        and stores the result; the cache is written once per playlist generation.
+
+        Args:
+            path: The full path to the music file.
+
+        Returns:
+            A dict with duration, title, artist, album and genre.
+
+        Raises:
+            TinyTagException, OSError: Propagated from the read, and handled by
+                the caller exactly as before.
+        """
+        cache = self._get_song_cache()
+        if (entry := cache.get(path)) is not None:
+            return entry
+
+        tag = TinyTag.get(path)
+        fields = {
+            'duration': tag.duration,
+            'title': tag.title,
+            'artist': tag.artist,
+            'album': tag.album,
+            'genre': tag.genre,
+        }
+        cache.put(path, fields)
+        return fields
+
     def _create_song_info(self, path: str, dance: str) -> typing.Optional[dict]:
         """Reads metadata from a music file and returns it as a dictionary.
+
+        The returned dictionary carries its own 'max_playtime', resolved here at
+        playlist-generation time rather than being looked up per-dance during
+        playback. Timed blocks then override it per song so that individual songs
+        can be faded early to make a block fit its budget.
 
         Args:
             path: The full path to the music file.
@@ -1261,23 +1945,43 @@ class MusicPlayer(BoxLayout):
             A dictionary containing song metadata, or None if reading fails.
         """
         try:
-            tag = TinyTag.get(path)
-            if dance == 'announce':
+            tag = self._read_tags(path)
+
+            # A file whose duration cannot be determined is usually not decodable
+            # audio at all. Substituting a nominal duration puts it in the
+            # playlist, and playing it can take the whole player down: the audio
+            # backend loads such a file happily and then segfaults on play(),
+            # which no amount of Python error handling can catch. Skip it.
+            if not tag['duration']:
+                Logger.warning(
+                    f"MusicPlayer: no readable duration for {path}; skipping it. "
+                    "The file is probably corrupt or not audio.")
+                return None
+
+            if dance in ('announce', 'cue'):
+                duration = tag['duration']
                 return {
                     'path': path,
-                    'dance': 'announce',
+                    'dance': dance,
                     'title': pathlib.Path(path).stem,
-                    'artist': 'Announcement', 'album': '', 'genre': '',
-                    'duration': tag.duration if tag.duration is not None else 5,
+                    'artist': 'Announcement' if dance == 'announce' else 'Cue',
+                    'album': '', 'genre': '',
+                    'duration': duration,
+                    # These play out in full; their duration is their max playtime,
+                    # and they are never faded.
+                    'max_playtime': duration,
+                    'fade_seconds': 0,
                 }
             return {
                 'path': path,
                 'dance': dance,
-                'title': tag.title or pathlib.Path(path).stem,
-                'artist': tag.artist or "Artist Unspecified",
-                'album': tag.album or "Album Unspecified",
-                'genre': tag.genre or "Genre Unspecified",
-                'duration': tag.duration if tag.duration is not None else 300,
+                'title': tag['title'] or pathlib.Path(path).stem,
+                'artist': tag['artist'] or "Artist Unspecified",
+                'album': tag['album'] or "Album Unspecified",
+                'genre': tag['genre'] or "Genre Unspecified",
+                'duration': tag['duration'],
+                'max_playtime': self._cap_for_dance(dance),
+                'fade_seconds': PlayerConstants.FADE_TIME,
             }
         except (TinyTagException, OSError) as e:
             print(f"Could not read metadata for {path}: {e}")
@@ -1331,7 +2035,7 @@ class MusicPlayer(BoxLayout):
 
     def _get_history_path(self) -> str:
         """Returns the full path to the history JSON file."""
-        return os.path.join(self.script_path, PlayerConstants.HISTORY_FILE)
+        return app_paths.user_path(PlayerConstants.HISTORY_FILE)
 
     def _load_play_history(self) -> dict:
         """Loads the play history from disk.
@@ -1345,16 +2049,45 @@ class MusicPlayer(BoxLayout):
 
         try:
             with open(history_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                history = json.load(f)
         except (OSError, json.JSONDecodeError) as e:
             print(f"Warning: Could not load play history: {e}")
             return {}
 
+        # Valid JSON is not necessarily a usable history. Anything else here
+        # would raise inside the generation worker, where until recently the
+        # failure left the whole player disabled.
+        if not isinstance(history, dict):
+            print("Warning: play history is not a JSON object; ignoring it.")
+            return {}
+
+        # The members matter as much as the shape: history entries go into a set,
+        # so a dict or list among them raises "unhashable type" inside the
+        # generation worker, and would do so on every attempt until the file was
+        # deleted by hand.
+        clean = {}
+        for dance, paths in history.items():
+            if not isinstance(dance, str) or not isinstance(paths, list):
+                continue
+            songs = [path for path in paths if isinstance(path, str)]
+            if len(songs) != len(paths):
+                print(f"Warning: play history for '{dance}' contained entries that "
+                      "are not song paths; they were dropped.")
+            clean[dance] = songs
+        return clean
+
     def _save_play_history(self, history: dict) -> None:
-        """Saves the updated play history to disk."""
+        """Saves the updated play history to disk.
+
+        Written to a temporary file and renamed, so a laptop losing power or
+        being forced off mid-write cannot leave a truncated file behind.
+        """
+        path = self._get_history_path()
         try:
-            with open(self._get_history_path(), 'w', encoding='utf-8') as f:
+            temporary = f"{path}.tmp"
+            with open(temporary, 'w', encoding='utf-8') as f:
                 json.dump(history, f, indent=2)
+            os.replace(temporary, path)
         except OSError as e:
             print(f"Warning: Could not save play history: {e}")
 
@@ -1416,6 +2149,513 @@ class MusicPlayer(BoxLayout):
 
         return selected_paths
 
+    # ------------------------------------------------------------------
+    # Competition rounds
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _validate_segments(raw: typing.Any) -> list:
+        """Validates a practice type's `segments` list.
+
+        See `practice_type_rules.validate_segments`.
+        """
+        return practice_type_rules.validate_segments(raw, print)
+
+    def _get_cue_path(self, name: str) -> typing.Optional[str]:
+        """Finds the audio file for a cue, trying .ogg then .mp3.
+
+        Args:
+            name: The cue name, e.g. "round_gap" or "gap_20".
+
+        Returns:
+            The path to the cue audio, or None if it is missing.
+        """
+        cue_dir = os.path.join(self.script_path, PlayerConstants.CUES_DIR)
+        for extension in (".ogg", ".mp3", ".wav", ".flac", ".m4a"):
+            candidate = os.path.join(cue_dir, f"{name}{extension}")
+            if os.path.isfile(candidate):
+                return candidate
+        return None
+
+    def _get_cue_info(self, name: str, label: typing.Optional[str] = None) -> typing.Optional[dict]:
+        """Builds a playlist item for a cue.
+
+        Cues are ordinary audio files played to their natural length, so a gap or a
+        warning tone needs no special handling during playback.
+
+        Args:
+            name: The cue name, e.g. "round_gap" or "gap_20".
+            label: Text for the playlist button; a readable default is derived
+                from the cue name when this is None.
+
+        Returns:
+            A playlist item, or None if the cue audio is missing.
+        """
+        path = self._get_cue_path(name)
+        if path is None:
+            print(f"Warning: cue '{name}' not found in {PlayerConstants.CUES_DIR}/. "
+                  "Run cues/make_cues.sh to generate it. Skipping it.")
+            return None
+
+        info = self._create_song_info(path, 'cue')
+        if info is None:
+            return None
+
+        info['cue_label'] = label or self._default_cue_label(name, info['duration'])
+        return info
+
+    @staticmethod
+    def _default_cue_label(name: str, duration: float) -> str:
+        """A readable playlist label for a cue that was not given one."""
+        if name.startswith("gap_"):
+            return f"--- {int(round(duration))} second gap ---"
+        if name == PlayerConstants.ROUND_GAP_CUE:
+            return "--- break between rounds, warning tone before the music ---"
+        return f"--- {name.replace('_', ' ')} ---"
+
+    def _pick_songs(self, dance: str, all_music_paths: list, wanted: int,
+                    min_seconds: typing.Optional[float], randomize: bool) -> list:
+        """Chooses songs for one dance, passing over ones that are too short.
+
+        Used both for a fixed number of selections, where `min_seconds` is
+        `MIN_SONG_LENGTH_SECONDS`, and for a competition round, where it is the
+        clip length -- a round is timed against a stopwatch, so a track shorter
+        than the clip leaves the round short and every following heat drifts.
+
+        Candidates are considered in history-aware order and the first ones long
+        enough are taken; only if there are too few does it fall back to the
+        longest of the short ones, with a warning.
+
+        Metadata is read lazily as candidates are considered, so a folder of
+        normal-length songs costs no more reads than picking blind would.
+
+        Args:
+            dance: The dance being picked for.
+            all_music_paths: Every music file available for the dance.
+            wanted: How many songs are needed.
+            min_seconds: Shortest acceptable song, or None to accept any.
+            randomize: If True, draw history-aware at random; else sorted order.
+
+        Returns:
+            A list of song dictionaries.
+        """
+        history = self._load_play_history() if randomize else {}
+        candidates = (self._draw_candidates(all_music_paths, dance, history)
+                      if randomize else sorted(all_music_paths))
+
+        chosen: list[dict] = []
+        too_short: list[dict] = []
+        for path in candidates:
+            if (song_info := self._create_song_info(path, dance)) is None:
+                continue
+            if not min_seconds or song_info['duration'] >= min_seconds:
+                chosen.append(song_info)
+                if len(chosen) == wanted:
+                    break
+            else:
+                too_short.append(song_info)
+
+        if len(chosen) < wanted and too_short:
+            # Not enough full-length tracks: use the longest of what is left.
+            too_short.sort(key=lambda info: -info['duration'])
+            shortfall = wanted - len(chosen)
+            chosen.extend(too_short[:shortfall])
+            print(f"    Warning: '{dance}' has too few songs of at least "
+                  f"{self._secs_to_time_str(min_seconds)}; using the "
+                  f"{shortfall} longest of the shorter ones.")
+
+        if randomize and chosen:
+            self._commit_history(history, dance, [info['path'] for info in chosen],
+                                 all_music_paths)
+            self._save_play_history(history)
+
+        return chosen
+
+    def _get_round_songs(self, directory: str, segment: dict, randomize: bool) -> list:
+        """Builds one competition round.
+
+        Each dance is played `count` times at `clip_seconds`, cut off hard with no
+        fade, separated by a short gap. There are no spoken announcements, so the
+        dance name and clip length go on the playlist button instead.
+
+        Args:
+            directory: The root music directory.
+            segment: A validated round segment.
+            randomize: If True, songs are chosen history-aware at random.
+
+        Returns:
+            A list of playlist items for the round.
+        """
+        items: list[dict] = []
+        clip_seconds = segment["clip_seconds"]
+        gap_seconds = segment["gap_seconds"]
+
+        # Build the list of picks first so the trailing gap can be left off the end.
+        picks: list[tuple[str, dict]] = []
+        for dance in segment["round"]:
+            all_music_paths = self._collect_music_files(directory, dance)
+            if not all_music_paths:
+                print(f"Warning: no music found for '{dance}'. Skipping it in this round.")
+                continue
+
+            wanted = min(segment["count"], len(all_music_paths))
+            if wanted < segment["count"]:
+                print(f"Warning: '{dance}' has only {len(all_music_paths)} songs; "
+                      f"the round asked for {segment['count']}.")
+
+            picks.extend(
+                (dance, song_info) for song_info in self._pick_songs(
+                    dance, all_music_paths, wanted, clip_seconds, randomize))
+
+        for position, (dance, song_info) in enumerate(picks):
+            if segment["announce"] and (announce_path := self._get_announce_path(dance)):
+                if announce_info := self._create_song_info(announce_path, 'announce'):
+                    items.append(announce_info)
+
+            if clip_seconds:
+                # Hard cut: the clip is exactly clip_seconds, no fade tail.
+                song_info['max_playtime'] = clip_seconds
+                song_info['fade_seconds'] = 0
+                song_info['label_prefix'] = (
+                    f"{dance} {self._secs_to_time_str(clip_seconds)}")
+            else:
+                song_info['label_prefix'] = dance
+
+            items.append(song_info)
+
+            # Gaps separate dances; there is no gap after the last one, because the
+            # break between rounds follows immediately.
+            if gap_seconds and position < len(picks) - 1:
+                if gap_info := self._get_cue_info(f"gap_{gap_seconds}"):
+                    items.append(gap_info)
+
+        return items
+
+    def _build_segment_playlist(self, directory: str, segments: list, randomize: bool) -> list:
+        """Builds a whole playlist from a practice type's `segments`.
+
+        Args:
+            directory: The root music directory.
+            segments: Validated segments.
+            randomize: If True, songs are chosen history-aware at random.
+
+        Returns:
+            The complete playlist.
+        """
+        print(f"Building rounds playlist for '{self._setting('practice_type')}':")
+        playlist: list[dict] = []
+
+        for segment in segments:
+            if cue := segment.get("cue"):
+                if cue_info := self._get_cue_info(cue, segment.get("label")):
+                    playlist.append(cue_info)
+                    print(f"  {cue}: {self._secs_to_time_str(cue_info['duration'])}")
+                continue
+
+            round_items = self._get_round_songs(directory, segment, randomize)
+            playlist.extend(round_items)
+
+            songs = [item for item in round_items if item['dance'] not in ('cue', 'announce')]
+            print(f"  {segment.get('label') or 'round'}: {len(songs)} dances, "
+                  f"{self._secs_to_time_str(self._playlist_length(round_items))}")
+
+        print(f"  Total: {self._secs_to_time_str(self._playlist_length(playlist))}")
+        return playlist
+
+    @staticmethod
+    def _playlist_length(items: list) -> float:
+        """Total playing time of a list of playlist items, in seconds."""
+        return sum(
+            min(item.get('duration', 0),
+                item.get('max_playtime', 0) + item.get('fade_seconds', 0))
+            for item in items
+        )
+
+    # ------------------------------------------------------------------
+    # Timed practice blocks
+    # ------------------------------------------------------------------
+
+    def _cap_for_dance(self, dance: str) -> float:
+        """Returns the maximum playtime in seconds for a single song of `dance`.
+
+        This is the per-dance override if one is configured, otherwise the global
+        default. It is an anomaly guard: it stops one unusually long track from
+        dominating a block, and it is applied before any block budgeting so that a
+        six-minute track is accounted for at its capped length, not its real one.
+        """
+        return float(self._setting('current_dance_max_playtimes').get(
+            dance, self._setting('song_max_playtime')))
+
+    @staticmethod
+    def _effective_length(duration: float, cap: float) -> float:
+        """How much playlist time a song occupies when played normally.
+
+        A song shorter than the cap plays out in full. A longer one is cut off at
+        the cap and then fades, so it occupies `cap + FADE_TIME`.
+        """
+        return min(float(duration), cap + PlayerConstants.FADE_TIME)
+
+    @staticmethod
+    def _validate_dance_minutes(raw: typing.Any, dances: list) -> dict:
+        """Validates a practice type's `dance_minutes` mapping.
+
+        Bad entries are dropped with a warning rather than raising, so a typo in a
+        JSON file degrades to the old count-based behaviour for that dance instead
+        of breaking playlist generation.
+
+        Args:
+            raw: The value of the practice type's "dance_minutes" key.
+            dances: The dances actually included in the practice type.
+
+        Returns:
+            A dict of {dance: minutes} containing only valid, positive entries.
+        """
+        if not raw:
+            return {}
+        if not isinstance(raw, dict):
+            print(f"Warning: 'dance_minutes' must be a JSON object, got {type(raw).__name__}. "
+                  "Ignoring it.")
+            return {}
+
+        validated = {}
+        for dance, value in raw.items():
+            if dance not in dances:
+                print(f"Warning: 'dance_minutes' lists '{dance}', which is not in this "
+                      "practice type's dances. Ignoring it.")
+                continue
+            minutes = practice_type_rules.strict_number(
+                value, f"'dance_minutes' value for '{dance}'")
+            if minutes is None:
+                print(f"Warning: 'dance_minutes' value for '{dance}' is not an "
+                      f"ordinary number ({value!r}). Ignoring it.")
+                continue
+            if minutes <= 0:
+                print(f"Warning: 'dance_minutes' value for '{dance}' must be positive "
+                      f"({value!r}). Ignoring it.")
+                continue
+            validated[dance] = minutes
+        return validated
+
+    def _draw_candidates(self, all_paths: list[str], dance: str, history: dict) -> list[str]:
+        """Returns paths in the order they should be considered for a timed block.
+
+        Unplayed songs come first (shuffled), then previously played ones (also
+        shuffled) for the case where the block is long enough to exhaust the pool.
+
+        Unlike `_select_songs_with_history`, this mutates nothing: a timed block
+        does not know how many songs it needs until the running total crosses the
+        budget, so history must not be written until the block is settled.
+        Otherwise songs that were considered but never played would be burned.
+        """
+        played = set(history.get(dance, []))
+        unplayed = [p for p in all_paths if p not in played]
+        replayed = [p for p in all_paths if p in played]
+        random.shuffle(unplayed)
+        random.shuffle(replayed)
+        return unplayed + replayed
+
+    @staticmethod
+    def _commit_history(history: dict, dance: str, used_paths: list[str],
+                        all_paths: typing.Optional[list[str]] = None) -> None:
+        """Records the songs a block actually used.
+
+        The cycle restarts only when the pool is genuinely exhausted, mirroring the
+        reshuffle in `_select_songs_with_history`. A replay while unplayed songs
+        remain -- which happens when the ones left are all too short -- keeps the
+        cycle intact, so one unavoidable repeat does not discard the record of
+        everything else already played.
+
+        Args:
+            history: The play history, modified in place.
+            dance: The dance these songs belong to.
+            used_paths: The songs actually played, in order.
+            all_paths: Every song available for the dance. Without it, any replay
+                is treated as exhaustion.
+        """
+        if not used_paths:
+            return
+
+        played = history.get(dance, [])
+        played_set = set(played)
+        if not any(path in played_set for path in used_paths):
+            history[dance] = played + list(used_paths)
+            return
+
+        # Something was replayed. Is anything still unplayed?
+        used_set = set(used_paths)
+        unplayed_remain = any(
+            path not in played_set and path not in used_set for path in (all_paths or []))
+
+        if unplayed_remain:
+            # Keep the cycle; just record the new songs, without duplicating entries.
+            history[dance] = list(dict.fromkeys(played + list(used_paths)))
+        else:
+            history[dance] = list(used_paths)
+
+    @staticmethod
+    def _apply_uniform_trim(lengths: list[float], total_trim: float,
+                            min_play: float) -> list[float]:
+        """Spreads `total_trim` seconds evenly across `lengths`.
+
+        Every song gives up the same number of seconds, so songs keep their
+        relative lengths -- a block is not a run of identical clips. A song is
+        never taken below `min_play`; whatever it cannot absorb is redistributed
+        over the songs that still have headroom.
+
+        Args:
+            lengths: Planned play length of each song, in seconds.
+            total_trim: Total seconds that must come out of the block.
+            min_play: Floor below which no song may be trimmed.
+
+        Returns:
+            The trimmed lengths. If the block cannot absorb the whole trim, the
+            result sums to more than the budget and the caller reports it.
+        """
+        planned = [float(length) for length in lengths]
+        remaining = float(total_trim)
+        active = [i for i, length in enumerate(planned) if length > min_play]
+
+        while remaining > 0.5 and active:
+            share = remaining / len(active)
+            still_active = []
+            for i in active:
+                take = min(share, planned[i] - min_play)
+                planned[i] -= take
+                remaining -= take
+                if planned[i] > min_play + 0.5:
+                    still_active.append(i)
+            active = still_active
+
+        return planned
+
+    @staticmethod
+    def _plan_timed_block(lengths: list[float], budget: float,
+                          max_trim: float, min_play: float) -> list[float]:
+        """Decides how long each song in a timed block should play.
+
+        `lengths` are the effective (cap-limited) lengths of the songs drawn for
+        the block, in play order, drawn until their total reached `budget`. The
+        overshoot is shared evenly across all of them so the block ends exactly on
+        budget. If that share would be a bigger cut than `max_trim`, the last song
+        is dropped and the block runs short instead.
+
+        Returns:
+            Planned play lengths for the songs that are kept -- always a prefix of
+            `lengths`, possibly empty.
+        """
+        kept = [float(length) for length in lengths]
+
+        while kept:
+            overshoot = sum(kept) - budget
+            if overshoot <= 0:
+                # Songs ran out before the budget was met: play them untrimmed.
+                return kept
+            if overshoot / len(kept) <= max_trim or len(kept) == 1:
+                return MusicPlayer._apply_uniform_trim(kept, overshoot, min_play)
+            kept.pop()
+
+        return []
+
+    def _get_timed_songs_for_dance(
+        self, dance: str, all_music_paths: list[str], minutes: float, randomize: bool
+    ) -> list:
+        """Builds a block of songs that fills `minutes` minutes of playing time.
+
+        The dance announcement counts against the budget, so a 13 minute Waltz
+        block is 13 minutes including the announcement.
+
+        Args:
+            dance: The dance for this block.
+            all_music_paths: Every music file available for the dance.
+            minutes: The block's budget in minutes.
+            randomize: If True, songs are drawn history-aware at random; if False,
+                they are taken in sorted order.
+
+        Returns:
+            A list of song dictionaries, announcement first, each carrying the
+            'max_playtime' that makes the block land on its budget.
+        """
+        budget = float(minutes) * 60.0
+
+        announce_info = None
+        if (announce_path := self._get_announce_path(dance)) and \
+           (info := self._create_song_info(announce_path, 'announce')):
+            announce_info = info
+            budget -= float(info['duration'])
+
+        if budget <= 0:
+            print(f"Warning: '{dance}' block of {minutes:g} min is too short to hold "
+                  "its announcement. Playing the announcement only.")
+            return [announce_info] if announce_info else []
+
+        cap = self._cap_for_dance(dance)
+
+        history = self._load_play_history() if randomize else {}
+        candidates = (self._draw_candidates(all_music_paths, dance, history)
+                      if randomize else sorted(all_music_paths))
+
+        # Draw songs one at a time, reading metadata only for the ones considered,
+        # until the running total reaches the budget.
+        drawn: list[dict] = []
+        lengths: list[float] = []
+        total = 0.0
+        for path in candidates:
+            if (song_info := self._create_song_info(path, dance)) is None:
+                continue
+            length = self._effective_length(song_info['duration'], cap)
+            drawn.append(song_info)
+            lengths.append(length)
+            total += length
+            if total >= budget:
+                break
+
+        planned = self._plan_timed_block(
+            lengths, budget,
+            PlayerConstants.MAX_TRIM_SECONDS,
+            PlayerConstants.MIN_SONG_PLAY_SECONDS,
+        )
+        kept = drawn[:len(planned)]
+
+        for song_info, full_length, play_length in zip(kept, lengths, planned):
+            if play_length < full_length - 0.5:
+                # Trimmed: fade so that playback ends exactly at play_length.
+                song_info['max_playtime'] = max(play_length - PlayerConstants.FADE_TIME, 1.0)
+            else:
+                # Untrimmed: leave the normal cap so a short song is not faded early.
+                song_info['max_playtime'] = cap
+
+        if randomize and kept:
+            self._commit_history(history, dance, [info['path'] for info in kept])
+            self._save_play_history(history)
+
+        self._report_timed_block(dance, minutes, announce_info, planned)
+
+        return ([announce_info] if announce_info else []) + kept
+
+    def _report_timed_block(self, dance: str, minutes: float,
+                            announce_info: typing.Optional[dict],
+                            planned: list[float]) -> None:
+        """Prints what a timed block came out to, and warns if it fell short.
+
+        A block that quietly runs short is the failure a DJ would only notice
+        mid-practice, so it is called out on the console at generation time.
+        """
+        target = float(minutes) * 60.0
+        announce_len = float(announce_info['duration']) if announce_info else 0.0
+        actual = announce_len + sum(planned)
+        shortfall = target - actual
+
+        print(f"  {dance}: {len(planned)} songs, "
+              f"{self._secs_to_time_str(actual)} of {self._secs_to_time_str(target)} "
+              f"(announcement {announce_len:.0f}s)")
+        if shortfall > 1.0:
+            print(f"    Warning: {dance} block is {shortfall:.0f}s short. "
+                  "Not enough music in the folder, or the songs are unusually short.")
+        elif shortfall < -1.0:
+            print(f"    Warning: {dance} block is {-shortfall:.0f}s over. "
+                  "Songs could not be trimmed further without going below "
+                  f"{PlayerConstants.MIN_SONG_PLAY_SECONDS}s.")
+
     def _get_songs_for_dance(
         self, directory: str, dance: str, num_selections: int, randomize: bool
     ) -> list:
@@ -1423,6 +2663,9 @@ class MusicPlayer(BoxLayout):
 
         This method coordinates collecting music files, applying selection logic,
         reading metadata, and prepending a spoken announcement.
+
+        If the active practice type gives this dance a `dance_minutes` budget, the
+        block is filled by playing time instead of by song count.
 
         Args:
             directory: The root music directory.
@@ -1438,28 +2681,42 @@ class MusicPlayer(BoxLayout):
         if not all_music_paths:
             return []
 
-        if self.play_all_songs:
+        # Timed block: fill by playing time rather than by song count. play_all_songs
+        # and play_single_song are deliberate "play the whole thing" modes, so a
+        # budget does not apply to them.
+        minutes = self._setting('current_dance_minutes').get(dance)
+        if minutes and not self._setting('play_all_songs') \
+                and not self._setting('play_single_song'):
+            return self._get_timed_songs_for_dance(dance, all_music_paths, minutes, randomize)
+
+        if self._setting('play_all_songs'):
+            # "Play everything" means everything: no minimum length is applied,
+            # and history is only used to order what is already a full sweep.
             num_to_sample = len(all_music_paths)
+            if randomize:
+                history = self._load_play_history()
+                sampled_paths = self._select_songs_with_history(
+                    all_music_paths, dance, num_to_sample, history
+                )
+                self._save_play_history(history)
+            else:
+                sampled_paths = sorted(all_music_paths)[:num_to_sample]
+
+            playlist = [
+                song_info for path in sampled_paths
+                if (song_info := self._create_song_info(path, dance)) is not None
+            ]
         else:
             adjusted_num_selections = self._get_adjusted_song_count(dance, num_selections)
             if adjusted_num_selections == 0:
                 return []
             num_to_sample = min(adjusted_num_selections, len(all_music_paths))
 
-        if randomize:
-            # Use history-aware random selection
-            history = self._load_play_history()
-            sampled_paths = self._select_songs_with_history(
-                all_music_paths, dance, num_to_sample, history
-            )
-            self._save_play_history(history)
-        else:
-            sampled_paths = sorted(all_music_paths)[:num_to_sample]
-
-        playlist = [
-            song_info for path in sampled_paths
-            if (song_info := self._create_song_info(path, dance)) is not None
-        ]
+            # A fixed number of selections sets the length of the practice, so a
+            # very short track just makes the practice end early. Pass those over.
+            playlist = self._pick_songs(
+                dance, all_music_paths, num_to_sample,
+                PlayerConstants.MIN_SONG_LENGTH_SECONDS, randomize)
 
         if (announce_path := self._get_announce_path(dance)) and \
         (announce_info := self._create_song_info(announce_path, 'announce')):
@@ -1486,16 +2743,18 @@ class MusicPlayer(BoxLayout):
         }
         mapping = {
             PlayerConstants.PRACTICE_TYPE_60_MIN: ("default", 2, False, False, False, True, True,
-                      default_adjustments, {"VienneseWaltz": 150}),
+                      default_adjustments, {"VienneseWaltz": 150}, {}, []),
             PlayerConstants.PRACTICE_TYPE_NC_60_MIN: ("newcomer", 2, False, False, False, True, True,
-                         default_adjustments, {"VienneseWaltz": 150}),
+                         default_adjustments, {"VienneseWaltz": 150}, {}, []),
         }
 
         mapping |= getattr(self, "custom_practice_mapping", {})
-        params = mapping.get(text, ("default", 2, False, True, False, True, False, {}, {}))
+        params = mapping.get(
+            text, ("default", 2, False, True, False, True, False, {}, {}, {}, []))
 
         (dance_type, num_selections, play_all, auto_update, play_single, randomize,
-         adj_counts, adj_dict, max_playtimes_dict) = params
+         adj_counts, adj_dict, max_playtimes_dict, dance_minutes_dict,
+         segments_list) = params
 
         if adj_counts and not adj_dict:
             adj_dict = default_adjustments
@@ -1509,6 +2768,8 @@ class MusicPlayer(BoxLayout):
         self.adjust_song_counts_for_playlist = adj_counts
         self.current_dance_adjustments = adj_dict
         self.current_dance_max_playtimes = max_playtimes_dict
+        self.current_dance_minutes = self._validate_dance_minutes(dance_minutes_dict, self.dances)
+        self.current_segments = self._validate_segments(segments_list)
 
         if self.music_dir:
             self.update_playlist()
@@ -1552,6 +2813,15 @@ class MusicApp(App):
         self.editor_screen = None
         self.player_widget = None
 
+    def get_application_config(self, **kwargs) -> str:
+        """Returns the path of music.ini.
+
+        Kivy defaults to writing it beside the main script, which fails for an
+        installation the user cannot write to. Follows the same rule as every
+        other file the player writes, so source deployments are unaffected.
+        """
+        return app_paths.user_path(f"{self.name}.ini")
+
     def build(self) -> ScreenManager:
         """Creates and returns the root widget of the application."""
         self.settings_cls = SettingsWithSpinner
@@ -1569,6 +2839,7 @@ class MusicApp(App):
         self.editor_screen = PracticeTypeEditorScreen(name='editor')
         self.manager.add_widget(self.editor_screen)
 
+        timing_mark("app.build() complete")
         return self.manager
 
     def open_settings(self, *largs, **kwargs):
@@ -1589,9 +2860,40 @@ class MusicApp(App):
         """
         self._load_config_settings()
         self.player_widget.set_practice_type(None, self.player_widget.practice_type)
+        timing_mark("on_start complete (playlist generating in background)")
 
         if sys.platform == "win32":
             Clock.schedule_once(self._windows_startup_fixes, 1)
+
+    def _config_number(self, section: str, key: str, kind: type, default):
+        """Reads a numeric setting, repairing the file if the value is unusable.
+
+        ConfigParser's `fallback` only covers a missing option, not a malformed
+        one: `getint` on "abc" raises even with a fallback given. That exception
+        would escape `on_start` and abort startup every time, which is the one
+        failure here that restarting the player cannot clear.
+
+        Args:
+            section: Config section name.
+            key: Option name.
+            kind: `int` or `float`.
+            default: Value to use, and to write back, if the stored one is bad.
+
+        Returns:
+            The stored value, or `default` if it could not be read.
+        """
+        try:
+            return kind(self.config.get(section, key, fallback=default))
+        except (ValueError, TypeError):
+            Logger.warning(
+                f"MusicPlayer: {key} in the settings file is not a valid "
+                f"{kind.__name__}; using {default}.")
+            try:
+                self.config.set(section, key, default)
+                self.config.write()
+            except (OSError, KeyError) as error:
+                Logger.warning(f"MusicPlayer: could not repair {key}: {error}")
+            return default
 
     def _load_config_settings(self) -> None:
         """Loads settings from the .ini config file and applies them to the player.
@@ -1602,13 +2904,13 @@ class MusicApp(App):
         """
         user_section = "user"
         if self.config.has_section(user_section):
-            self.player_widget.volume = self.config.getfloat(user_section, "volume", fallback=0.7)
+            self.player_widget.volume = self._config_number(
+                user_section, "volume", float, 0.7)
             self.player_widget.music_dir = self.config.get(
                 user_section, "music_dir", fallback=""
             )
-            self.player_widget.song_max_playtime = self.config.getint(
-                user_section, "song_max_playtime", fallback=210
-            )
+            self.player_widget.song_max_playtime = self._config_number(
+                user_section, "song_max_playtime", int, 210)
 
             self.player_widget.update_settings_options()
             practice_type_options = next(

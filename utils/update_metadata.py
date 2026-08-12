@@ -52,6 +52,16 @@ def is_id3_based(audio):
     """
     return isinstance(audio, ID3) or (hasattr(audio, 'tags') and isinstance(audio.tags, ID3))
 
+def is_generic_title(title):
+    """
+    Returns True if the title matches generic patterns like 'Track 01' or 'Unknown'.
+    """
+    if not title or not title.strip():
+        return True
+    # Pattern to represent generic titles like 'track01', 'track 01', or 'unknown'
+    pattern = re.compile(r'^(track\s*\d*|unknown)$', re.IGNORECASE)
+    return bool(pattern.match(title.strip()))
+
 def load_tags(file_path):
     """
     Loads tags from a file (MP3, FLAC, OGG, OPUS, M4A), returning the Mutagen object 
@@ -233,7 +243,8 @@ def rename_file_based_on_title(file_path, title):
         return file_path
 
     # Check for track number prefix (e.g. "01 - ", "01. ", "01 ")
-    match = re.match(r'^(\d+)[\s.-]+', base)
+    # Restored original [ \s.-]* behavior to capture leading digits
+    match = re.match(r'^(\d+)[\s.-]*', base)
     
     if match:
         track_num = match.group(1)
@@ -674,9 +685,9 @@ def apply_batch_updates(files, global_overrides, remove_art=False, auto_embed=Fa
             elif success:
                 print(f"Updated: {os.path.basename(file_path)}")
 
-        # 4. Rename File from Title (Optional)
+        # 4. Rename File from Title
         # We do this AFTER saving so the file contains the correct tags before rename
-        if rename_files:
+        if rename_files or current_tags['title']:
             file_path = rename_file_based_on_title(file_path, current_tags['title'])
 
     return incident_log
@@ -794,7 +805,7 @@ def process_files_interactively(files, embed_mode='ask', rename_files=False):
             # Note: We must check if art was added, as tags might be identical
             tags_changed = (current_tags != original_tags)
 
-            if not tags_changed and not art_added_this_session and not rename_files:
+            if not tags_changed and not art_added_this_session:
                 choice = input("\n  ⚠ No changes detected. [s]kip / [e]dit again [s]: ").lower().strip()
                 if choice == 'e':
                     continue
@@ -819,9 +830,9 @@ def process_files_interactively(files, embed_mode='ask', rename_files=False):
                 if success and error_reason:
                     incident_log.append({'file': file_path, 'reason': error_reason})
                 
-                # OPTIONAL: Rename file if requested
-                if rename_files:
-                    # Rename happens after save to ensure safe state
+                # Automatic Rename (No prompt)
+                # Renames happens after save to ensure safe state
+                if current_tags['title']:
                     rename_file_based_on_title(file_path, current_tags['title'])
                 break 
                 

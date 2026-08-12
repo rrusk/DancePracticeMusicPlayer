@@ -6,7 +6,17 @@ a = Analysis(
     ['music_player.py'],
     pathex=[],
     binaries=[],
-    datas=[('announce','announce'),('icons','icons')],
+    # Data the player reads from its own directory at runtime. Without
+    # builtin_practice_types.json a packaged build offers only the two hardcoded
+    # practice types, and without cues/ the gaps and round-warning tones of a
+    # competition-round practice type are skipped.
+    datas=[
+        ('announce', 'announce'),
+        ('cues', 'cues'),
+        ('icons', 'icons'),
+        ('builtin_practice_types.json', '.'),
+        ('custom_practice_types.json-example', '.'),
+    ],
     hiddenimports=['win32timezone'],
     hookspath=[],
     hooksconfig={},

@@ -215,5 +215,142 @@
         "adjust_song_counts": false,
         "dance_adjustments": {},
         "dance_max_playtimes": {}
+    },
+    "__COMMENT__ example of 'dance_minutes'. A dance listed here is played for that many minutes instead of a set number of songs. The dance announcement counts toward the budget. Songs are drawn until the budget is reached, then a single uniform trim is spread across every song in the block so it ends on time; each song keeps its own length minus that shared trim. 'dance_max_playtimes' still caps any one long song.": {
+        "dance_minutes": {
+            "Waltz": 13,
+            "VienneseWaltz": 8
+        }
+    },
+    "Silver+ Std 60min Timed": {
+        "dances": [
+            "Waltz",
+            "Tango",
+            "VienneseWaltz",
+            "Foxtrot",
+            "QuickStep"
+        ],
+        "num_selections": 4,
+        "play_all_songs": false,
+        "auto_update": false,
+        "play_single_song": false,
+        "randomize_playlist": true,
+        "adjust_song_counts": false,
+        "dance_adjustments": {},
+        "dance_max_playtimes": {
+            "VienneseWaltz": 150
+        },
+        "dance_minutes": {
+            "Waltz": 13,
+            "Tango": 13,
+            "VienneseWaltz": 8,
+            "Foxtrot": 13,
+            "QuickStep": 10
+        }
+    },
+    "__COMMENT__ 'segments' replaces the dances list and builds competition rounds. A segment is either a cue (an audio file in cues/, played to its natural length) or a round. In a round each dance is played 'count' times for 'clip_seconds', cut off hard with no fade, separated by a 'gap_seconds' gap and with no gap after the last dance. Rounds have no spoken announcements unless 'announce' is true.": {
+        "segments": [
+            {
+                "cue": "round_gap",
+                "label": "2:00 break"
+            },
+            {
+                "round": [
+                    "Waltz",
+                    "Tango"
+                ],
+                "count": 1,
+                "clip_seconds": 90,
+                "gap_seconds": 20,
+                "label": "Final"
+            }
+        ]
+    },
+    "Comp Rounds": {
+        "dances": [
+            "Waltz",
+            "Tango",
+            "VienneseWaltz",
+            "Foxtrot",
+            "QuickStep"
+        ],
+        "segments": [
+            {
+                "cue": "round_gap",
+                "label": "--- 2:00 break, warning at 1:40 --- next: FINAL #1"
+            },
+            {
+                "round": [
+                    "Waltz",
+                    "Tango",
+                    "VienneseWaltz",
+                    "Foxtrot",
+                    "QuickStep"
+                ],
+                "count": 1,
+                "clip_seconds": 90,
+                "gap_seconds": 20,
+                "label": "FINAL #1"
+            },
+            {
+                "cue": "round_gap",
+                "label": "--- 2:00 break, warning at 1:40 --- next: FINAL #2"
+            },
+            {
+                "round": [
+                    "Waltz",
+                    "Tango",
+                    "VienneseWaltz",
+                    "Foxtrot",
+                    "QuickStep"
+                ],
+                "count": 1,
+                "clip_seconds": 90,
+                "gap_seconds": 20,
+                "label": "FINAL #2"
+            },
+            {
+                "cue": "round_gap",
+                "label": "--- 2:00 break, warning at 1:40 --- next: SEMI FINAL"
+            },
+            {
+                "round": [
+                    "Waltz",
+                    "Tango",
+                    "VienneseWaltz",
+                    "Foxtrot",
+                    "QuickStep"
+                ],
+                "count": 2,
+                "clip_seconds": 100,
+                "gap_seconds": 20,
+                "label": "SEMI FINAL"
+            },
+            {
+                "cue": "round_gap",
+                "label": "--- 2:00 break, warning at 1:40 --- next: FINAL #3"
+            },
+            {
+                "round": [
+                    "Waltz",
+                    "Tango",
+                    "VienneseWaltz",
+                    "Foxtrot",
+                    "QuickStep"
+                ],
+                "count": 1,
+                "clip_seconds": 90,
+                "gap_seconds": 20,
+                "label": "FINAL #3"
+            }
+        ],
+        "num_selections": 1,
+        "play_all_songs": false,
+        "auto_update": false,
+        "play_single_song": false,
+        "randomize_playlist": true,
+        "adjust_song_counts": false,
+        "dance_adjustments": {},
+        "dance_max_playtimes": {}
     }
 }

@@ -31,6 +31,8 @@ The application is designed to play music files (MP3, WAV, OGG, M4A, FLAC, WAV) 
 - **Customizable Playlists:** Generates randomized playlists based on predefined or custom dance types and lengths
 - **Spoken Dance Announcements:** Automatically announces the dance type before each selection begins
 - **Per-Dance Playtime:** Override the global maximum song playtime for specific dances within a custom practice type.
+- **Timed Practice Blocks:** Give a dance a length in minutes instead of a song count (e.g. 13 minutes of Waltz); songs are trimmed slightly and evenly so the block ends on time.
+- **Competition Rounds:** Build finals and semi-finals with fixed-length clips, hard cut-offs, gaps between dances and a warning tone between rounds.
 - **Intuitive UI:** Play, pause, stop, restart controls, and a clickable, scrollable playlist
 - **Real-time Progress:** Displays current song title, artist, album, genre, and playback progress with seeking capability
 - **Configurable Settings:** Adjust volume, set music directory, and define a default maximum song playtime via an in-app settings panel
@@ -110,6 +112,7 @@ You can set your `music_dir` via the "Music Settings" button in the application.
 
 - Music File Requirements:
   - Musical selections are assumed to be at the correct tempo.
+  - Songs shorter than 90 seconds (`MIN_SONG_LENGTH_SECONDS` in `PlayerConstants`) are passed over by practice types that play a fixed number of selections per dance, since a very short track there just makes the practice end early. They are still used if a dance folder has too few longer songs, and the minimum does not apply to `play_all_songs` types or to [Timed Practice Blocks](#timed-practice-blocks), where a short song simply means one more song in the block.
   - Songs longer than 3 minutes 30 seconds (210 seconds) will fade out and end by 3 minutes 40 seconds (adjustable via "Max Playtime" in settings), except when play_single_song is true for the playlist.  This is useful for line dances, in particular, where one wants to play the entire song.
   - It is recommended that the volume of your musical selections be normalized for consistent playback.
 
@@ -162,6 +165,8 @@ The JSON file should be a dictionary where each key is the name of your custom p
 - `adjust_song_counts (boolean):` If true, the num_selections for certain dances will be adjusted based on predefined rules or dance_adjustments
 - `dance_adjustments (object, optional):` A dictionary specifying custom rules for adjusting num_selections for individual dances. If adjust_song_counts is true but dance_adjustments is not specified, a default set of adjustments will be applied (e.g., to reduce the number of songs for specific dances like Paso Doble, Viennese Waltz, Jive, WCS, JSlow, and VWSlow). These rules can be direct mappings (e.g., {"1": 0, "2": 1, "default": 2}) or string formulas (e.g., "n-1", "cap_at_1")
 - `dance_max_playtimes (object, optional):` A dictionary to override the global "Max Playtime" for specific dances. The keys are dance names (e.g., "VienneseWaltz") and the values are the maximum playtime in seconds.
+- `dance_minutes (object, optional):` A dictionary giving specific dances a length in minutes instead of a number of songs, e.g. `{"Waltz": 13}`. See [Timed Practice Blocks](#timed-practice-blocks) below. Dances not listed keep using num_selections.
+- `segments (list, optional):` Builds a sequence of competition rounds instead of a practice, replacing the dances list. See [Competition Rounds](#competition-rounds) below.
 
 **Example** `custom_practice_types.json`
 
@@ -235,6 +240,253 @@ The JSON file should be a dictionary where each key is the name of your custom p
 
 1. Create or modify the `custom_practice_types.json` file in the root directory of the application.
 2. The new practice types (e.g., "Beginner", "Intermediate") will appear in the "Practice Type" dropdown within the "Music Settings" panel.
+
+---
+
+## Timed Practice Blocks
+
+A practice type can spend a set amount of *time* on a dance rather than a set number of
+songs — "13 minutes of Waltz" instead of "4 Waltzes". List the dance in `dance_minutes`:
+
+```json
+"Silver+ Std 60min Timed": {
+    "dances": ["Waltz", "Tango", "VienneseWaltz", "Foxtrot", "QuickStep"],
+    "dance_minutes": {
+        "Waltz": 13, "Tango": 13, "VienneseWaltz": 8, "Foxtrot": 13, "QuickStep": 10
+    },
+    "dance_max_playtimes": {"VienneseWaltz": 150},
+    "num_selections": 4,
+    "randomize_playlist": true,
+    "adjust_song_counts": false
+}
+```
+
+That practice type ships in `custom_practice_types.json` and runs 57 minutes. A dance
+**not** listed in `dance_minutes` still uses `num_selections` and `dance_adjustments`, so
+the two styles can be mixed in one practice type. `play_all_songs` and `play_single_song`
+ignore budgets entirely.
+
+### How a block is built
+
+1. **The announcement counts toward the budget.** A 13 minute Waltz block is 13 minutes
+   including the spoken "Waltz", not 13 minutes plus it.
+2. **Songs are drawn one at a time** until their combined playing time reaches the budget.
+   Selection is history-aware, so a block will not repeat a song the practice has already
+   used. Only the songs actually kept are written to `play_history.json`.
+3. **`dance_max_playtimes` still caps any one song**, and the cap is applied *before* the
+   budget is worked out — a six-minute track counts as 3:40, so it cannot distort the rest
+   of the block.
+4. **The overshoot is shared out evenly.** Whatever the block runs over is divided by the
+   number of songs and taken off each one, so each song fades a few seconds earlier than it
+   otherwise would. Songs keep their own natural lengths minus that shared trim; a block is
+   *not* a run of identical-length clips.
+
+A real 13 minute Waltz block, five songs, trimmed 13 seconds each:
+
+```text
+02:15  (natural 02:28)   02:18  (natural 02:31)   02:02  (natural 02:15)
+03:13  (natural 03:26)   03:00  (natural 03:13)          + 9s announcement = 13:00
+```
+
+### When it can't hit the budget exactly
+
+- **Too few songs in the folder** — the block runs short and a warning naming the dance and
+  the shortfall is printed to the console when the playlist is generated.
+- **The trim would be too deep** — if sharing out the overshoot would cut more than
+  `MAX_TRIM_SECONDS` (45s) from every song, the last song is dropped and the block runs
+  short instead of audibly chopping the whole block.
+- **A song is already short** — no song is trimmed below `MIN_SONG_PLAY_SECONDS` (60s). Its
+  share of the trim is redistributed to the longer songs in the block.
+
+Both thresholds are in `PlayerConstants` in `music_player.py`. Raising
+`MIN_SONG_PLAY_SECONDS` protects short tracks more aggressively at the cost of trimming the
+long ones harder.
+
+Every generation of a timed playlist prints a per-block summary:
+
+```text
+Building timed playlist for 'Silver+ Std 60min Timed':
+  Waltz: 5 songs, 13:00 of 13:00 (announcement 9s)
+  ...
+  Total: 57:00
+```
+
+Note that each song's maximum playtime is now fixed when the playlist is generated rather
+than being looked up during playback, so changing "Max Playtime" in settings affects the
+*next* playlist rather than the current one.
+
+---
+
+## Competition Rounds
+
+A practice type can build a sequence of competition rounds — finals and semi-finals with
+fixed-length clips, hard cut-offs, gaps between dances and a warning tone between rounds —
+by defining `segments` instead of relying on the `dances` list.
+
+The **Comp Rounds** practice type ships with the player and runs 54:10:
+
+```text
+2:00 break (warning tone at 1:40)
+FINAL #1     W T V F Q          1:30 each, 20s gaps        8:50
+2:00 break
+FINAL #2     W T V F Q          1:30 each, 20s gaps        8:50
+2:00 break
+SEMI FINAL   WW TT VV FF QQ     1:40 each, 20s gaps       19:40
+2:00 break
+FINAL #3     W T V F Q          1:30 each, 20s gaps        8:50
+```
+
+### How rounds differ from a practice
+
+A practice announces each dance and fades songs out. A competition does neither, so a
+practice type with `segments` behaves differently in four ways:
+
+1. **Hard cut, no fade.** A 1:30 clip is exactly 1:30. Fading would make the clip longer
+   than the length it is supposed to be, and a round is timed against a stopwatch.
+2. **No spoken announcements.** A heat just starts. The dance name and clip length appear
+   on the playlist button instead, since there is nothing spoken to identify them.
+3. **Gaps are audio files.** A cue is an ordinary file in `cues/` that the player drops
+   into the playlist and plays in full, so pause, seek and the progress bar all work
+   normally during a gap and the gap is visible in the playlist.
+4. **Songs are chosen long enough to fill the clip.** A 1:25 track cannot fill a 1:40 heat,
+   so candidates shorter than the clip are passed over. If a folder has too few full-length
+   tracks the longest available are used and a warning is printed.
+
+Songs still never repeat across the whole sequence — the rounds draw from the shared play
+history exactly as practice blocks do.
+
+### Segment format
+
+`segments` replaces the `dances` list. Each entry is either a cue or a round:
+
+```json
+"segments": [
+    {"cue": "round_gap", "label": "--- 2:00 break, warning at 1:40 --- next: FINAL #1"},
+    {"round": ["Waltz", "Tango", "VienneseWaltz", "Foxtrot", "QuickStep"],
+     "count": 1, "clip_seconds": 90, "gap_seconds": 20, "label": "FINAL #1"}
+]
+```
+
+**Cue** — `cue` names a file in `cues/` (extension omitted). `label` is the playlist button
+text; a readable default is derived from the name if omitted.
+
+**Round** — `round` lists the dances in order. `count` is how many times each is played,
+consecutively, which is what makes a semi-final's heats (`"count": 2` gives W W T T …).
+`clip_seconds` is the hard cut-off; omit it to play songs at their normal length.
+`gap_seconds` inserts the `gap_<n>` cue *between* dances, with no gap after the last one
+because the break between rounds follows immediately. `announce` defaults to false; set it
+true to put the spoken dance announcement back in.
+
+A bad segment is dropped with a warning rather than breaking the playlist.
+
+### Cue audio
+
+`cues/make_cues.sh` generates the two cues with ffmpeg:
+
+- `gap_20.ogg` — 20s of silence, between dances within a round.
+- `round_gap.ogg` — 2:00 between rounds, silent except for a 5s brass fanfare starting at
+  1:40, so dancers are ready when the music starts.
+
+The warning is synthesised rather than sampled, so the file can be regenerated and
+redistributed freely. To use a different warning, drop your own `round_gap.ogg` into
+`cues/` — nothing in the code depends on how it was made. To add other gap lengths,
+generate `cues/gap_<seconds>.ogg` and reference that number in `gap_seconds`.
+
+Playback advances slightly before an item's natural end — `END_MARGIN` (1.0s) for music,
+`CUE_END_MARGIN` (0.2s) for cues, both in `PlayerConstants`. Clips ending on their hard
+cut-off are exact; only items that run to their natural end are affected.
+
+---
+
+## Song Metadata Cache
+
+Every playlist generation reads the tags of the songs it considers. That is quick on a
+desktop and noticeably slower on the older laptops often used at practices, so the player
+caches what it reads in `song_metadata_cache.json`, keyed by file path.
+
+Nothing needs to be done to maintain it:
+
+- A song the player has not seen is read and cached the first time a playlist considers it.
+- An entry is validated against the file's size and modification time, so re-tagged files
+  (`utils/update_metadata.py`, `utils/batch_update_albums.sh`) are re-read automatically.
+- The cache is written at most once per playlist, atomically, and a corrupt or missing
+  cache is simply rebuilt. Deleting the file is always safe.
+
+To move the first-read cost off the practice laptop — worth doing after adding a batch of
+new music — run:
+
+```bash
+python utils/build_song_cache.py            # add and refresh entries
+python utils/build_song_cache.py --prune    # also drop entries for deleted files
+python utils/build_song_cache.py --rebuild  # re-read everything
+python utils/build_song_cache.py --verify   # cross-check durations against ffprobe
+```
+
+It reads the music directory from `music.ini`, so it normally needs no arguments, and it
+also caches the `announce/` and `cues/` audio since those are used by every playlist.
+
+`--verify` is worth running occasionally. TinyTag estimates duration from file size and
+bitrate when a VBR header is missing or unparsable, which can be badly wrong; an
+under-reported duration makes a timed block over-run and makes competition rounds pass over
+songs that were in fact long enough. A lossless remux fixes such files:
+`ffmpeg -i in.mp3 -c copy out.mp3`.
+
+---
+
+## Measuring Startup
+
+Set `DPMP_TIMING=1` to have the player report where its startup time goes:
+
+```bash
+DPMP_TIMING=1 python music_player.py
+```
+
+```text
+[Timing] 0.543s total  kivy and tinytag imported
+[Timing] 0.552s total  player widget built
+[Timing] 0.568s total  app.build() complete
+[Timing] 0.569s total  on_start complete (playlist generating in background)
+[Timing] 0.017s        playlist generated (34 items, song cache: 34 hits, 0 misses, ...)
+[Timing] 0.643s total  playlist displayed
+[Timing] 0.402s        first SoundLoader.load (audio backend init)
+```
+
+The measurements go through the Kivy logger rather than the console, so they are recorded
+in `~/.kivy/logs/` (`%USERPROFILE%\.kivy\logs\` on Windows) — which is the only way to get
+them back from a Windows machine, where the console window is hidden at startup.
+
+On a fast desktop nearly all of the time is the Kivy import and the audio backend, with
+playlist generation a small fraction. If a practice laptop shows a different balance, the
+timings say so rather than leaving it to guesswork.
+
+---
+
+## Tests
+
+The tests live in [tests/](tests/) and are plain `unittest`, so they run with or without
+pytest installed. From the repository root:
+
+```bash
+./run_tests.sh              # Linux/macOS
+run_unit_tests.bat          # Windows
+```
+
+Either script uses pytest with coverage when it is available and falls back to
+`unittest discover` when it is not. To run them directly:
+
+```bash
+python -m pytest -q                                  # all of them
+python -m pytest tests/test_music_player.py -q       # one file
+python -m pytest -q --cov --cov-report=term-missing  # with coverage
+python -m unittest discover -s tests -t . -p "test_*.py"
+```
+
+Note that **the tests need a display**. Kivy opens a window while they run: the editor
+tests build real widgets and fail without a window provider, so there is no headless mode.
+
+`tests/conftest.py` puts the repository root on `sys.path`, since the application modules
+are not a package. Coverage settings live in `.coveragerc` and measure only the modules the
+player runs, so the total does not move when an unrelated script is added.
 
 ---
 

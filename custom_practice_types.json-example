@@ -12,6 +12,18 @@
     "Jive": "n-1",
     "WCS": "cap_at_2"
   },
+  "__COMMENT__ example of dance_minutes. A dance listed here is played for that many minutes instead of a set number of songs. The announcement counts toward the budget, and songs are trimmed slightly and evenly so the block ends on time. Dances not listed keep using num_selections.": {
+    "dance_minutes": {
+      "Waltz": 13,
+      "VienneseWaltz": 8
+    }
+  },
+  "__COMMENT__ example of segments, which replaces the dances list and builds competition rounds. A segment is either a cue (an audio file in cues/, played in full) or a round. In a round each dance is played count times for clip_seconds, cut off hard with no fade, separated by gap_seconds. Rounds have no announcements unless announce is true.": {
+    "segments": [
+      {"cue": "round_gap", "label": "2:00 break"},
+      {"round": ["Waltz", "Tango"], "count": 1, "clip_seconds": 90, "gap_seconds": 20, "label": "Final"}
+    ]
+  },
   "Beginner": {
     "dances": ["Waltz", "JSlow", "Rumba", "Foxtrot", "ChaCha", "Tango"],
     "num_selections": 1,

@@ -18,6 +18,9 @@ from kivy.properties import ObjectProperty, StringProperty
 from kivy.lang import Builder
 from kivy.clock import Clock
 
+import app_paths
+import practice_type_rules
+
 
 class PracticeTypeEditorScreen(Screen):
     """
@@ -33,10 +36,12 @@ class PracticeTypeEditorScreen(Screen):
         super().__init__(**kwargs)
         self.script_path = os.path.dirname(os.path.abspath(__file__))
         
-        # Split paths: one for shipping (read-only), one for user edits (read-write)
-        self.builtin_path = os.path.join(self.script_path, "builtin_practice_types.json")
-        self.custom_path = os.path.join(self.script_path, "custom_practice_types.json")
-        
+        # Split paths: one for shipping (read-only), one for user edits (read-write).
+        # The writable one follows the player's rule: beside the application when
+        # that is writable, otherwise the per-user data directory.
+        self.builtin_path = app_paths.app_path("builtin_practice_types.json")
+        self.custom_path = app_paths.user_path("custom_practice_types.json")
+
         self.builtin_types = {}
         self.custom_types = {}
         self.practice_types = {} # This represents the combined/merged view
@@ -71,19 +76,28 @@ class PracticeTypeEditorScreen(Screen):
         try:
             with open(path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-                # Filter out comment keys
-                return {k: v for k, v in data.items() if not k.startswith("__COMMENT__")}
         except (OSError, json.JSONDecodeError) as e:
             print(f"Warning loading {path}: {e}")
             return {}
 
+        # Valid JSON is not necessarily a practice type file; calling .items() on
+        # a list here would stop the editor from opening.
+        if not isinstance(data, dict):
+            print(f"Ignoring {os.path.basename(path)}: it must contain a JSON object, "
+                  f"not {type(data).__name__}.")
+            return {}
+
+        # Filter out comment keys, and definitions that are not objects
+        return {k: v for k, v in data.items()
+                if not k.startswith("__COMMENT__") and isinstance(v, dict)}
+
     def load_practice_types(self):
         """
-        Loads practice types from both the built-in JSON and the user's local 
+        Loads practice types from both the built-in JSON and the user's local
         custom JSON, merging them so custom overrides built-in.
         """
         self.builtin_types = self._load_json_file(self.builtin_path)
-        
+
         # If custom file doesn't exist, we just start with an empty dict for it
         # (It will be created on first save)
         self.custom_types = self._load_json_file(self.custom_path)
@@ -106,6 +120,14 @@ class PracticeTypeEditorScreen(Screen):
                         current_file_data = json.load(f)
                 except (OSError, json.JSONDecodeError):
                     current_file_data = {}
+                # The file is re-read to preserve its comments, but it may be
+                # the same structurally invalid file the loader already skipped.
+                # Without this, saving fails and the user has to repair the file
+                # by hand before the editor becomes usable again.
+                if not isinstance(current_file_data, dict):
+                    print(f"Replacing {os.path.basename(self.custom_path)}: "
+                          "it did not contain a JSON object.")
+                    current_file_data = {}
 
             # 2. Update only the non-comment keys based on self.custom_types
             for key in self.custom_types:
@@ -120,9 +142,14 @@ class PracticeTypeEditorScreen(Screen):
             for key in keys_to_delete:
                 del current_file_data[key]
 
-            # 4. Write back to the custom file
-            with open(self.custom_path, 'w', encoding='utf-8') as f:
+            # 4. Write back to the custom file, via a temporary file so that
+            # losing power mid-write cannot truncate it. A corrupt history is
+            # discarded harmlessly on the next run, but corrupt practice types
+            # are silently ignored, which is much harder to notice.
+            temporary = f"{self.custom_path}.tmp"
+            with open(temporary, 'w', encoding='utf-8') as f:
                 json.dump(current_file_data, f, indent=4)
+            os.replace(temporary, self.custom_path)
             
             # Reload to ensure the merged view (self.practice_types) is perfectly synced
             self.load_practice_types()
@@ -190,6 +217,90 @@ class PracticeTypeEditorScreen(Screen):
         else:
             self.edit_form.dance_max_playtimes_input.text = ""
 
+        minutes = data.get("dance_minutes", {})
+        if minutes:
+            self.edit_form.dance_minutes_input.text = json.dumps(minutes, indent=4)
+        else:
+            self.edit_form.dance_minutes_input.text = ""
+
+        segments = data.get("segments", [])
+        if segments:
+            self.edit_form.segments_input.text = json.dumps(segments, indent=4)
+        else:
+            self.edit_form.segments_input.text = ""
+
+    @staticmethod
+    def _player_widget():
+        """Returns the player widget, or None if there is no running app.
+
+        Saving should not depend on the app being up: without this guard a rename
+        raises AttributeError before the practice type is written to disk.
+        """
+        app = App.get_running_app()
+        if app is None or getattr(app, "manager", None) is None:
+            return None
+        try:
+            return app.manager.get_screen('player').children[0]
+        except (ValueError, IndexError, AttributeError):
+            return None
+
+    @staticmethod
+    def _validation_problems(data):
+        """Returns a list of reasons the practice type cannot be saved.
+
+        The form already checks that each JSON field parses; this checks that it
+        parsed into the right shape. A field of the wrong type is accepted by
+        JSON but breaks the player later -- a list where a dictionary is expected
+        raises when the value is assigned to a Kivy property during startup.
+
+        Args:
+            data: The practice type about to be saved.
+
+        Returns:
+            Human-readable problems, empty if the definition is usable.
+        """
+        problems = []
+
+        if not data["dances"] or not any(d.strip() for d in data["dances"]):
+            problems.append("Dances: at least one dance is required.")
+        elif any(not d.strip() for d in data["dances"]):
+            problems.append("Dances: remove the empty entries "
+                            "(usually a trailing or doubled comma).")
+
+        if data["num_selections"] < 1:
+            problems.append("Num Selections: must be at least 1.")
+
+        for label, key in (("Dance Max Playtimes", "dance_max_playtimes"),
+                           ("Dance Minutes", "dance_minutes")):
+            value = data.get(key)
+            if not isinstance(value, dict):
+                problems.append(
+                    f"{label}: must be a JSON object like "
+                    f'{{"Waltz": ...}}, not a {type(value).__name__}.')
+
+        # The rules the player applies, so the editor cannot save a definition
+        # the player would have to repair or ignore.
+        practice_type_rules.validate_dance_adjustments(
+            data.get("dance_adjustments"), problems.append)
+        practice_type_rules.validate_segments(data.get("segments"), problems.append)
+
+        # Durations go through the player's own number check, so the editor
+        # cannot save a value the player would then silently drop -- Infinity is
+        # a float greater than zero, and used to pass a type-and-sign test.
+        for label, key in (("Dance Max Playtimes", "dance_max_playtimes"),
+                           ("Dance Minutes", "dance_minutes")):
+            if not isinstance(data.get(key), dict):
+                continue
+            for dance, amount in data[key].items():
+                number = practice_type_rules.strict_number(
+                    amount, f"{label}: '{dance}'", problems.append)
+                if number is None:
+                    continue
+                if number <= 0:
+                    problems.append(f"{label}: '{dance}' must be positive.")
+
+        return problems
+
     def save_current_practice_type(self):
         """Gathers data from the form and saves it to the custom_practice_types dict."""
         name = self.edit_form.name_input.text.strip()
@@ -198,12 +309,6 @@ class PracticeTypeEditorScreen(Screen):
             return
 
         old_name = self.current_practice_type_name
-
-        # If name changed, remove old entry ONLY if it was in custom_types
-        if old_name and old_name != name:
-            if old_name in self.custom_types:
-                del self.custom_types[old_name]
-            # Note: We do NOT delete from builtin_types.
 
         try:
             new_data = {
@@ -218,23 +323,49 @@ class PracticeTypeEditorScreen(Screen):
                     self.edit_form.dance_adjustments_input.text or "{}"),
                 "dance_max_playtimes": json.loads(
                     self.edit_form.dance_max_playtimes_input.text or "{}"),
+                "dance_minutes": json.loads(
+                    self.edit_form.dance_minutes_input.text or "{}"),
+                "segments": json.loads(
+                    self.edit_form.segments_input.text or "[]"),
             }
             
+            if problems := self._validation_problems(new_data):
+                self.show_popup("Invalid Practice Type", "\n\n".join(problems))
+                return
+
+            # Prepare the change and keep it out of self.custom_types until the
+            # write succeeds. Renaming used to remove the old entry before the
+            # new one was parsed, so a rename that then failed validation left
+            # the original missing -- and the next successful save in the same
+            # session wrote that deletion to disk.
+            # Note: We do NOT delete from builtin_types.
+            previous = dict(self.custom_types)
+            candidate = dict(self.custom_types)
+            if old_name and old_name != name:
+                candidate.pop(old_name, None)
+
             # Always save to custom types (this creates an override if name matches a built-in)
-            self.custom_types[name] = new_data
+            candidate[name] = new_data
+            self.custom_types = candidate
             self.current_practice_type_name = name
 
-            # If a rename of the active type occurred, update the player's state.
-            if old_name and old_name != name:
-                app = App.get_running_app()
-                player_widget = app.manager.get_screen('player').children[0]
-
-                if player_widget.practice_type == old_name:
-                    player_widget.practice_type = name
-
             if self.save_practice_types():
+                # Only now that the file is written: setting practice_type
+                # reconfigures the player and writes the name to music.ini, and
+                # doing that before a failed write leaves the running session
+                # pointing at a practice type that exists nowhere on disk.
+                if old_name and old_name != name:
+                    if player_widget := self._player_widget():
+                        if player_widget.practice_type == old_name:
+                            player_widget.practice_type = name
+
                 self.changes_saved_since_enter = True
                 self.show_popup("Success", "Practice Type saved successfully!")
+            else:
+                # The write failed and has already been reported; put the
+                # in-memory copy back so nothing is lost from this session.
+                self.custom_types = previous
+                self.current_practice_type_name = old_name
                 
         except (ValueError) as e:
             self.show_popup(
@@ -289,7 +420,8 @@ class PracticeTypeEditorScreen(Screen):
                 "VWSlow": "cap_at_1", "JSlow": "cap_at_1",
                 "VienneseWaltz": "n-1", "Jive": "n-1", "WCS": "cap_at_2"
             },
-            "dance_max_playtimes": {"VienneseWaltz": 150}
+            "dance_max_playtimes": {"VienneseWaltz": 150},
+            "dance_minutes": {}
         }
 
         self.edit_form.name_input.text = ""
@@ -304,6 +436,8 @@ class PracticeTypeEditorScreen(Screen):
             default_data["dance_adjustments"], indent=4)
         self.edit_form.dance_max_playtimes_input.text = json.dumps(
             default_data["dance_max_playtimes"], indent=4)
+        self.edit_form.dance_minutes_input.text = ""
+        self.edit_form.segments_input.text = ""
 
     def copy_practice_type(self, *_args):
         """Copies the currently loaded practice type data to create a new one."""
@@ -338,7 +472,10 @@ class PracticeTypeEditorScreen(Screen):
         or if the current practice type was edited and saved, the playlist is
         regenerated. Otherwise, it returns without interruption.
         """
-        player_widget = App.get_running_app().manager.get_screen('player').children[0]
+        player_widget = self._player_widget()
+        if player_widget is None:
+            self.manager.current = 'player'
+            return
 
         # Condition 1: A different practice type was selected.
         if ((new_type := self.current_practice_type_name) and
@@ -397,6 +534,8 @@ Builder.load_string("""
     adjust_song_counts_input: adjust_song_counts_input
     dance_adjustments_input: dance_adjustments_input
     dance_max_playtimes_input: dance_max_playtimes_input
+    dance_minutes_input: dance_minutes_input
+    segments_input: segments_input
 
     BoxLayout:
         size_hint_y: None
@@ -628,6 +767,69 @@ Builder.load_string("""
             bar_width: 10
             TextInput:
                 id: dance_max_playtimes_input
+                size_hint_y: None
+                height: self.minimum_height
+                font_name: 'RobotoMono-Regular'
+
+    BoxLayout:
+        size_hint_y: None
+        height: '120dp'
+        BoxLayout:
+            orientation: 'vertical'
+            size_hint_x: 0.4
+            spacing: 2
+            Label:
+                text: 'Dance Minutes (JSON):'
+                size_hint_y: None
+                height: self.texture_size[1]
+                text_size: self.width, None
+                halign: 'left'
+                valign: 'top'
+            Label:
+                text: 'Plays a dance for a set number of minutes instead of a set number of songs, e.g. {"Waltz": 13}.\\n\\nOverrides "Num Selections" for the dances listed. The dance announcement counts toward the time. Songs are trimmed slightly and evenly so the block ends on time.'
+                font_size: '11sp'
+                color: 0.7, 0.7, 0.7, 1
+                size_hint_y: None
+                height: self.texture_size[1]
+                text_size: self.width, None
+            Widget:
+        ScrollView:
+            size_hint_x: 0.6
+            bar_width: 10
+            TextInput:
+                id: dance_minutes_input
+                size_hint_y: None
+                height: self.minimum_height
+                font_name: 'RobotoMono-Regular'
+
+    BoxLayout:
+        size_hint_y: None
+        height: '220dp'
+        BoxLayout:
+            orientation: 'vertical'
+            size_hint_x: 0.4
+            spacing: 2
+            Label:
+                text: 'Segments (JSON):'
+                size_hint_y: None
+                height: self.texture_size[1]
+                text_size: self.width, None
+                halign: 'left'
+                valign: 'top'
+            Label:
+                text: 'Competition rounds. Replaces the dances list when set.\\n\\n[b]Cue:[/b] an audio file from cues/, played in full.\\n  {"cue": "round_gap", "label": "2:00 break"}\\n\\n[b]Round:[/b] each dance played "count" times for "clip_seconds", cut off with no fade, separated by "gap_seconds".\\n  {"round": ["Waltz", "Tango"], "count": 1,\\n   "clip_seconds": 90, "gap_seconds": 20}\\n\\nRounds have no announcements unless "announce" is true.'
+                markup: True
+                font_size: '11sp'
+                color: 0.7, 0.7, 0.7, 1
+                size_hint_y: None
+                height: self.texture_size[1]
+                text_size: self.width, None
+            Widget:
+        ScrollView:
+            size_hint_x: 0.6
+            bar_width: 10
+            TextInput:
+                id: segments_input
                 size_hint_y: None
                 height: self.minimum_height
                 font_name: 'RobotoMono-Regular'
