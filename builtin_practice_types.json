@@ -90,57 +90,6 @@
         "randomize_playlist": false,
         "adjust_song_counts": false
     },
-    "Silver+ Standard 60min": {
-        "dances": [
-            "Waltz",
-            "Tango",
-            "VienneseWaltz",
-            "Foxtrot",
-            "QuickStep"
-        ],
-        "num_selections": 4,
-        "auto_update": false,
-        "play_single_song": false,
-        "randomize_playlist": true,
-        "adjust_song_counts": true,
-        "dance_adjustments": {
-            "VienneseWaltz": {
-                "1": 0,
-                "2": 1,
-                "3": 2,
-                "default": 3
-            }
-        },
-        "dance_max_playtimes": {
-            "VienneseWaltz": 150
-        }
-    },
-    "Silver+ Latin 30min": {
-        "dances": [
-            "Samba",
-            "ChaCha",
-            "Rumba",
-            "PasoDoble",
-            "Jive"
-        ],
-        "num_selections": 2,
-        "play_all_songs": false,
-        "auto_update": false,
-        "play_single_song": false,
-        "randomize_playlist": true,
-        "adjust_song_counts": true,
-        "dance_adjustments": {
-            "PasoDoble": {
-                "1": 0,
-                "2": 1,
-                "3": 1,
-                "default": 2
-            }
-        },
-        "dance_max_playtimes": {
-            "Jive": 150
-        }
-    },
     "I2B 90min": {
         "dances": [
             "Waltz",
@@ -246,7 +195,11 @@
             "VienneseWaltz": 8,
             "Foxtrot": 13,
             "QuickStep": 10
-        }
+        },
+        "dance_intros": {
+            "default": "gap_10"
+        },
+        "order": 20
     },
     "__COMMENT__ 'segments' replaces the dances list and builds competition rounds. A segment is either a cue (an audio file in cues/, played to its natural length) or a round. In a round each dance is played 'count' times for 'clip_seconds', cut off hard with no fade, separated by a 'gap_seconds' gap and with no gap after the last dance. Rounds have no spoken announcements unless 'announce' is true.": {
         "segments": [
@@ -351,6 +304,44 @@
         "randomize_playlist": true,
         "adjust_song_counts": false,
         "dance_adjustments": {},
-        "dance_max_playtimes": {}
+        "dance_max_playtimes": {},
+        "order": 30
+    },
+    "__COMMENT__ example of 'dance_intros'. Says what precedes each dance's block: \"announce\" for the spoken announcement, \"none\" for nothing, or the name of a cue in cues/ such as \"gap_10\" for ten seconds of silence. A \"default\" key covers every dance not named individually. Without this key the announcement is used, as before.": {
+        "dance_intros": {
+            "default": "gap_10",
+            "PasoDoble": "announce"
+        }
+    },
+    "Silver+ Latin 30min Timed": {
+        "dances": [
+            "Samba",
+            "ChaCha",
+            "Rumba",
+            "PasoDoble",
+            "Jive"
+        ],
+        "dance_minutes": {
+            "Samba": 6.75,
+            "ChaCha": 6.75,
+            "Rumba": 6.75,
+            "Jive": 6.75
+        },
+        "dance_intros": {
+            "default": "gap_10",
+            "PasoDoble": "announce"
+        },
+        "num_selections": 1,
+        "play_all_songs": false,
+        "auto_update": false,
+        "play_single_song": false,
+        "randomize_playlist": true,
+        "adjust_song_counts": false,
+        "dance_adjustments": {},
+        "dance_max_playtimes": {},
+        "order": 10
+    },
+    "__COMMENT__ 'order' decides where a practice type appears in the list. Everything defaults to 0 and keeps its position in the file; a higher number sinks to the bottom, which keeps the types actually in use together at the end whatever else has been added.": {
+        "order": 10
     }
 }

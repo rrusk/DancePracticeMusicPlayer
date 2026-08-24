@@ -12,6 +12,12 @@ the editor passes a list's `append` and shows what was collected.
 """
 
 import math
+import os
+
+# What can precede a dance block. Either the spoken announcement, nothing at
+# all, or the name of a cue in cues/ -- normally a few seconds of silence.
+INTRO_ANNOUNCE = "announce"
+INTRO_NONE = "none"
 
 # The string formulas `_get_adjusted_song_count` understands.
 ADJUSTMENT_RULES = ("n-1", "cap_at_1", "cap_at_2")
@@ -90,6 +96,50 @@ def strict_int(value, description: str, warn=_ignore):
         warn(f"{description} must be a whole number, not {value!r}.")
         return None
     return int(number)
+
+
+def valid_cue_name(name) -> bool:
+    """Returns True if `name` can be used to look up a file in cues/.
+
+    Path separators are refused: a cue name is joined onto the cues directory,
+    and a name like "../../something" would reach outside it.
+    """
+    return (isinstance(name, str) and bool(name.strip())
+            and not any(part in name for part in ("/", "\\", os.pardir))
+            and name == os.path.basename(name))
+
+
+def validate_dance_intros(raw, warn=_ignore) -> dict:
+    """Returns the usable entries of a `dance_intros` mapping.
+
+    Each value says what precedes that dance's block: "announce" for the spoken
+    announcement, "none" for nothing, or the name of a cue in cues/ -- normally
+    a few seconds of silence. A "default" key applies to every dance that is not
+    named individually, matching how `dance_adjustments` works.
+
+    Args:
+        raw: The value of the practice type's "dance_intros" key.
+        warn: Called with a description of anything dropped.
+
+    Returns:
+        A mapping the player can apply.
+    """
+    if not raw:
+        return {}
+    if not isinstance(raw, dict):
+        warn(f"Dance Intros: must be a JSON object, not a {type(raw).__name__}.")
+        return {}
+
+    clean = {}
+    for dance, intro in raw.items():
+        if intro in (INTRO_ANNOUNCE, INTRO_NONE):
+            clean[dance] = intro
+        elif valid_cue_name(intro):
+            clean[dance] = intro
+        else:
+            warn(f"Dance Intros: '{dance}' must be \"{INTRO_ANNOUNCE}\", "
+                 f"\"{INTRO_NONE}\", or the name of a cue in cues/, not {intro!r}.")
+    return clean
 
 
 def validate_dance_adjustments(raw, warn=_ignore) -> dict:
@@ -180,7 +230,11 @@ def validate_segments(raw, warn=_ignore) -> list:
             continue
 
         if cue := segment.get("cue"):
-            validated.append({"cue": str(cue), "label": segment.get("label")})
+            if not valid_cue_name(cue):
+                warn(f"{position}: \"cue\" must be the name of a file in cues/, "
+                     f"not {cue!r}.")
+                continue
+            validated.append({"cue": cue, "label": segment.get("label")})
             continue
 
         dances = segment.get("round")
@@ -272,8 +326,18 @@ def normalize_practice_type(name, data, warn=None):
         selections = 1
     clean["num_selections"] = selections
 
+    # Where this type sits in the practice type list. Everything defaults to 0
+    # and keeps its position in the file; a higher number sinks to the bottom,
+    # which is how the types actually in use are kept together at the end
+    # whatever else has been added.
+    order = clean.get("order", 0)
+    if (order := strict_int(order, "'order'", warn)) is None:
+        order = 0
+    clean["order"] = order
+
     clean["dance_adjustments"] = validate_dance_adjustments(
         clean.get("dance_adjustments", {}), warn)
+    clean["dance_intros"] = validate_dance_intros(clean.get("dance_intros", {}), warn)
 
     for key in ("dance_max_playtimes", "dance_minutes"):
         value = clean.get(key, {})

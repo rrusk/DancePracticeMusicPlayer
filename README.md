@@ -165,6 +165,8 @@ The JSON file should be a dictionary where each key is the name of your custom p
 - `adjust_song_counts (boolean):` If true, the num_selections for certain dances will be adjusted based on predefined rules or dance_adjustments
 - `dance_adjustments (object, optional):` A dictionary specifying custom rules for adjusting num_selections for individual dances. If adjust_song_counts is true but dance_adjustments is not specified, a default set of adjustments will be applied (e.g., to reduce the number of songs for specific dances like Paso Doble, Viennese Waltz, Jive, WCS, JSlow, and VWSlow). These rules can be direct mappings (e.g., {"1": 0, "2": 1, "default": 2}) or string formulas (e.g., "n-1", "cap_at_1")
 - `dance_max_playtimes (object, optional):` A dictionary to override the global "Max Playtime" for specific dances. The keys are dance names (e.g., "VienneseWaltz") and the values are the maximum playtime in seconds.
+- `order (integer, optional):` Where this type appears in the practice type list. Everything defaults to 0 and keeps its position in the file; a higher number sinks it towards the bottom, which keeps the types in regular use together at the end whatever else has been added.
+- `dance_intros (object, optional):` What plays before each dance's block: `"announce"` for the spoken announcement, `"none"` for nothing, or the name of a cue in `cues/` such as `"gap_10"` for ten seconds of silence. A `"default"` key covers every dance not named individually. Without this key the announcement is used, as before.
 - `dance_minutes (object, optional):` A dictionary giving specific dances a length in minutes instead of a number of songs, e.g. `{"Waltz": 13}`. See [Timed Practice Blocks](#timed-practice-blocks) below. Dances not listed keep using num_selections.
 - `segments (list, optional):` Builds a sequence of competition rounds instead of a practice, replacing the dances list. See [Competition Rounds](#competition-rounds) below.
 
@@ -261,7 +263,11 @@ songs — "13 minutes of Waltz" instead of "4 Waltzes". List the dance in `dance
 }
 ```
 
-That practice type ships in `custom_practice_types.json` and runs 57 minutes. A dance
+`Silver+ Std 60min Timed` ships in `builtin_practice_types.json` and runs 57
+minutes. `Silver+ Latin 30min Timed` runs 27–30: four Latin dances at 6.75
+minutes each, plus one Paso Doble played at its own length. Paso Doble is
+deliberately absent from `dance_minutes`, so it falls through to
+`num_selections` and is not trimmed to fit a budget. A dance
 **not** listed in `dance_minutes` still uses `num_selections` and `dance_adjustments`, so
 the two styles can be mixed in one practice type. `play_all_songs` and `play_single_song`
 ignore budgets entirely.
@@ -287,6 +293,22 @@ A real 13 minute Waltz block, five songs, trimmed 13 seconds each:
 02:15  (natural 02:28)   02:18  (natural 02:31)   02:02  (natural 02:15)
 03:13  (natural 03:26)   03:00  (natural 03:13)          + 9s announcement = 13:00
 ```
+
+### Silence instead of announcements
+
+Some dancers would rather not be told what is coming. A practice type can put a
+few seconds of silence before each dance instead of the spoken announcement:
+
+```json
+"dance_intros": {"default": "gap_10", "PasoDoble": "announce"}
+```
+
+That is what `Silver+ Std 60min Timed` and `Silver+ Latin 30min Timed` use — the
+Latin one keeps the Paso Doble announcement, because that dance needs the warning.
+
+The intro counts inside the block's budget exactly as the announcement did, so
+swapping a nine second announcement for ten seconds of silence does not change
+how long the practice runs. `"none"` starts the music immediately.
 
 ### When it can't hit the budget exactly
 

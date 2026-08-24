@@ -2735,6 +2735,215 @@ class TestCaseInsensitiveLookup(unittest.TestCase):
         self.assertIsNone(self.player._get_cue_path("no_such_cue"))
 
 
+class TestDanceIntros(unittest.TestCase):
+    """What precedes a dance block: the announcement, silence, or nothing.
+
+    The announcements drew complaints, so a practice type can now put a few
+    seconds of silence there instead, and name the exceptions.
+    """
+
+    def setUp(self):
+        self.player = MusicPlayer.__new__(MusicPlayer)
+        self.player._generation_config = None
+        self.player.current_dance_intros = {}
+        self.player.song_max_playtime = 210
+        self.player.current_dance_max_playtimes = {}
+        self.player._get_announce_path = MagicMock(
+            side_effect=lambda dance: f"/announce/{dance}.ogg")
+        self.player._get_cue_path = MagicMock(side_effect=lambda name: f"/cues/{name}.ogg")
+
+        def song_info(path, dance):
+            # A gap cue lasts what its name says, so a test can tell gap_10 from
+            # gap_20 the way the real files do.
+            name = os.path.splitext(os.path.basename(path))[0]
+            if dance == 'announce':
+                duration = 9.0
+            elif name.startswith("gap_"):
+                duration = float(name.split("_")[1])
+            else:
+                duration = 120.0
+            return {'path': path, 'dance': dance, 'title': os.path.basename(path),
+                    'duration': duration, 'max_playtime': duration, 'fade_seconds': 0}
+        self.player._create_song_info = MagicMock(side_effect=song_info)
+
+    def test_no_setting_keeps_the_announcement(self):
+        """Every practice type that predates this must behave as it always did."""
+        intro = self.player._block_intro("Waltz")
+        self.assertEqual(intro['dance'], 'announce')
+
+    def test_a_default_applies_to_every_dance(self):
+        self.player.current_dance_intros = {"default": "gap_10"}
+        for dance in ("Waltz", "Tango", "Jive"):
+            intro = self.player._block_intro(dance)
+            self.assertEqual(intro['dance'], 'cue')
+            self.assertEqual(intro['title'], "gap_10.ogg")
+
+    def test_a_named_dance_overrides_the_default(self):
+        """Paso Doble keeps its announcement while the rest fall silent."""
+        self.player.current_dance_intros = {"default": "gap_10", "PasoDoble": "announce"}
+        self.assertEqual(self.player._block_intro("Samba")['dance'], 'cue')
+        self.assertEqual(self.player._block_intro("PasoDoble")['dance'], 'announce')
+
+    def test_none_means_straight_into_the_music(self):
+        self.player.current_dance_intros = {"default": "none"}
+        self.assertIsNone(self.player._block_intro("Waltz"))
+
+    def test_a_missing_cue_does_not_stop_the_block(self):
+        self.player._get_cue_path = MagicMock(return_value=None)
+        self.player.current_dance_intros = {"default": "gap_10"}
+        self.assertIsNone(self.player._block_intro("Waltz"))
+
+    def test_a_missing_announcement_does_not_stop_the_block(self):
+        self.player._get_announce_path = MagicMock(return_value=None)
+        self.assertIsNone(self.player._block_intro("Waltz"))
+
+    def test_the_gap_row_names_the_dance_that_follows(self):
+        """With nothing read out, the row must say what is coming."""
+        self.player.current_dance_intros = {"default": "gap_10"}
+        intro = self.player._block_intro("Samba")
+        self.assertEqual(self.player._get_song_label(intro), "--- Samba in 10 seconds ---")
+
+    def test_a_longer_gap_is_shown_as_a_time(self):
+        self.player.current_dance_intros = {"default": "round_gap"}
+        intro = self.player._block_intro("Waltz")
+        self.assertEqual(self.player._get_song_label(intro), "--- Waltz in 02:00 ---")
+
+    def test_the_announcement_row_is_unchanged(self):
+        """Paso Doble still shows its own name, as it always did."""
+        intro = self.player._block_intro("PasoDoble")
+        self.assertEqual(self.player._get_song_label(intro), "PasoDoble.ogg")
+
+    def test_a_cue_outside_a_dance_block_describes_itself(self):
+        """Round gaps keep their own wording; only intros name a dance."""
+        cue = self.player._get_cue_info("gap_20")
+        self.assertEqual(self.player._get_song_label(cue), "--- 20 second gap ---")
+
+    def test_the_intro_is_counted_inside_a_timed_budget(self):
+        """Swapping a 9s announcement for 10s of silence must not lengthen the block."""
+        self.player.current_dance_minutes = {"Waltz": 5}
+        self.player.play_all_songs = False
+        self.player.play_single_song = False
+        self.player._load_play_history = MagicMock(return_value={})
+        self.player._save_play_history = MagicMock()
+
+        def song_info(path, dance):
+            if dance in ('announce', 'cue'):
+                duration = 9.0 if dance == 'announce' else 10.0
+                return {'path': path, 'dance': dance, 'title': os.path.basename(path),
+                        'duration': duration, 'max_playtime': duration, 'fade_seconds': 0}
+            return {'path': path, 'dance': dance, 'title': path, 'duration': 150.0,
+                    'max_playtime': 210, 'fade_seconds': 10}
+        self.player._create_song_info = MagicMock(side_effect=song_info)
+        paths = [f"/m/Waltz/{i}.mp3" for i in range(10)]
+
+        totals = {}
+        for intros in ({}, {"default": "gap_10"}):
+            self.player.current_dance_intros = intros
+            block = self.player._get_timed_songs_for_dance("Waltz", paths, 5, False)
+            totals[str(intros)] = sum(
+                min(item['duration'], item['max_playtime'] + item.get('fade_seconds', 0))
+                for item in block)
+
+        for label, total in totals.items():
+            self.assertAlmostEqual(total, 300, delta=1, msg=f"{label} gave {total}")
+
+
+class TestPracticeTypeMappingIsByName(unittest.TestCase):
+    """Practice type settings are carried as a definition, not a positional tuple."""
+
+    def setUp(self):
+        self.player = MusicPlayer.__new__(MusicPlayer)
+        self.player.practice_dances = {"default": ["Waltz"], "Mine": ["Tango", "Jive"]}
+        self.player.settings_json = [{"key": "practice_type", "options": []}]
+        self.player.custom_practice_mapping = {}
+        self.player.update_playlist = MagicMock()
+        self.player.music_dir = ""
+        self.player.load_custom_practice_types = MagicMock(return_value={
+            "Mine": {"dances": ["Tango", "Jive"], "num_selections": 3,
+                     "dance_minutes": {"Tango": 5}, "dance_intros": {"default": "gap_10"},
+                     "randomize_playlist": False, "play_single_song": True},
+        })
+        self.player.merge_custom_practice_types()
+
+    def test_every_field_reaches_the_player(self):
+        self.player.set_practice_type(None, "Mine")
+        self.assertEqual(self.player.num_selections, 3)
+        self.assertEqual(dict(self.player.current_dance_minutes), {"Tango": 5.0})
+        self.assertEqual(dict(self.player.current_dance_intros), {"default": "gap_10"})
+        self.assertFalse(self.player.randomize_playlist)
+        self.assertTrue(self.player.play_single_song)
+
+    def test_an_unknown_practice_type_falls_back_to_defaults(self):
+        self.player.set_practice_type(None, "No Such Type")
+        self.assertEqual(self.player.dances, ["Waltz"])
+        self.assertTrue(self.player.auto_update_restart_playlist)
+
+
+class TestPracticeTypeOrder(unittest.TestCase):
+    """Where each practice type appears in the list.
+
+    File order alone puts every custom type after every built-in one, so the
+    types actually in use could not be kept together at the end.
+    """
+
+    def setUp(self):
+        self.player = MusicPlayer.__new__(MusicPlayer)
+        self.player.practice_dances = {"default": ["Waltz"]}
+        self.player.custom_practice_mapping = {}
+        self.player.settings_json = [{"key": "practice_type", "options": []}]
+        self.player.practice_type = PlayerConstants.PRACTICE_TYPE_60_MIN
+
+    def _options(self, types):
+        self.player.load_custom_practice_types = MagicMock(return_value=types)
+        self.player.update_settings_options()
+        return self.player.settings_json[0]["options"]
+
+    def test_types_without_an_order_keep_their_file_position(self):
+        options = self._options({"First": {}, "Second": {}, "Third": {}})
+        self.assertEqual(options[-3:], ["First", "Second", "Third"])
+
+    def test_a_higher_order_sinks_to_the_bottom(self):
+        options = self._options({"Featured": {"order": 10}, "Ordinary": {}})
+        self.assertEqual(options[-2:], ["Ordinary", "Featured"])
+
+    def test_the_order_numbers_decide_the_tail_order(self):
+        options = self._options({"Third": {"order": 30}, "First": {"order": 10},
+                                 "Second": {"order": 20}, "Ordinary": {}})
+        self.assertEqual(options[-4:], ["Ordinary", "First", "Second", "Third"])
+
+    def test_a_custom_type_cannot_displace_the_tail(self):
+        """A custom type is loaded last but must still sit above the featured ones."""
+        options = self._options({"Featured": {"order": 10}, "SomethingCustom": {}})
+        self.assertEqual(options[-1], "Featured")
+
+    def test_the_shipped_list_ends_with_the_three_in_use(self):
+        player = MusicPlayer.__new__(MusicPlayer)
+        player.practice_dances = {"default": ["Waltz"]}
+        player.custom_practice_mapping = {}
+        player.settings_json = [{"key": "practice_type", "options": []}]
+        player.practice_type = PlayerConstants.PRACTICE_TYPE_60_MIN
+        with open(app_paths.app_path("builtin_practice_types.json"), encoding="utf-8") as handle:
+            shipped = json.load(handle)
+        # As load_custom_practice_types does before anything else sees them.
+        shipped = {name: data for name, data in shipped.items()
+                   if not name.startswith("__COMMENT__")}
+        player.load_custom_practice_types = MagicMock(return_value=shipped)
+        player.update_settings_options()
+        self.assertEqual(player.settings_json[0]["options"][-3:],
+                         ["Silver+ Latin 30min Timed", "Silver+ Std 60min Timed",
+                          "Comp Rounds"])
+
+    def test_the_superseded_untimed_types_are_gone(self):
+        with open(app_paths.app_path("builtin_practice_types.json"), encoding="utf-8") as handle:
+            shipped = json.load(handle)
+        self.assertNotIn("Silver+ Standard 60min", shipped)
+        self.assertNotIn("Silver+ Latin 30min", shipped)
+
+    def test_a_nonsense_order_does_not_break_loading(self):
+        clean = MusicPlayer._normalize_practice_type("T", {"order": "last"})
+        self.assertEqual(clean["order"], 0)
+
+
 if __name__ == '__main__':
     # The verbosity argument increases the detail of the test output.
     unittest.main(verbosity=2)

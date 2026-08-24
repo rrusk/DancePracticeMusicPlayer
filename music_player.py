@@ -269,6 +269,7 @@ class MusicPlayer(BoxLayout):
     current_dance_adjustments = DictProperty({})
     current_dance_max_playtimes = DictProperty({})
     current_dance_minutes = DictProperty({})
+    current_dance_intros = DictProperty({})
     current_segments = ListProperty([])
 
     practice_dances = DictProperty(
@@ -500,24 +501,14 @@ class MusicPlayer(BoxLayout):
         if not hasattr(self, "custom_practice_mapping"):
             self.custom_practice_mapping = {}
             
-        for name, data in all_types.items():
+        for name, data in self._ordered_practice_types(all_types).items():
             # Update the list of dances for this practice type
             self.practice_dances[name] = data.get("dances", [])
             
-            # Update the rules/adjustments mapping
-            self.custom_practice_mapping[name] = (
-                name,
-                data.get("num_selections", 2),
-                data.get("play_all_songs", False),
-                data.get("auto_update", False),
-                data.get("play_single_song", False),
-                data.get("randomize_playlist", True),
-                data.get("adjust_song_counts", False),
-                data.get("dance_adjustments", {}),
-                data.get("dance_max_playtimes", {}),
-                data.get("dance_minutes", {}),
-                data.get("segments", []),
-            )
+            # Update the rules/adjustments mapping. The validated definition is
+            # stored as-is: this was a positional tuple, which had grown to
+            # eleven fields and one transposition away from a silent bug.
+            self.custom_practice_mapping[name] = dict(data, dance_type=name)
 
     @staticmethod
     def _normalize_practice_type(name: str, data: typing.Any) -> typing.Optional[dict]:
@@ -541,6 +532,19 @@ class MusicPlayer(BoxLayout):
                 valid[name] = clean
         return valid
 
+    @staticmethod
+    def _ordered_practice_types(all_types: dict) -> dict:
+        """Returns the practice types in the order they should be offered.
+
+        File order otherwise, which puts every custom type after every built-in
+        one -- so the types actually in use could not be kept together at the
+        end of the list. An `order` of 0, which is the default, leaves a type
+        where it was.
+        """
+        ordered = sorted(enumerate(all_types.items()),
+                         key=lambda item: (item[1][1].get("order", 0), item[0]))
+        return {name: data for _, (name, data) in ordered}
+
     def update_settings_options(self):
         """
         Dynamically updates the options in the settings JSON. 
@@ -556,7 +560,7 @@ class MusicPlayer(BoxLayout):
             
             # Append loaded types ONLY if they aren't already in the list.
             # This prevents "60min" from appearing twice (once as hardcoded base, once from JSON).
-            for name in all_types:
+            for name in self._ordered_practice_types(all_types):
                 if name not in options:
                     options.append(name)
             
@@ -1543,6 +1547,7 @@ class MusicPlayer(BoxLayout):
         "current_dance_adjustments",
         "current_dance_max_playtimes",
         "current_dance_minutes",
+        "current_dance_intros",
         "current_segments",
         "song_max_playtime",
     )
@@ -1986,6 +1991,73 @@ class MusicPlayer(BoxLayout):
         except (TinyTagException, OSError) as e:
             print(f"Could not read metadata for {path}: {e}")
             return None
+
+    def _intro_cue_label(self, dance: str, cue_name: str) -> typing.Optional[str]:
+        """Playlist text for a silence cue standing in for an announcement.
+
+        The dance is not being read out any more, so the row that replaces the
+        announcement has to say which dance is about to start -- otherwise the
+        playlist shows a run of identical separators and the only way to tell
+        what is coming is to read the song titles.
+
+        Returns:
+            The label, or None to let the cue describe itself.
+        """
+        if (duration := self._cue_duration(cue_name)) is None:
+            return None
+        if duration < 60:
+            return f"--- {dance} in {int(round(duration))} seconds ---"
+        return f"--- {dance} in {self._secs_to_time_str(duration)} ---"
+
+    def _cue_duration(self, cue_name: str) -> typing.Optional[float]:
+        """How long a cue lasts, or None if it cannot be read."""
+        if (path := self._get_cue_path(cue_name)) is None:
+            return None
+        if (info := self._create_song_info(path, 'cue')) is None:
+            return None
+        return float(info['duration'])
+
+    def _intro_for_dance(self, dance: str) -> str:
+        """What should precede this dance's block.
+
+        Returns "announce" for the spoken announcement, "none" for nothing, or
+        the name of a cue in cues/. A practice type says so with `dance_intros`,
+        where a "default" key covers every dance not named individually. With no
+        `dance_intros` at all the announcement is used, as it always has been.
+        """
+        intros = self._setting('current_dance_intros')
+        return intros.get(dance, intros.get("default", practice_type_rules.INTRO_ANNOUNCE))
+
+    def _block_intro(self, dance: str) -> typing.Optional[dict]:
+        """Builds the item that introduces a dance's block, if there is one.
+
+        A cue is used in place of the announcement rather than as well as it: a
+        practice that has asked for silence does not want the name read out
+        first. The item counts towards a timed block's budget either way, so
+        swapping a nine second announcement for ten seconds of silence does not
+        change how long the practice runs.
+
+        Args:
+            dance: The dance whose block is starting.
+
+        Returns:
+            A playlist item, or None if nothing should precede the block.
+        """
+        intro = self._intro_for_dance(dance)
+
+        if intro == practice_type_rules.INTRO_NONE:
+            return None
+
+        if intro == practice_type_rules.INTRO_ANNOUNCE:
+            if announce_path := self._get_announce_path(dance):
+                return self._create_song_info(announce_path, 'announce')
+            return None
+
+        if (cue := self._get_cue_info(intro, self._intro_cue_label(dance, intro))) is None:
+            Logger.warning(
+                f"MusicPlayer: '{dance}' asks for the cue '{intro}', which is not in "
+                f"{PlayerConstants.CUES_DIR}/. Starting the dance without it.")
+        return cue
 
     def _get_announce_path(self, dance_name: str) -> typing.Optional[str]:
         """Constructs the path for a dance announcement audio file.
@@ -2615,11 +2687,9 @@ class MusicPlayer(BoxLayout):
         """
         budget = float(minutes) * 60.0
 
-        announce_info = None
-        if (announce_path := self._get_announce_path(dance)) and \
-           (info := self._create_song_info(announce_path, 'announce')):
-            announce_info = info
-            budget -= float(info['duration'])
+        announce_info = self._block_intro(dance)
+        if announce_info is not None:
+            budget -= float(announce_info['duration'])
 
         if budget <= 0:
             print(f"Warning: '{dance}' block of {minutes:g} min is too short to hold "
@@ -2666,29 +2736,57 @@ class MusicPlayer(BoxLayout):
             self._commit_history(history, dance, [info['path'] for info in kept])
             self._save_play_history(history)
 
-        self._report_timed_block(dance, minutes, announce_info, planned)
+        # A shorter plan than the songs drawn means the planner dropped one
+        # rather than trim the block too hard; anything else means the folder
+        # ran out.
+        self._report_timed_block(dance, minutes, announce_info, planned,
+                                 dropped=len(planned) < len(lengths))
 
         return ([announce_info] if announce_info else []) + kept
 
     def _report_timed_block(self, dance: str, minutes: float,
-                            announce_info: typing.Optional[dict],
-                            planned: list[float]) -> None:
+                            intro_info: typing.Optional[dict],
+                            planned: list[float], dropped: bool = False) -> None:
         """Prints what a timed block came out to, and warns if it fell short.
 
         A block that quietly runs short is the failure a DJ would only notice
         mid-practice, so it is called out on the console at generation time.
+
+        Args:
+            dance: The dance this block is for.
+            minutes: The budget it was given.
+            intro_info: The announcement or cue before the block, if any.
+            planned: Play length of each song kept.
+            dropped: True if the planner left a song out because trimming the
+                block to fit would have cut more than MAX_TRIM_SECONDS from
+                every song. That is a different problem from running out of
+                music, and pointing at the wrong one sends the DJ looking for
+                songs in a folder that has plenty.
         """
         target = float(minutes) * 60.0
-        announce_len = float(announce_info['duration']) if announce_info else 0.0
-        actual = announce_len + sum(planned)
+        intro_len = float(intro_info['duration']) if intro_info else 0.0
+        actual = intro_len + sum(planned)
         shortfall = target - actual
+
+        if intro_info is None:
+            intro = "no intro"
+        elif intro_info['dance'] == 'announce':
+            intro = f"announcement {intro_len:.0f}s"
+        else:
+            intro = f"{intro_info['title']} {intro_len:.0f}s"
 
         print(f"  {dance}: {len(planned)} songs, "
               f"{self._secs_to_time_str(actual)} of {self._secs_to_time_str(target)} "
-              f"(announcement {announce_len:.0f}s)")
+              f"({intro})")
         if shortfall > 1.0:
-            print(f"    Warning: {dance} block is {shortfall:.0f}s short. "
-                  "Not enough music in the folder, or the songs are unusually short.")
+            if dropped:
+                print(f"    Warning: {dance} block is {shortfall:.0f}s short. One more "
+                      f"song would have meant trimming more than "
+                      f"{PlayerConstants.MAX_TRIM_SECONDS}s from every song in the "
+                      "block, so it was left out.")
+            else:
+                print(f"    Warning: {dance} block is {shortfall:.0f}s short. Not "
+                      "enough music in the folder, or the songs are unusually short.")
         elif shortfall < -1.0:
             print(f"    Warning: {dance} block is {-shortfall:.0f}s over. "
                   "Songs could not be trimmed further without going below "
@@ -2756,9 +2854,8 @@ class MusicPlayer(BoxLayout):
                 dance, all_music_paths, num_to_sample,
                 PlayerConstants.MIN_SONG_LENGTH_SECONDS, randomize)
 
-        if (announce_path := self._get_announce_path(dance)) and \
-        (announce_info := self._create_song_info(announce_path, 'announce')):
-            playlist.insert(0, announce_info)
+        if (intro := self._block_intro(dance)) is not None:
+            playlist.insert(0, intro)
 
         return playlist
 
@@ -2779,35 +2876,38 @@ class MusicPlayer(BoxLayout):
             "PasoDoble": {"1": 0, "2": 1, "3": 1, "default": 2}, "VWSlow": "cap_at_1",
             "JSlow": "cap_at_1", "VienneseWaltz": "n-1", "Jive": "n-1", "WCS": "cap_at_2"
         }
+        builtin = {
+            "num_selections": 2, "adjust_song_counts": True,
+            "dance_adjustments": default_adjustments,
+            "dance_max_playtimes": {"VienneseWaltz": 150},
+        }
         mapping = {
-            PlayerConstants.PRACTICE_TYPE_60_MIN: ("default", 2, False, False, False, True, True,
-                      default_adjustments, {"VienneseWaltz": 150}, {}, []),
-            PlayerConstants.PRACTICE_TYPE_NC_60_MIN: ("newcomer", 2, False, False, False, True, True,
-                         default_adjustments, {"VienneseWaltz": 150}, {}, []),
+            PlayerConstants.PRACTICE_TYPE_60_MIN: dict(builtin, dance_type="default"),
+            PlayerConstants.PRACTICE_TYPE_NC_60_MIN: dict(builtin, dance_type="newcomer"),
         }
 
         mapping |= getattr(self, "custom_practice_mapping", {})
-        params = mapping.get(
-            text, ("default", 2, False, True, False, True, False, {}, {}, {}, []))
+        definition = mapping.get(text, {"dance_type": "default", "auto_update": True})
 
-        (dance_type, num_selections, play_all, auto_update, play_single, randomize,
-         adj_counts, adj_dict, max_playtimes_dict, dance_minutes_dict,
-         segments_list) = params
-
+        adj_counts = definition.get("adjust_song_counts", False)
+        adj_dict = definition.get("dance_adjustments", {})
         if adj_counts and not adj_dict:
             adj_dict = default_adjustments
 
-        self.dances = self.get_dances(dance_type)
-        self.num_selections = num_selections
-        self.play_all_songs = play_all
-        self.auto_update_restart_playlist = auto_update
-        self.play_single_song = play_single
-        self.randomize_playlist = randomize
+        self.dances = self.get_dances(definition.get("dance_type", "default"))
+        self.num_selections = definition.get("num_selections", 2)
+        self.play_all_songs = definition.get("play_all_songs", False)
+        self.auto_update_restart_playlist = definition.get("auto_update", False)
+        self.play_single_song = definition.get("play_single_song", False)
+        self.randomize_playlist = definition.get("randomize_playlist", True)
         self.adjust_song_counts_for_playlist = adj_counts
         self.current_dance_adjustments = adj_dict
-        self.current_dance_max_playtimes = max_playtimes_dict
-        self.current_dance_minutes = self._validate_dance_minutes(dance_minutes_dict, self.dances)
-        self.current_segments = self._validate_segments(segments_list)
+        self.current_dance_max_playtimes = definition.get("dance_max_playtimes", {})
+        self.current_dance_minutes = self._validate_dance_minutes(
+            definition.get("dance_minutes", {}), self.dances)
+        self.current_segments = self._validate_segments(definition.get("segments", []))
+        self.current_dance_intros = practice_type_rules.validate_dance_intros(
+            definition.get("dance_intros", {}), print)
 
         if self.music_dir:
             self.update_playlist()

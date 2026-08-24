@@ -60,7 +60,8 @@ class EditorTestCase(unittest.TestCase):
         return self.screen.edit_form
 
     def fill(self, name="New Practice", dances="Waltz, Tango", selections="2",
-             adjustments="", playtimes="", minutes="", segments=""):
+             adjustments="", playtimes="", minutes="", segments="", intros="",
+             order="0"):
         """Fills the form as a user would."""
         form = self.form()
         form.name_input.text = name
@@ -75,6 +76,8 @@ class EditorTestCase(unittest.TestCase):
         form.dance_max_playtimes_input.text = playtimes
         form.dance_minutes_input.text = minutes
         form.segments_input.text = segments
+        form.dance_intros_input.text = intros
+        form.order_input.text = order
 
     def saved(self):
         """The custom practice types as written to disk."""
@@ -568,11 +571,129 @@ class TestSharedRuleValidation(EditorTestCase):
         self.assertIn("dance names", self._refused(
             segments='[{"round": ["", "Waltz"]}]'))
 
+    def test_the_list_position_survives_a_round_trip(self):
+        self.fill(name="At The Bottom", order="30")
+        self.screen.save_current_practice_type()
+        self.assertEqual(self.saved()["At The Bottom"]["order"], 30)
+
+    def test_dance_intros_survive_a_round_trip(self):
+        """The editor rebuilds a type from its fields; a dropped key is silent."""
+        self.fill(name="Quiet Practice", intros='{"default": "gap_10", "PasoDoble": "announce"}')
+        self.screen.save_current_practice_type()
+        self.assertEqual(self.saved()["Quiet Practice"]["dance_intros"],
+                         {"default": "gap_10", "PasoDoble": "announce"})
+
+    def test_an_unknown_intro_is_refused(self):
+        self.assertIn("Dance Intros", self._refused(intros='{"Waltz": "shout it"}'))
+
+    def test_a_cue_name_that_escapes_the_cues_folder_is_refused(self):
+        self.assertIn("Dance Intros", self._refused(intros='{"Waltz": "../../secrets"}'))
+
+    def test_a_cue_that_does_not_exist_is_refused(self):
+        """A typo would otherwise show up as silence that never happens."""
+        message = self._refused(intros='{"Waltz": "gap_11"}')
+        self.assertIn("no cue named", message)
+        self.assertIn("gap_10", message, "it should say what is available")
+
+    def test_a_segment_naming_a_missing_cue_is_refused(self):
+        self.assertIn("no cue named",
+                      self._refused(segments='[{"cue": "no_such_cue"}]'))
+
+    def test_an_existing_cue_is_accepted(self):
+        self.fill(name="Quiet", intros='{"default": "gap_10"}')
+        self.screen.save_current_practice_type()
+        self.assertIn("Quiet", self.saved())
+
+    def test_announce_and_none_are_accepted(self):
+        self.fill(name="Mixed", intros='{"Waltz": "announce", "Tango": "none"}')
+        self.screen.save_current_practice_type()
+        self.assertIn("Mixed", self.saved())
+
     def test_valid_adjustments_and_segments_are_accepted(self):
         self.fill(name="Good", adjustments='{"VienneseWaltz": "n-1", "PasoDoble": {"2": 1}}',
                   segments='[{"cue": "round_gap"}, {"round": ["Waltz"], "clip_seconds": 90}]')
         self.screen.save_current_practice_type()
         self.assertIn("Good", self.saved())
+
+
+class TestEditingPreservesExistingFields(EditorTestCase):
+    """Selecting a practice type and saving it must not quietly drop what it had.
+
+    The editor rebuilds a definition from its form fields, so a field that fails
+    to load is indistinguishable from one the user cleared. Nothing complains;
+    the setting is simply gone the next time the practice runs.
+    """
+
+    DEFINITION = {
+        "dances": ["Waltz", "Tango"],
+        "num_selections": 2,
+        "dance_intros": {"default": "gap_10", "PasoDoble": "announce"},
+        "dance_minutes": {"Waltz": 13},
+        "dance_max_playtimes": {"VienneseWaltz": 150},
+        "order": 20,
+    }
+
+    def setUp(self):
+        super().setUp()
+        with open(self.custom_path, "w", encoding="utf-8") as handle:
+            json.dump({"Quiet Practice": self.DEFINITION}, handle)
+        self.screen.load_practice_types()
+
+    def test_the_intros_reach_the_form(self):
+        self.select("Quiet Practice")
+        self.assertIn("gap_10", self.form().dance_intros_input.text)
+        self.assertIn("PasoDoble", self.form().dance_intros_input.text)
+
+    def test_the_intros_survive_a_save(self):
+        self.select("Quiet Practice")
+        self.screen.save_current_practice_type()
+        self.assertEqual(self.saved()["Quiet Practice"]["dance_intros"],
+                         self.DEFINITION["dance_intros"])
+
+    def test_an_unrelated_edit_leaves_the_intros_alone(self):
+        """Changing the song count must not turn the announcements back on."""
+        self.select("Quiet Practice")
+        self.form().num_selections_input.text = "4"
+        self.screen.save_current_practice_type()
+        saved = self.saved()["Quiet Practice"]
+        self.assertEqual(saved["num_selections"], 4)
+        self.assertEqual(saved["dance_intros"], self.DEFINITION["dance_intros"])
+
+    def test_every_other_field_survives_too(self):
+        self.select("Quiet Practice")
+        self.screen.save_current_practice_type()
+        saved = self.saved()["Quiet Practice"]
+        for key in ("dance_minutes", "dance_max_playtimes", "order"):
+            self.assertEqual(saved[key], self.DEFINITION[key], key)
+
+    def test_new_does_not_carry_the_intros_into_the_next_type(self):
+        self.select("Quiet Practice")
+        self.screen.clear_form()
+        self.assertEqual(self.form().dance_intros_input.text, "")
+
+
+class TestCueNamesAreMatchedLikeThePlayer(EditorTestCase):
+    """The player resolves cue names without regard to case; so must the editor."""
+
+    def _saves(self, **fields):
+        self.fill(**fields)
+        self.screen.save_current_practice_type()
+        return fields["name"] in self.saved()
+
+    def test_an_intro_cue_in_a_different_case_is_accepted(self):
+        self.assertTrue(self._saves(name="Loud", intros='{"default": "GAP_10"}'))
+
+    def test_a_segment_cue_in_a_different_case_is_accepted(self):
+        self.assertTrue(self._saves(name="Rounds", segments='[{"cue": "ROUND_GAP"}]'))
+
+    def test_a_cue_that_really_is_missing_is_still_refused(self):
+        self.assertFalse(self._saves(name="Typo", intros='{"default": "gap_11"}'))
+        self.assertEqual(self.popups[-1][0], "Invalid Practice Type")
+
+    def test_the_message_keeps_the_spelling_that_was_typed(self):
+        self.fill(name="Typo", intros='{"default": "Gap_Eleven"}')
+        self.screen.save_current_practice_type()
+        self.assertIn("Gap_Eleven", self.popups[-1][1])
 
 
 if __name__ == "__main__":

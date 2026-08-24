@@ -199,6 +199,7 @@ class PracticeTypeEditorScreen(Screen):
         self.edit_form.name_input.text = name
         self.edit_form.dances_input.text = ", ".join(data.get("dances", []))
         self.edit_form.num_selections_input.text = str(data.get("num_selections", 1))
+        self.edit_form.order_input.text = str(data.get("order", 0))
         self.edit_form.play_all_songs_input.active = data.get("play_all_songs", False)
         self.edit_form.auto_update_input.active = data.get("auto_update", False)
         self.edit_form.play_single_song_input.active = data.get("play_single_song", False)
@@ -216,6 +217,12 @@ class PracticeTypeEditorScreen(Screen):
             self.edit_form.dance_max_playtimes_input.text = json.dumps(playtimes, indent=4)
         else:
             self.edit_form.dance_max_playtimes_input.text = ""
+
+        intros = data.get("dance_intros", {})
+        if intros:
+            self.edit_form.dance_intros_input.text = json.dumps(intros, indent=4)
+        else:
+            self.edit_form.dance_intros_input.text = ""
 
         minutes = data.get("dance_minutes", {})
         if minutes:
@@ -245,7 +252,47 @@ class PracticeTypeEditorScreen(Screen):
             return None
 
     @staticmethod
-    def _validation_problems(data):
+    def _available_cues():
+        """Returns the cue names present in cues/, without their extensions."""
+        cue_dir = app_paths.app_path("cues")
+        try:
+            entries = os.listdir(cue_dir)
+        except OSError:
+            return set()
+        return {os.path.splitext(name)[0] for name in entries
+                if name.lower().endswith((".ogg", ".mp3", ".wav", ".flac", ".m4a"))}
+
+    def _check_cues_exist(self, data, problems):
+        """Adds a problem for any cue named that is not in cues/.
+
+        The player copes with a missing cue by warning and starting the block
+        without it, which is the right behaviour there but a poor way to learn
+        about a typo -- the silence simply does not happen, in the middle of a
+        practice. The editor can see the folder, so it refuses instead.
+        """
+        available = self._available_cues()
+        # Compared without regard to case, because that is how the player looks
+        # cues up. Refusing "GAP_10" while the player would load gap_10.ogg
+        # would be the editor disagreeing with the thing it validates for.
+        folded = {name.casefold() for name in available}
+
+        named = set()
+        if isinstance(data.get("dance_intros"), dict):
+            named |= {value for value in data["dance_intros"].values()
+                      if isinstance(value, str)
+                      and value not in (practice_type_rules.INTRO_ANNOUNCE,
+                                        practice_type_rules.INTRO_NONE)}
+        if isinstance(data.get("segments"), list):
+            named |= {segment["cue"] for segment in data["segments"]
+                      if isinstance(segment, dict) and isinstance(segment.get("cue"), str)}
+
+        # The original spelling is kept for the message; only the comparison folds.
+        for cue in sorted(name for name in named if name.casefold() not in folded):
+            problems.append(
+                f"Dance Intros / Segments: there is no cue named \"{cue}\" in cues/. "
+                f"Available: {', '.join(sorted(available)) or 'none'}.")
+
+    def _validation_problems(self, data):
         """Returns a list of reasons the practice type cannot be saved.
 
         The form already checks that each JSON field parses; this checks that it
@@ -282,6 +329,9 @@ class PracticeTypeEditorScreen(Screen):
         # the player would have to repair or ignore.
         practice_type_rules.validate_dance_adjustments(
             data.get("dance_adjustments"), problems.append)
+        practice_type_rules.validate_dance_intros(
+            data.get("dance_intros"), problems.append)
+        self._check_cues_exist(data, problems)
         practice_type_rules.validate_segments(data.get("segments"), problems.append)
 
         # Durations go through the player's own number check, so the editor
@@ -314,6 +364,7 @@ class PracticeTypeEditorScreen(Screen):
             new_data = {
                 "dances": [d.strip() for d in self.edit_form.dances_input.text.split(',')],
                 "num_selections": int(self.edit_form.num_selections_input.text),
+                "order": int(self.edit_form.order_input.text or 0),
                 "play_all_songs": self.edit_form.play_all_songs_input.active,
                 "auto_update": self.edit_form.auto_update_input.active,
                 "play_single_song": self.edit_form.play_single_song_input.active,
@@ -325,6 +376,8 @@ class PracticeTypeEditorScreen(Screen):
                     self.edit_form.dance_max_playtimes_input.text or "{}"),
                 "dance_minutes": json.loads(
                     self.edit_form.dance_minutes_input.text or "{}"),
+                "dance_intros": json.loads(
+                    self.edit_form.dance_intros_input.text or "{}"),
                 "segments": json.loads(
                     self.edit_form.segments_input.text or "[]"),
             }
@@ -427,6 +480,7 @@ class PracticeTypeEditorScreen(Screen):
         self.edit_form.name_input.text = ""
         self.edit_form.dances_input.text = ", ".join(default_data["dances"])
         self.edit_form.num_selections_input.text = str(default_data["num_selections"])
+        self.edit_form.order_input.text = "0"
         self.edit_form.play_all_songs_input.active = default_data["play_all_songs"]
         self.edit_form.auto_update_input.active = default_data["auto_update"]
         self.edit_form.play_single_song_input.active = default_data["play_single_song"]
@@ -437,6 +491,7 @@ class PracticeTypeEditorScreen(Screen):
         self.edit_form.dance_max_playtimes_input.text = json.dumps(
             default_data["dance_max_playtimes"], indent=4)
         self.edit_form.dance_minutes_input.text = ""
+        self.edit_form.dance_intros_input.text = ""
         self.edit_form.segments_input.text = ""
 
     def copy_practice_type(self, *_args):
@@ -527,6 +582,7 @@ Builder.load_string("""
     name_input: name_input
     dances_input: dances_input
     num_selections_input: num_selections_input
+    order_input: order_input
     play_all_songs_input: play_all_songs_input
     auto_update_input: auto_update_input
     play_single_song_input: play_single_song_input
@@ -535,6 +591,7 @@ Builder.load_string("""
     dance_adjustments_input: dance_adjustments_input
     dance_max_playtimes_input: dance_max_playtimes_input
     dance_minutes_input: dance_minutes_input
+    dance_intros_input: dance_intros_input
     segments_input: segments_input
 
     BoxLayout:
@@ -577,6 +634,28 @@ Builder.load_string("""
             id: num_selections_input
             multiline: False
             size_hint_x: 0.6
+
+    BoxLayout:
+        size_hint_y: None
+        height: '35dp'
+        Label:
+            text: 'List Position:'
+            size_hint_x: 0.4
+            text_size: self.size
+            halign: 'left'
+            valign: 'middle'
+        TextInput:
+            id: order_input
+            multiline: False
+            size_hint_x: 0.6
+    Label:
+        text: "0 keeps this type where it is in the file; a higher number sinks it towards the bottom of the practice type list."
+        font_size: '11sp'
+        color: 0.7, 0.7, 0.7, 1
+        size_hint_y: None
+        height: self.texture_size[1]
+        text_size: self.width, None
+        padding: [10, 0]
 
     BoxLayout:
         orientation: 'vertical'
@@ -798,6 +877,37 @@ Builder.load_string("""
             bar_width: 10
             TextInput:
                 id: dance_minutes_input
+                size_hint_y: None
+                height: self.minimum_height
+                font_name: 'RobotoMono-Regular'
+
+    BoxLayout:
+        size_hint_y: None
+        height: '120dp'
+        BoxLayout:
+            orientation: 'vertical'
+            size_hint_x: 0.4
+            spacing: 2
+            Label:
+                text: 'Dance Intros (JSON):'
+                size_hint_y: None
+                height: self.texture_size[1]
+                text_size: self.width, None
+                halign: 'left'
+                valign: 'top'
+            Label:
+                text: 'What plays before each dance: "announce" for the spoken announcement, "none" for nothing, or a cue in cues/ such as "gap_10" for ten seconds of silence.\\n\\nA "default" key covers every dance not named, e.g. {"default": "gap_10", "PasoDoble": "announce"}. Without this the announcement is used.'
+                font_size: '11sp'
+                color: 0.7, 0.7, 0.7, 1
+                size_hint_y: None
+                height: self.texture_size[1]
+                text_size: self.width, None
+            Widget:
+        ScrollView:
+            size_hint_x: 0.6
+            bar_width: 10
+            TextInput:
+                id: dance_intros_input
                 size_hint_y: None
                 height: self.minimum_height
                 font_name: 'RobotoMono-Regular'
