@@ -204,6 +204,10 @@ def validate_segments(raw, warn=_ignore) -> list:
     types: a negative clip length cuts a song off before it starts, and a
     negative gap looks for a cue named `gap_-5`, silently shortening the round.
 
+    `fade_seconds` comes out of the clip rather than being added to it, so a
+    ninety second clip with a five second fade still runs ninety seconds and the
+    round keeps its length.
+
     Args:
         raw: The value of the practice type's "segments" key.
         warn: Called with a description of anything dropped.
@@ -250,13 +254,18 @@ def validate_segments(raw, warn=_ignore) -> list:
         count = strict_int(segment.get("count", 1), f"{position}: \"count\"", warn)
         gap_seconds = strict_int(segment.get("gap_seconds", 0),
                                  f"{position}: \"gap_seconds\"", warn)
-        clip_seconds = segment.get("clip_seconds")
-        if clip_seconds is not None:
-            clip_seconds = strict_number(clip_seconds, f"{position}: \"clip_seconds\"", warn)
-        if count is None or gap_seconds is None or (
-                segment.get("clip_seconds") is not None and clip_seconds is None):
+        # A clip length is either absent, meaning songs play at their own
+        # length, or a positive number. Zero used to fall through to "absent",
+        # which quietly accepted a value the warning below says is wrong.
+        clip_seconds = None
+        if (clip_raw := segment.get("clip_seconds")) is not None:
+            clip_seconds = strict_number(clip_raw, f"{position}: \"clip_seconds\"", warn)
+            if clip_seconds is None:
+                continue
+        fade_seconds = strict_number(segment.get("fade_seconds", 0),
+                                     f"{position}: \"fade_seconds\"", warn)
+        if count is None or gap_seconds is None or fade_seconds is None:
             continue
-        clip_seconds = clip_seconds or None
 
         if count < 1:
             warn(f"{position}: \"count\" must be at least 1.")
@@ -267,12 +276,29 @@ def validate_segments(raw, warn=_ignore) -> list:
         if gap_seconds < 0:
             warn(f"{position}: \"gap_seconds\" cannot be negative.")
             continue
+        if fade_seconds < 0:
+            warn(f"{position}: \"fade_seconds\" cannot be negative.")
+            continue
+        if fade_seconds > 0 and clip_seconds is None:
+            # The fade is taken out of the clip, so without one there is
+            # nothing for it to come out of and it would do nothing at all.
+            warn(f"{position}: \"fade_seconds\" needs a \"clip_seconds\" to be "
+                 "taken out of; a song played at its own length is not faded.")
+            continue
+        if clip_seconds is not None and fade_seconds >= clip_seconds:
+            # The fade is taken out of the clip, not added to it, so a fade as
+            # long as the clip would mean the song never reaches full volume.
+            warn(f"{position}: \"fade_seconds\" must be shorter than "
+                 f"\"clip_seconds\" ({clip_seconds:g}s), since the fade happens "
+                 "within the clip rather than after it.")
+            continue
 
         validated.append({
             "round": names,
             "count": count,
             "clip_seconds": clip_seconds,
             "gap_seconds": gap_seconds,
+            "fade_seconds": fade_seconds,
             "announce": strict_bool(segment.get("announce", False), False,
                                     f"{position}: \"announce\"", warn),
             "label": segment.get("label"),

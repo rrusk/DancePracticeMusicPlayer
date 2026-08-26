@@ -32,7 +32,7 @@ The application is designed to play music files (MP3, WAV, OGG, M4A, FLAC, WAV) 
 - **Spoken Dance Announcements:** Automatically announces the dance type before each selection begins
 - **Per-Dance Playtime:** Override the global maximum song playtime for specific dances within a custom practice type.
 - **Timed Practice Blocks:** Give a dance a length in minutes instead of a song count (e.g. 13 minutes of Waltz); songs are trimmed slightly and evenly so the block ends on time.
-- **Competition Rounds:** Build finals and semi-finals with fixed-length clips, hard cut-offs, gaps between dances and a warning tone between rounds.
+- **Competition Rounds:** Build finals and semi-finals with fixed-length clips, an adjustable fade at the end of each dance, gaps between dances and a warning tone between rounds.
 - **Intuitive UI:** Play, pause, stop, restart controls, and a clickable, scrollable playlist
 - **Real-time Progress:** Displays current song title, artist, album, genre, and playback progress with seeking capability
 - **Configurable Settings:** Adjust volume, set music directory, and define a default maximum song playtime via an in-app settings panel
@@ -342,8 +342,9 @@ than being looked up during playback, so changing "Max Playtime" in settings aff
 ## Competition Rounds
 
 A practice type can build a sequence of competition rounds — finals and semi-finals with
-fixed-length clips, hard cut-offs, gaps between dances and a warning tone between rounds —
-by defining `segments` instead of relying on the `dances` list.
+fixed-length clips, an adjustable fade at the end of each dance, gaps between dances and a
+warning tone between rounds — by defining `segments` instead of relying on the `dances`
+list.
 
 The **Comp Rounds** practice type ships with the player and runs 54:10:
 
@@ -360,11 +361,13 @@ FINAL #3     W T V F Q          1:30 each, 20s gaps        8:50
 
 ### How rounds differ from a practice
 
-A practice announces each dance and fades songs out. A competition does neither, so a
-practice type with `segments` behaves differently in four ways:
+A practice announces each dance and plays songs at their own length. A competition does
+neither, so a practice type with `segments` behaves differently in four ways:
 
-1. **Hard cut, no fade.** A 1:30 clip is exactly 1:30. Fading would make the clip longer
-   than the length it is supposed to be, and a round is timed against a stopwatch.
+1. **Fixed-length clip, with an optional fade.** A 1:30 clip is exactly 1:30. When
+   `fade_seconds` is set the fade is taken out of those 1:30 rather than added
+   afterwards, so the round stays timed to the stopwatch; with no fade the clip stops
+   dead.
 2. **No spoken announcements.** A heat just starts. The dance name and clip length appear
    on the playlist button instead, since there is nothing spoken to identify them.
 3. **Gaps are audio files.** A cue is an ordinary file in `cues/` that the player drops
@@ -394,7 +397,10 @@ text; a readable default is derived from the name if omitted.
 
 **Round** — `round` lists the dances in order. `count` is how many times each is played,
 consecutively, which is what makes a semi-final's heats (`"count": 2` gives W W T T …).
-`clip_seconds` is the hard cut-off; omit it to play songs at their normal length.
+`clip_seconds` is the cut-off; omit it to play songs at their normal length.
+`fade_seconds` fades the clip out instead of stopping it dead, and is taken
+**out of** the clip rather than added to it — a 90 second clip with a 5 second
+fade still runs 90 seconds, so the round keeps the length it was timed for.
 `gap_seconds` inserts the `gap_<n>` cue *between* dances, with no gap after the last one
 because the break between rounds follows immediately. `announce` defaults to false; set it
 true to put the spoken dance announcement back in.

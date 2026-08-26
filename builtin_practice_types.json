@@ -201,7 +201,7 @@
         },
         "order": 20
     },
-    "__COMMENT__ 'segments' replaces the dances list and builds competition rounds. A segment is either a cue (an audio file in cues/, played to its natural length) or a round. In a round each dance is played 'count' times for 'clip_seconds', cut off hard with no fade, separated by a 'gap_seconds' gap and with no gap after the last dance. Rounds have no spoken announcements unless 'announce' is true.": {
+    "__COMMENT__ 'segments' replaces the dances list and builds competition rounds. A segment is either a cue (an audio file in cues/, played to its natural length) or a round. In a round each dance is played 'count' times for 'clip_seconds', separated by a 'gap_seconds' gap. 'fade_seconds' fades the end of each clip and is taken out of the clip rather than added to it, so the round keeps its length; omit it and the clip stops dead. Rounds have no spoken announcements unless 'announce' is true.": {
         "segments": [
             {
                 "cue": "round_gap",
@@ -243,7 +243,8 @@
                 "count": 1,
                 "clip_seconds": 90,
                 "gap_seconds": 20,
-                "label": "FINAL #1"
+                "label": "FINAL #1",
+                "fade_seconds": 5
             },
             {
                 "cue": "round_gap",
@@ -260,7 +261,8 @@
                 "count": 1,
                 "clip_seconds": 90,
                 "gap_seconds": 20,
-                "label": "FINAL #2"
+                "label": "FINAL #2",
+                "fade_seconds": 5
             },
             {
                 "cue": "round_gap",
@@ -277,7 +279,8 @@
                 "count": 2,
                 "clip_seconds": 100,
                 "gap_seconds": 20,
-                "label": "SEMI FINAL"
+                "label": "SEMI FINAL",
+                "fade_seconds": 5
             },
             {
                 "cue": "round_gap",
@@ -294,7 +297,8 @@
                 "count": 1,
                 "clip_seconds": 90,
                 "gap_seconds": 20,
-                "label": "FINAL #3"
+                "label": "FINAL #3",
+                "fade_seconds": 5
             }
         ],
         "num_selections": 1,

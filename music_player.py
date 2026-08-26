@@ -17,8 +17,9 @@ A segment is either a round of dances or a cue::
     ]
 
 This models a real competition rather than a practice: each dance is cut off at a
-fixed length with no fade, there are no spoken announcements, dances are separated
-by a short gap, and rounds are separated by a longer gap carrying a warning tone.
+fixed length, optionally fading over the last few seconds of it, there are no
+spoken announcements, dances are separated by a short gap, and rounds are
+separated by a longer gap carrying a warning tone.
 
 Cues are ordinary audio files in `cues/`, so gaps and warnings need no special
 handling during playback -- they are playlist items like any other. Generate them
@@ -1310,8 +1311,9 @@ class MusicPlayer(BoxLayout):
                             current_dance, self.song_max_playtime
                         )
 
-                # Competition rounds cut off hard rather than fading, so the fade
-                # length is a property of the item, not a global constant.
+                # The fade length belongs to the item rather than being a
+                # global constant: a competition round clip fades for as long
+                # as its segment asks, or stops dead when that is zero.
                 fade = song_info.get('fade_seconds', PlayerConstants.FADE_TIME)
                 margin = (PlayerConstants.CUE_END_MARGIN
                           if current_dance in ('announce', 'cue')
@@ -1405,9 +1407,10 @@ class MusicPlayer(BoxLayout):
         a fade factor and applies it to the sound's volume, creating a smooth fade-out effect
         over `fade` seconds.
 
-        A `fade` of 0 means the item stops dead instead of fading. Competition
-        rounds use that, since a round is timed against a stopwatch and a fade
-        would make the clip longer than the length it is supposed to be.
+        A `fade` of 0 means the item stops dead instead of fading. A competition
+        round clip sets its own length here, and that time is taken out of the
+        clip rather than added to it -- the round is timed against a stopwatch,
+        so fading must not make the clip longer than it is meant to be.
 
         Args:
             max_playtime: The time in seconds at which the fade-out should begin.
@@ -2384,9 +2387,10 @@ class MusicPlayer(BoxLayout):
     def _get_round_songs(self, directory: str, segment: dict, randomize: bool) -> list:
         """Builds one competition round.
 
-        Each dance is played `count` times at `clip_seconds`, cut off hard with no
-        fade, separated by a short gap. There are no spoken announcements, so the
-        dance name and clip length go on the playlist button instead.
+        Each dance is played `count` times at `clip_seconds`, ending with the
+        segment's `fade_seconds` (or stopping dead when that is zero), separated
+        by a short gap. There are no spoken announcements, so the dance name and
+        clip length go on the playlist button instead.
 
         Args:
             directory: The root music directory.
@@ -2399,6 +2403,7 @@ class MusicPlayer(BoxLayout):
         items: list[dict] = []
         clip_seconds = segment["clip_seconds"]
         gap_seconds = segment["gap_seconds"]
+        fade_seconds = segment.get("fade_seconds", 0)
 
         # Build the list of picks first so the trailing gap can be left off the end.
         picks: list[tuple[str, dict]] = []
@@ -2423,9 +2428,13 @@ class MusicPlayer(BoxLayout):
                     items.append(announce_info)
 
             if clip_seconds:
-                # Hard cut: the clip is exactly clip_seconds, no fade tail.
-                song_info['max_playtime'] = clip_seconds
-                song_info['fade_seconds'] = 0
+                # The fade is taken out of the clip, not added to it: the song
+                # plays at full volume until clip_seconds - fade_seconds, then
+                # fades down until clip_seconds, when playback stops. A round
+                # therefore keeps the length it was timed for. With no fade this
+                # is the original hard cut.
+                song_info['max_playtime'] = clip_seconds - fade_seconds
+                song_info['fade_seconds'] = fade_seconds
                 song_info['label_prefix'] = (
                     f"{dance} {self._secs_to_time_str(clip_seconds)}")
             else:

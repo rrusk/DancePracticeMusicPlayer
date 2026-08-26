@@ -2204,10 +2204,14 @@ class TestSegmentTimingValidation(unittest.TestCase):
             MusicPlayer._validate_segments([{"round": ["Waltz"], "clip_seconds": -10}]), [])
 
     def test_a_zero_clip_length_is_rejected(self):
+        """It used to fall through to "no clip", accepting a value the warning
+        calls wrong. Omitting the key is how a song plays at its own length."""
         self.assertEqual(
-            MusicPlayer._validate_segments([{"round": ["Waltz"], "clip_seconds": 0.0}]),
-            [{"round": ["Waltz"], "count": 1, "clip_seconds": None, "gap_seconds": 0,
-              "announce": False, "label": None}])
+            MusicPlayer._validate_segments([{"round": ["Waltz"], "clip_seconds": 0.0}]), [])
+
+    def test_omitting_the_clip_length_still_means_uncut(self):
+        segments = MusicPlayer._validate_segments([{"round": ["Waltz"]}])
+        self.assertEqual(segments[0]["clip_seconds"], None)
 
     def test_a_negative_gap_is_rejected(self):
         """A negative gap looks for a cue named gap_-5 and silently finds none."""
@@ -2942,6 +2946,110 @@ class TestPracticeTypeOrder(unittest.TestCase):
     def test_a_nonsense_order_does_not_break_loading(self):
         clean = MusicPlayer._normalize_practice_type("T", {"order": "last"})
         self.assertEqual(clean["order"], 0)
+
+
+class TestRoundFade(unittest.TestCase):
+    """A round clip can fade out instead of stopping dead.
+
+    The fade is taken out of the clip rather than added to it, so asking for one
+    does not quietly lengthen every round.
+    """
+
+    DANCES = ["Waltz", "Tango"]
+
+    def setUp(self):
+        self.player = MusicPlayer.__new__(MusicPlayer)
+        self.player.song_max_playtime = 210
+        self.player.current_dance_max_playtimes = {}
+        self.player.practice_type = "Test"
+        self.player._generation_config = None
+        self.player._load_play_history = MagicMock(return_value={})
+        self.player._save_play_history = MagicMock()
+        self.player._get_cue_path = MagicMock(side_effect=lambda name: f"/cues/{name}.ogg")
+        self.player._collect_music_files = MagicMock(
+            side_effect=lambda d, dance: [f"/m/{dance}/{i}.mp3" for i in range(6)])
+
+        def song_info(path, dance):
+            if dance in ('announce', 'cue'):
+                return {'path': path, 'dance': dance, 'title': os.path.basename(path),
+                        'duration': 20.0, 'max_playtime': 20.0, 'fade_seconds': 0}
+            return {'path': path, 'dance': dance, 'title': path, 'genre': '', 'artist': '',
+                    'album': '', 'duration': 180.0, 'max_playtime': 210, 'fade_seconds': FADE}
+        self.player._create_song_info = MagicMock(side_effect=song_info)
+
+    def _round(self, **overrides):
+        segment = {"round": self.DANCES, "count": 1, "clip_seconds": 90,
+                   "gap_seconds": 0, "fade_seconds": 0, "announce": False, "label": "R"}
+        segment.update(overrides)
+        return self.player._get_round_songs("/m", segment, randomize=False)
+
+    def _songs(self, items):
+        return [item for item in items if item['dance'] not in ('cue', 'announce')]
+
+    def test_the_fade_comes_out_of_the_clip(self):
+        for song in self._songs(self._round(fade_seconds=5)):
+            self.assertEqual(song['max_playtime'], 85)
+            self.assertEqual(song['fade_seconds'], 5)
+
+    def test_the_round_keeps_its_length(self):
+        """The whole point: 1:30 clips stay 1:30, so 54:10 stays 54:10."""
+        without = MusicPlayer._playlist_length(self._round(fade_seconds=0))
+        with_fade = MusicPlayer._playlist_length(self._round(fade_seconds=5))
+        self.assertEqual(without, with_fade)
+        self.assertEqual(with_fade, 2 * 90)
+
+    def test_no_fade_is_still_a_hard_cut(self):
+        for song in self._songs(self._round()):
+            self.assertEqual(song['max_playtime'], 90)
+            self.assertEqual(song['fade_seconds'], 0)
+
+    def test_a_fractional_fade_is_allowed(self):
+        song = self._songs(self._round(fade_seconds=2.5))[0]
+        self.assertEqual(song['max_playtime'], 87.5)
+
+    def test_a_negative_fade_is_rejected(self):
+        self.assertEqual(
+            MusicPlayer._validate_segments(
+                [{"round": ["Waltz"], "clip_seconds": 90, "fade_seconds": -5}]), [])
+
+    def test_a_fade_as_long_as_the_clip_is_rejected(self):
+        """It would mean the song never reaches full volume."""
+        for fade in (90, 120):
+            self.assertEqual(
+                MusicPlayer._validate_segments(
+                    [{"round": ["Waltz"], "clip_seconds": 90, "fade_seconds": fade}]), [],
+                f"fade {fade}")
+
+    def test_a_fade_without_a_clip_is_rejected(self):
+        """The fade is taken out of the clip, so without one it does nothing."""
+        self.assertEqual(
+            MusicPlayer._validate_segments(
+                [{"round": ["Waltz"], "fade_seconds": 5}]), [])
+
+    def test_a_fade_with_a_zero_clip_is_rejected(self):
+        self.assertEqual(
+            MusicPlayer._validate_segments(
+                [{"round": ["Waltz"], "clip_seconds": 0, "fade_seconds": 5}]), [])
+
+    def test_no_fade_and_no_clip_is_still_fine(self):
+        """A round of songs played at their own length asks for neither."""
+        segments = MusicPlayer._validate_segments([{"round": ["Waltz"]}])
+        self.assertEqual(segments[0]["fade_seconds"], 0)
+        self.assertIsNone(segments[0]["clip_seconds"])
+
+    def test_a_non_numeric_fade_is_rejected(self):
+        self.assertEqual(
+            MusicPlayer._validate_segments(
+                [{"round": ["Waltz"], "clip_seconds": 90, "fade_seconds": "gentle"}]), [])
+
+    def test_the_shipped_rounds_fade_and_still_run_to_time(self):
+        with open(app_paths.app_path("builtin_practice_types.json"), encoding="utf-8") as handle:
+            segments = json.load(handle)["Comp Rounds"]["segments"]
+        rounds = [s for s in MusicPlayer._validate_segments(segments) if "round" in s]
+        self.assertTrue(rounds)
+        for segment in rounds:
+            self.assertEqual(segment["fade_seconds"], 5)
+            self.assertGreater(segment["clip_seconds"], segment["fade_seconds"])
 
 
 if __name__ == '__main__':
