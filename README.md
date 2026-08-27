@@ -1,6 +1,6 @@
 # DancePracticeMusicPlayer
 
-**Kivy-based desktop application for managing and playing custom dance practice playlists with spoken announcements.**
+**Kivy-based desktop application for managing and playing custom dance practice playlists, with optional spoken announcements.**
 
 ---
 
@@ -20,7 +20,7 @@ Manage Custom Practice Types panel:
 
 ## Overview
 
-**DancePracticeMusicPlayer** is a [Kivy](https://kivy.org) application written in Python that creates a music player with features useful for dance practices that use a predetermined sequence of dance types. It automatically generates a playlist with a spoken announcement of each dance type before those dance selections are played. The dance selections are chosen randomly from the available selections for each dance type so that each practice has a different playlist. The application also supports `customizable practice types` via a separate configuration file, allowing for flexible and tailored practice sessions.
+**DancePracticeMusicPlayer** is a [Kivy](https://kivy.org) application written in Python that creates a music player with features useful for dance practices that use a predetermined sequence of dance types. It automatically generates a playlist and can play a spoken announcement, a silence cue, or nothing before each dance block, as specified by the practice type. The dance selections are chosen randomly from the available selections for each dance type so that each practice has a different playlist. The application also supports `customizable practice types` via a separate configuration file, allowing for flexible and tailored practice sessions.
 
 The application is designed to play music files (MP3, WAV, OGG, M4A, FLAC, WAV) from a selected directory. It has a user interface with buttons to play, pause, stop, and restart the music. The application also allows users to select a music directory, adjust the volume, and choose a practice length (e.g., 60 minutes, 90 minutes, etc.).
 
@@ -29,7 +29,7 @@ The application is designed to play music files (MP3, WAV, OGG, M4A, FLAC, WAV) 
 ## Features
 
 - **Customizable Playlists:** Generates randomized playlists based on predefined or custom dance types and lengths
-- **Spoken Dance Announcements:** Automatically announces the dance type before each selection begins
+- **Optional Dance Announcements:** A practice type can use a spoken announcement, a silence cue, or no introduction before each dance block
 - **Per-Dance Playtime:** Override the global maximum song playtime for specific dances within a custom practice type.
 - **Timed Practice Blocks:** Give a dance a length in minutes instead of a song count (e.g. 13 minutes of Waltz); songs are trimmed slightly and evenly so the block ends on time.
 - **Competition Rounds:** Build finals and semi-finals with fixed-length clips, an adjustable fade at the end of each dance, gaps between dances and a warning tone between rounds.
@@ -38,6 +38,25 @@ The application is designed to play music files (MP3, WAV, OGG, M4A, FLAC, WAV) 
 - **Configurable Settings:** Adjust volume, set music directory, and define a default maximum song playtime via an in-app settings panel
 - **Custom Practice Types:** Easily define new practice routines, dance sequences, and song selection rules using `custom_practice_types.json`, including options for play_all_songs, randomize_playlist, adjust_song_counts, and specific dance_adjustments.
 - **Platform Compatibility:** Designed to run on Linux, macOS, and Windows.
+
+---
+
+## Using the Player
+
+The player is normally configured before it reaches the venue. The person running music
+at a practice only needs to select the prepared practice type and control playback.
+
+### Playback Controls
+
+- Use **Play/Pause**, **Stop**, and **Replay** to control the current song.
+- Click any song in the clickable, scrollable playlist to play it directly.
+- Drag the progress bar to seek within the current song.
+- Adjust the volume slider to control playback volume.
+
+### Changing the Practice Type
+
+Open **Music Settings** and select the required **Practice Type**. This changes the
+sequence and number of songs played to the prepared definition for that practice.
 
 ---
 
@@ -128,27 +147,12 @@ Windows users can run the application by double-clicking on `run_music_player.ba
 
 ---
 
-## Usage
+## Maintaining Practice Types
 
-1. **Initial Setup:** On first run, the application will create a `music.ini` configuration file in the `DancePracticeMusicPlayer` directory.
-
-2. **Set Music Directory:** Click the "Music Settings" button (bottom right) to configure your `Music Directory`. This directory should contain sub-folders for each dance type (e.g., "Waltz", "Tango", etc.) as described in the `Music Directory Setup` section.
-
-3. **Generate Playlist:** The application automatically generates an initial playlist upon startup if a valid music directory is set. You can also click the "New Playlist" button to generate a new playlist based on the currently selected practice type.
-
-4. **Playback Controls:**
-    - Use the **Play/Pause**, **Stop**, and **Replay** buttons to control the current song.
-    - Click on any song in the **clickable, scrollable playlist** to play it directly.
-    - Drag the **progress bar** to seek within the current song.
-    - Adjust the **volume slider** to control playback volume.
-
-5. **Change Practice Type:** Use the "Music Settings" button to change the "Practice Type". This will adjust the sequence and number of songs played. The "New Playlist" button will also update to show the current practice type.
-
-6. **Custom Practice Types:** Refer to the `Customizing Practice Types` section to learn how to create your own practice routines.
-
----
-
-## Customizing Practice Types
+> Practice definitions control dance order, timing, song selection, gaps,
+> announcements, and competition-round lengths. They should only be changed by someone
+> familiar with the intended practice format. Venue operators should select an existing
+> practice type rather than edit its definition.
 
 The application allows you to define custom dance practice routines by creating a `custom_practice_types.json` file in the same directory as music_player.py. This file extends the built-in practice types available in the "Music Settings".
 
@@ -274,8 +278,10 @@ ignore budgets entirely.
 
 ### How a block is built
 
-1. **The announcement counts toward the budget.** A 13 minute Waltz block is 13 minutes
-   including the spoken "Waltz", not 13 minutes plus it.
+1. **The block intro counts toward the budget.** The built-in timed practices use ten
+   seconds of silence before each timed dance, so a 13 minute Waltz block is 13 minutes
+   including that silence, not 13 minutes plus it. A custom type can instead request a
+   spoken announcement or no intro.
 2. **Songs are drawn one at a time** until their combined playing time reaches the budget.
    Selection is history-aware, so a block will not repeat a song the practice has already
    used. Only the songs actually kept are written to `play_history.json`.
@@ -287,28 +293,29 @@ ignore budgets entirely.
    otherwise would. Songs keep their own natural lengths minus that shared trim; a block is
    *not* a run of identical-length clips.
 
-A real 13 minute Waltz block, five songs, trimmed 13 seconds each:
+A 13 minute Waltz block, five songs, trimmed 13 seconds each:
 
 ```text
 02:15  (natural 02:28)   02:18  (natural 02:31)   02:02  (natural 02:15)
-03:13  (natural 03:26)   03:00  (natural 03:13)          + 9s announcement = 13:00
+03:13  (natural 03:26)   03:02  (natural 03:15)             + 10s silence = 13:00
 ```
 
-### Silence instead of announcements
+### Block intros
 
-Some dancers would rather not be told what is coming. A practice type can put a
-few seconds of silence before each dance instead of the spoken announcement:
+The built-in timed practices put a few seconds of silence before each timed dance:
 
 ```json
 "dance_intros": {"default": "gap_10", "PasoDoble": "announce"}
 ```
 
-That is what `Silver+ Std 60min Timed` and `Silver+ Latin 30min Timed` use — the
-Latin one keeps the Paso Doble announcement, because that dance needs the warning.
+`Silver+ Std 60min Timed` and the timed blocks in `Silver+ Latin 30min Timed` are
+therefore silent. The Latin practice keeps an announcement before Paso Doble because
+that dance needs the warning, but Paso Doble is an ordinary one-song block rather than
+a timed block.
 
-The intro counts inside the block's budget exactly as the announcement did, so
-swapping a nine second announcement for ten seconds of silence does not change
-how long the practice runs. `"none"` starts the music immediately.
+An intro counts inside a timed block's budget, so changing its type does not add to
+the configured block length. Custom practice types can use `"announce"` for a spoken
+announcement or `"none"` to start the music immediately.
 
 ### When it can't hit the budget exactly
 
@@ -328,7 +335,7 @@ Every generation of a timed playlist prints a per-block summary:
 
 ```text
 Building timed playlist for 'Silver+ Std 60min Timed':
-  Waltz: 5 songs, 13:00 of 13:00 (announcement 9s)
+  Waltz: 5 songs, 13:00 of 13:00 (cue gap_10 10s)
   ...
   Total: 57:00
 ```
@@ -361,8 +368,9 @@ FINAL #3     W T V F Q          1:30 each, 20s gaps        8:50
 
 ### How rounds differ from a practice
 
-A practice announces each dance and plays songs at their own length. A competition does
-neither, so a practice type with `segments` behaves differently in four ways:
+An ordinary practice plays songs at their own length and can introduce each dance with
+an announcement, a cue, or nothing. A practice type with competition `segments` behaves
+differently in four ways:
 
 1. **Fixed-length clip, with an optional fade.** A 1:30 clip is exactly 1:30. When
    `fade_seconds` is set the fade is taken out of those 1:30 rather than added
@@ -481,7 +489,8 @@ possible on a case-sensitive filesystem — the player reads one of them and
 `--check-library` reports the other as invisible.
 
 It reads the music directory from `music.ini`, so it normally needs no arguments, and it
-also caches the `announce/` and `cues/` audio since those are used by every playlist.
+also caches the `announce/` and `cues/` audio so they are available to any practice type
+that uses them.
 
 `--verify` is worth running occasionally. TinyTag estimates duration from file size and
 bitrate when a VBR header is missing or unparsable, which can be badly wrong; an
