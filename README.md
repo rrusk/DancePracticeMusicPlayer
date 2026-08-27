@@ -8,13 +8,13 @@
 
 Main GUI (Linux/macOS/Windows):
 
-<img width="1044" height="823" alt="MainGui" src="https://github.com/user-attachments/assets/e0211c85-c7e7-44ee-b17d-88a7f2ecc2ce" />
+<img width="1044" height="823" alt="Main application window" src="docs/images/main-window.png" />
 
 Settings panel:
-<img width="1044" height="823" alt="MusicSettings" src="https://github.com/user-attachments/assets/340c0c9a-be02-470c-ba34-074a5c0d2965" />
+<img width="1044" height="823" alt="Music Settings panel" src="docs/images/music-settings.png" />
 
 Manage Custom Practice Types panel:
-<img width="1044" height="823" alt="ManagePracticeTypes" src="https://github.com/user-attachments/assets/33662749-534d-4caf-b4ac-ba5a067271da" />
+<img width="1044" height="823" alt="Manage Custom Practice Types panel" src="docs/images/manage-practice-types.png" />
 
 ---
 
