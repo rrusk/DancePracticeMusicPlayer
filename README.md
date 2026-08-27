@@ -20,9 +20,9 @@ Manage Custom Practice Types panel:
 
 ## Overview
 
-**DancePracticeMusicPlayer** is a [Kivy](https://kivy.org) application written in Python that creates a music player with features useful for dance practices that use a predetermined sequence of dance types. It automatically generates a playlist and can play a spoken announcement, a silence cue, or nothing before each dance block, as specified by the practice type. The dance selections are chosen randomly from the available selections for each dance type so that each practice has a different playlist. The application also supports `customizable practice types` via a separate configuration file, allowing for flexible and tailored practice sessions.
+**DancePracticeMusicPlayer** is a [Kivy](https://kivy.org) application written in Python that creates a music player with features useful for dance practices that use a predetermined sequence of dance types. It automatically generates a playlist and can play a spoken announcement, a silence cue, or nothing before each dance block, as specified by the practice type. The dance selections are chosen randomly from the available selections for each dance type so that each practice has a different playlist. A built-in editor supports flexible, tailored practice types without requiring direct configuration-file editing.
 
-The application is designed to play music files (MP3, WAV, OGG, M4A, FLAC, WAV) from a selected directory. It has a user interface with buttons to play, pause, stop, and restart the music. The application also allows users to select a music directory, adjust the volume, and choose a practice length (e.g., 60 minutes, 90 minutes, etc.).
+The application is designed to play music files (MP3, WAV, OGG, M4A and FLAC) from a selected directory. It has a user interface with buttons to play, pause, stop, and restart the music. The application also allows users to select a music directory, adjust the volume, and choose a practice length (e.g., 60 minutes, 90 minutes, etc.).
 
 ---
 
@@ -36,7 +36,7 @@ The application is designed to play music files (MP3, WAV, OGG, M4A, FLAC, WAV) 
 - **Intuitive UI:** Play, pause, stop, restart controls, and a clickable, scrollable playlist
 - **Real-time Progress:** Displays current song title, artist, album, genre, and playback progress with seeking capability
 - **Configurable Settings:** Adjust volume, set music directory, and define a default maximum song playtime via an in-app settings panel
-- **Custom Practice Types:** Easily define new practice routines, dance sequences, and song selection rules using `custom_practice_types.json`, including options for play_all_songs, randomize_playlist, adjust_song_counts, and specific dance_adjustments.
+- **Custom Practice Types:** Use the built-in editor to define practice routines, dance sequences, song-selection rules, timed blocks, and competition rounds.
 - **Platform Compatibility:** Designed to run on Linux, macOS, and Windows.
 
 ---
@@ -129,10 +129,18 @@ For instance, all Jive selections are in the `music_dir/Jive` folder,
 all Waltz selections are in the `music_dir/Waltz` folder, etc.
 You can set your `music_dir` via the "Music Settings" button in the application.
 
+> The player searches each dance folder recursively. If subfolders are used, every music
+> file beneath them must belong to the enclosing dance type; a non-Waltz song anywhere
+> under `music_dir/Waltz`, for example, will still be treated as a Waltz.
+
+Dance folder names are matched without regard to case, so `QuickStep`, `Quickstep`, and
+`quickstep` behave the same on Linux, macOS, and Windows. Do not create two folders whose
+names differ only in case: on a case-sensitive filesystem the player can use only one.
+
 - Music File Requirements:
   - Musical selections are assumed to be at the correct tempo.
-  - Songs shorter than 90 seconds (`MIN_SONG_LENGTH_SECONDS` in `PlayerConstants`) are passed over by practice types that play a fixed number of selections per dance, since a very short track there just makes the practice end early. They are still used if a dance folder has too few longer songs, and the minimum does not apply to `play_all_songs` types or to [Timed Practice Blocks](#timed-practice-blocks), where a short song simply means one more song in the block.
-  - Songs longer than 3 minutes 30 seconds (210 seconds) will fade out and end by 3 minutes 40 seconds (adjustable via "Max Playtime" in settings), except when play_single_song is true for the playlist.  This is useful for line dances, in particular, where one wants to play the entire song.
+  - Songs shorter than 90 seconds are passed over by practice types that play a fixed number of selections per dance, since a very short track there just makes the practice end early. They are still used if a dance folder has too few longer songs, and the minimum does not apply to types that play all songs or to [Timed Practice Blocks](#timed-practice-blocks), where a short song simply means one more song in the block.
+  - Songs longer than 3 minutes 30 seconds (210 seconds) will fade out and end by 3 minutes 40 seconds (adjustable via "Max Playtime" in settings), except when **Play Single Song** is enabled. This is useful for line dances, in particular, where one wants to play the entire song.
   - It is recommended that the volume of your musical selections be normalized for consistent playback.
 
 ### 4. Running the Application
@@ -154,18 +162,43 @@ Windows users can run the application by double-clicking on `run_music_player.ba
 > familiar with the intended practice format. Venue operators should select an existing
 > practice type rather than edit its definition.
 
-The application allows you to define custom dance practice routines by creating a `custom_practice_types.json` file in the same directory as music_player.py. This file extends the built-in practice types available in the "Music Settings".
+Use the **Manage Practice Types** button in the player to create and maintain practice
+types. The editor validates definitions before saving them and makes the resulting types
+available in **Music Settings**. Directly editing the files is neither necessary nor
+recommended.
 
-### custom_practice_types.json Structure
+### Using the Practice Type Editor
 
-The JSON file should be a dictionary where each key is the name of your custom practice type, and the value is an object containing:
+1. Click **Manage Practice Types** in the player.
+2. Select an existing type to inspect or edit it, click **Copy** to use it as the basis
+   for a new type, or click **New** to start with the standard template.
+3. Set the name, dance order, song counts, and other required options. Some of the more
+   advanced fields use small JSON objects or lists; the examples below show their expected
+   format.
+4. Click **Save**. The editor reports invalid values instead of saving a definition the
+   player cannot use.
+5. Click **Back to Player** when finished. The saved type can then be selected in
+   **Music Settings**.
+
+Built-in types are retained as defaults. Saving changes to one creates a custom override;
+deleting that override restores the built-in definition. **Reset** discards unsaved form
+changes, while **Delete** removes a custom type or override.
+
+The editor stores custom definitions in `custom_practice_types.json`, using a writable
+location selected by the application. This file is useful for backup and troubleshooting,
+but it normally should not be edited by hand.
+
+### Practice Type Fields
+
+The editor provides the following settings. Fields marked as JSON accept the indicated
+object or list in the editor:
 
 - `dances` (list of strings): The sequence of dance sub-folder names to include in the playlist
 - `num_selections` (integer): The default number of songs to select for each dance. This is ignored if play_all_songs is set to true
 - `play_all_songs` (boolean, optional): If true, the player selects all available songs for a dance, ignoring num_selections Defaults to false
 - `auto_update (boolean):` If true, the playlist will automatically generate a new set of songs and restart when it reaches the end
-- `play_single_song (boolean):` If true, the player will stop after playing the entirety of a single song from the current selection
-- `randomize_playlist (boolean):` If true, songs for each dance type will be randomly selected. If false, they will be displayed in a fixed order after selection
+- `play_single_song (boolean):` If true, the player stops after playing one complete song rather than advancing. It does not change which songs are selected: the built-in `LineDance` type combines it with `play_all_songs` to list every song and play them one at a time. Stopping after each song prevents `auto_update` from regenerating the playlist.
+- `randomize_playlist (boolean):` If true, songs for each dance type are selected randomly without repeating recent selections. If false, they are displayed in a fixed order and selection history is not used.
 - `adjust_song_counts (boolean):` If true, the num_selections for certain dances will be adjusted based on predefined rules or dance_adjustments
 - `dance_adjustments (object, optional):` A dictionary specifying custom rules for adjusting num_selections for individual dances. If adjust_song_counts is true but dance_adjustments is not specified, a default set of adjustments will be applied (e.g., to reduce the number of songs for specific dances like Paso Doble, Viennese Waltz, Jive, WCS, JSlow, and VWSlow). These rules can be direct mappings (e.g., {"1": 0, "2": 1, "default": 2}) or string formulas (e.g., "n-1", "cap_at_1")
 - `dance_max_playtimes (object, optional):` A dictionary to override the global "Max Playtime" for specific dances. The keys are dance names (e.g., "VienneseWaltz") and the values are the maximum playtime in seconds.
@@ -174,80 +207,23 @@ The JSON file should be a dictionary where each key is the name of your custom p
 - `dance_minutes (object, optional):` A dictionary giving specific dances a length in minutes instead of a number of songs, e.g. `{"Waltz": 13}`. See [Timed Practice Blocks](#timed-practice-blocks) below. Dances not listed keep using num_selections.
 - `segments (list, optional):` Builds a sequence of competition rounds instead of a practice, replacing the dances list. See [Competition Rounds](#competition-rounds) below.
 
-**Example** `custom_practice_types.json`
+The editor labels the structured fields with **(JSON)**. Enter only the object or list for
+that field, not a complete practice-type definition. For example, **Dance Max Playtimes**
+can contain `{"VienneseWaltz": 120, "Jive": 150}`. The sections below give corresponding
+examples for **Dance Minutes**, **Dance Intros**, and **Segments**.
 
-```json
-{
-  "Beginner": {
-    "dances": ["Waltz", "JSlow", "Rumba", "Foxtrot", "ChaCha", "Tango"],
-    "num_selections": 1,
-    "auto_update": true,
-    "play_single_song": false,
-    "randomize_playlist": true,
-    "adjust_song_counts": false
-  },
-  "Intermediate": {
-    "dances": ["Waltz", "JSlow", "Rumba", "Foxtrot", "ChaCha", "Tango", "Samba", "QuickStep"],
-    "num_selections": 1,
-    "auto_update": true,
-    "play_single_song": false,
-    "randomize_playlist": true,
-    "adjust_song_counts": false
-  },
-  "Silver+ Practice": {
-    "dances": ["Waltz", "Tango", "VWSlow", "VienneseWaltz", "Foxtrot", "QuickStep", "WCS", "Samba", "ChaCha", "Rumba", "PasoDoble", "JSlow", "Jive"],
-    "num_selections": 3,
-    "auto_update": false,
-    "play_single_song": false,
-    "randomize_playlist": true,
-    "adjust_song_counts": true,
-    "dance_adjustments": {
-      "PasoDoble": {
-        "1": 0,
-        "2": 1,
-        "3": 1,
-        "default": 2
-      },
-      "VWSlow": "cap_at_1",
-      "JSlow": "cap_at_1",
-      "VienneseWaltz": "n-1",
-      "Jive": "n-1",
-      "WCS": "cap_at_2"
-    },
-    "dance_max_playtimes": {
-      "VienneseWaltz": 120,
-      "Jive": 150
-    }
-  },
-  "Misc": {
-    "dances": [
-      "AmericanRumba",
-      "ArgentineTango",
-      "Bolero",
-      "DiscoFox",
-      "Hustle",
-      "LindyHop",
-      "Mambo",
-      "Merengue",
-      "NC2Step",
-      "Polka",
-      "Salsa"
-    ],
-    "play_all_songs": true,
-    "auto_update": false,
-    "play_single_song": false,
-    "randomize_playlist": true,
-    "adjust_song_counts": false
-  }
-}
-```
+### Playlist Selection History
 
-### How to Use Custom Types
+Randomized practice types remember which songs were selected for earlier playlists and
+prefer songs not selected recently. When every available song for a dance has been used,
+the player starts a new cycle automatically. This history applies to ordinary practices,
+timed blocks, and competition rounds; it records playlist selection rather than whether a
+song was actually heard.
 
-1. Create or modify the `custom_practice_types.json` file in the root directory of the application.
-2. The new practice types (e.g., "Beginner", "Intermediate") will appear in the "Practice Type" dropdown within the "Music Settings" panel.
-
----
+The **New Playlist** button creates another selection for the current practice type and
+updates this history. It is primarily useful while preparing or testing practices; venue
+operators normally use the playlist already generated when the practice type was selected.
+There is no need to edit `play_history.json` by hand.
 
 ## Timed Practice Blocks
 
@@ -261,6 +237,7 @@ songs — "13 minutes of Waltz" instead of "4 Waltzes". List the dance in `dance
         "Waltz": 13, "Tango": 13, "VienneseWaltz": 8, "Foxtrot": 13, "QuickStep": 10
     },
     "dance_max_playtimes": {"VienneseWaltz": 150},
+    "dance_intros": {"default": "gap_10"},
     "num_selections": 4,
     "randomize_playlist": true,
     "adjust_song_counts": false
@@ -335,7 +312,7 @@ Every generation of a timed playlist prints a per-block summary:
 
 ```text
 Building timed playlist for 'Silver+ Std 60min Timed':
-  Waltz: 5 songs, 13:00 of 13:00 (cue gap_10 10s)
+  Waltz: 5 songs, 13:00 of 13:00 (gap_10 10s)
   ...
   Total: 57:00
 ```
@@ -417,8 +394,10 @@ A bad segment is dropped with a warning rather than breaking the playlist.
 
 ### Cue audio
 
-`cues/make_cues.sh` generates the two cues with ffmpeg:
+`cues/make_cues.sh` generates the three cues with ffmpeg:
 
+- `gap_10.ogg` — 10s of silence before each timed-practice dance that uses a cue
+  instead of a spoken announcement.
 - `gap_20.ogg` — 20s of silence, between dances within a round.
 - `round_gap.ogg` — 2:00 between rounds, silent except for a 5s brass fanfare starting at
   1:40, so dancers are ready when the music starts.
@@ -594,7 +573,7 @@ Some critical methods within the MusicPlayer class include:
 
 ### Configuration
 
-The application uses a `music.ini` file for persistent configuration (music directory, volume, maximum song playtime, and practice type). This file is automatically created on first run and can be modified via the "Music Settings" button.
+The application uses a `music.ini` file for persistent configuration (music directory, volume, maximum song playtime, and practice type). This file is automatically created on first run and can be modified via the "Music Settings" button. In a writable source checkout it is kept beside the application; an installed or read-only copy uses the platform's per-user application-data directory instead.
 
 ### Practice Dances
 

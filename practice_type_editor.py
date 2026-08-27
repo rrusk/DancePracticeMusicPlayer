@@ -727,7 +727,7 @@ Builder.load_string("""
                 size_hint_x: None
                 width: '60dp'
         Label:
-            text: "Stops after each song. Overrides 'Play All Songs' and 'Auto Update'."
+            text: "Stops after each song instead of advancing. Song selection is unchanged; reaching the end cannot trigger Auto Update."
             font_size: '11sp'
             color: 0.7, 0.7, 0.7, 1
             size_hint_y: None
@@ -865,7 +865,7 @@ Builder.load_string("""
                 halign: 'left'
                 valign: 'top'
             Label:
-                text: 'Plays a dance for a set number of minutes instead of a set number of songs, e.g. {"Waltz": 13}.\\n\\nOverrides "Num Selections" for the dances listed. The dance announcement counts toward the time. Songs are trimmed slightly and evenly so the block ends on time.'
+                text: 'Plays a dance for a set number of minutes instead of a set number of songs, e.g. {"Waltz": 13}.\\n\\nOverrides "Num Selections" for the dances listed. Any announcement or cue before the block counts toward the time. Songs are trimmed slightly and evenly so the block ends on time.'
                 font_size: '11sp'
                 color: 0.7, 0.7, 0.7, 1
                 size_hint_y: None
@@ -927,7 +927,7 @@ Builder.load_string("""
                 halign: 'left'
                 valign: 'top'
             Label:
-                text: 'Competition rounds. Replaces the dances list when set.\\n\\n[b]Cue:[/b] an audio file from cues/, played in full.\\n  {"cue": "round_gap", "label": "2:00 break"}\\n\\n[b]Round:[/b] each dance played "count" times for "clip_seconds", cut off with no fade, separated by "gap_seconds".\\n  {"round": ["Waltz", "Tango"], "count": 1,\\n   "clip_seconds": 90, "gap_seconds": 20}\\n\\nRounds have no announcements unless "announce" is true.'
+                text: 'Competition rounds. Replaces the dances list when set.\\n\\n[b]Cue:[/b] an audio file from cues/, played in full.\\n  {"cue": "round_gap", "label": "2:00 break"}\\n\\n[b]Round:[/b] each dance played "count" times for "clip_seconds", separated by "gap_seconds". Optional "fade_seconds" fades the end without lengthening the clip.\\n  {"round": ["Waltz", "Tango"], "count": 1,\\n   "clip_seconds": 90, "fade_seconds": 5, "gap_seconds": 20}\\n\\nRounds have no announcements unless "announce" is true.'
                 markup: True
                 font_size: '11sp'
                 color: 0.7, 0.7, 0.7, 1

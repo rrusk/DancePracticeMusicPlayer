@@ -15,7 +15,6 @@ a = Analysis(
         ('cues', 'cues'),
         ('icons', 'icons'),
         ('builtin_practice_types.json', '.'),
-        ('custom_practice_types.json-example', '.'),
     ],
     hiddenimports=['win32timezone'],
     hookspath=[],

@@ -350,10 +350,11 @@ class MusicPlayer(BoxLayout):
             "desc": (
                 "Choose the practice type/length. Un-prefixed times are dances played in "
                 "competition order. The prefix NC (for newcomer) modifies the order of dances. "
-                "Custom practice types can be added in the custom_practice_types.json file, "
-                "with dances played in the order listed.  For custom practice types, the "
-                "practice length can't be pre-determined very accurately so it is best to "
-                "set auto_update to true and just stop the music player at the end of the practice."
+                "Use Manage Practice Types in the player to add or edit custom types; "
+                "their dances are played in the order listed. Types based on song counts have "
+                "an approximate duration; Auto Update/Restart can keep generating music until "
+                "the practice is stopped. Timed blocks and competition rounds use their "
+                "configured timings instead."
             ),
             "section": "user",
             "key": "practice_type",
@@ -2680,8 +2681,8 @@ class MusicPlayer(BoxLayout):
     ) -> list:
         """Builds a block of songs that fills `minutes` minutes of playing time.
 
-        The dance announcement counts against the budget, so a 13 minute Waltz
-        block is 13 minutes including the announcement.
+        Any announcement or cue before the dance counts against the budget, so
+        a 13 minute Waltz block remains 13 minutes including its introduction.
 
         Args:
             dance: The dance for this block.
@@ -2691,7 +2692,7 @@ class MusicPlayer(BoxLayout):
                 they are taken in sorted order.
 
         Returns:
-            A list of song dictionaries, announcement first, each carrying the
+            A list of song dictionaries, optional introduction first, each carrying the
             'max_playtime' that makes the block land on its budget.
         """
         budget = float(minutes) * 60.0
@@ -2807,7 +2808,7 @@ class MusicPlayer(BoxLayout):
         """Retrieves a list of song dictionaries for a specific dance.
 
         This method coordinates collecting music files, applying selection logic,
-        reading metadata, and prepending a spoken announcement.
+        reading metadata, and prepending the configured block introduction.
 
         If the active practice type gives this dance a `dance_minutes` budget, the
         block is filled by playing time instead of by song count.
@@ -2820,7 +2821,7 @@ class MusicPlayer(BoxLayout):
 
         Returns:
             A list of song dictionaries with pre-fetched metadata, potentially
-            including an announcement at the beginning.
+            including an optional announcement or cue at the beginning.
         """
         all_music_paths = self._collect_music_files(directory, dance)
         if not all_music_paths:

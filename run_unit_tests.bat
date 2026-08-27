@@ -2,12 +2,11 @@
 @echo off
 setlocal
 
-:: Set paths for Kivy scripts and music_player.py (adjust as needed).
-set REPO_LOCATION=%USERPROFILE%\git
-set KIVY_PATH=%REPO_LOCATION%\DancePracticeMusicPlayer\kivy_venv\Scripts
-set MUSIC_PLAYER_PATH=%REPO_LOCATION%\DancePracticeMusicPlayer
+:: Run from the checkout containing this script, wherever it is located.
+set "MUSIC_PLAYER_PATH=%~dp0"
+set "KIVY_PATH=%MUSIC_PLAYER_PATH%kivy_venv\Scripts"
 
-set PATH=%KIVY_PATH%;%MUSIC_PLAYER_PATH%;%PATH%
+set "PATH=%KIVY_PATH%;%MUSIC_PLAYER_PATH%;%PATH%"
 
 echo Running unit tests for Music Player...
 if not exist "%KIVY_PATH%" (
@@ -22,15 +21,15 @@ if not exist "%KIVY_PATH%\activate" (
     echo Kivy virtual environment activation script not found: %KIVY_PATH%\activate
     exit /b 1
 )
-if not exist "%MUSIC_PLAYER_PATH%\tests" (
-    echo Tests folder not found: %MUSIC_PLAYER_PATH%\tests
+if not exist "%MUSIC_PLAYER_PATH%tests" (
+    echo Tests folder not found: %MUSIC_PLAYER_PATH%tests
     exit /b 1
 )
 
 echo Activating Kivy virtual environment and running tests...
-cd /d %KIVY_PATH%
+cd /d "%KIVY_PATH%"
 call activate
-cd /d %MUSIC_PLAYER_PATH%
+cd /d "%MUSIC_PLAYER_PATH%"
 
 :: Stop Kivy from consuming the test runner's command line arguments. Kivy does
 :: still open its SDL window while the tests run: the editor tests build real

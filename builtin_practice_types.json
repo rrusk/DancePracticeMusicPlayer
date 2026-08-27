@@ -165,7 +165,7 @@
         "dance_adjustments": {},
         "dance_max_playtimes": {}
     },
-    "__COMMENT__ example of 'dance_minutes'. A dance listed here is played for that many minutes instead of a set number of songs. The dance announcement counts toward the budget. Songs are drawn until the budget is reached, then a single uniform trim is spread across every song in the block so it ends on time; each song keeps its own length minus that shared trim. 'dance_max_playtimes' still caps any one long song.": {
+    "__COMMENT__ example of 'dance_minutes'. A dance listed here is played for that many minutes instead of a set number of songs. Any announcement or cue before the block counts toward the budget. Songs are drawn until the budget is reached, then a single uniform trim is spread across every song in the block so it ends on time; each song keeps its own length minus that shared trim. 'dance_max_playtimes' still caps any one long song.": {
         "dance_minutes": {
             "Waltz": 13,
             "VienneseWaltz": 8
