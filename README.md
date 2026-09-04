@@ -245,12 +245,12 @@ songs — "13 minutes of Waltz" instead of "4 Waltzes". List the dance in `dance
 ```
 
 `Silver+ Std 60min Timed` ships in `builtin_practice_types.json` and runs 57
-minutes. `Silver+ Latin 30min Timed` runs 27–30: four Latin dances at 6.75
-minutes each, plus one Paso Doble played at its own length. Paso Doble is
-deliberately absent from `dance_minutes`, so it falls through to
-`num_selections` and is not trimmed to fit a budget. A dance
-**not** listed in `dance_minutes` still uses `num_selections` and `dance_adjustments`, so
-the two styles can be mixed in one practice type. `play_all_songs` and `play_single_song`
+minutes. `Silver+ Latin 30min` is deliberately **not** timed: a Latin song is
+short enough that any block budget draws one song too many and then trims the
+overshoot off every song in the block, which cuts routines short. It plays two
+whole songs per dance instead, one for Paso Doble, and runs about 25 minutes.
+A dance **not** listed in `dance_minutes` uses `num_selections` and
+`dance_adjustments`, so the two styles can be mixed in one practice type. `play_all_songs` and `play_single_song`
 ignore budgets entirely.
 
 ### How a block is built
@@ -285,10 +285,9 @@ The built-in timed practices put a few seconds of silence before each timed danc
 "dance_intros": {"default": "gap_10", "PasoDoble": "announce"}
 ```
 
-`Silver+ Std 60min Timed` and the timed blocks in `Silver+ Latin 30min Timed` are
-therefore silent. The Latin practice keeps an announcement before Paso Doble because
-that dance needs the warning, but Paso Doble is an ordinary one-song block rather than
-a timed block.
+`Silver+ Std 60min Timed` and the blocks in `Silver+ Latin 30min` are therefore
+silent. The Latin practice keeps an announcement before Paso Doble because that
+dance needs the warning.
 
 An intro counts inside a timed block's budget, so changing its type does not add to
 the configured block length. Custom practice types can use `"announce"` for a spoken

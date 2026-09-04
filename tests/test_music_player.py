@@ -2934,14 +2934,28 @@ class TestPracticeTypeOrder(unittest.TestCase):
         player.load_custom_practice_types = MagicMock(return_value=shipped)
         player.update_settings_options()
         self.assertEqual(player.settings_json[0]["options"][-3:],
-                         ["Silver+ Latin 30min Timed", "Silver+ Std 60min Timed",
+                         ["Silver+ Latin 30min", "Silver+ Std 60min Timed",
                           "Comp Rounds"])
 
-    def test_the_superseded_untimed_types_are_gone(self):
+    def test_the_superseded_untimed_standard_type_is_gone(self):
         with open(app_paths.app_path("builtin_practice_types.json"), encoding="utf-8") as handle:
             shipped = json.load(handle)
         self.assertNotIn("Silver+ Standard 60min", shipped)
-        self.assertNotIn("Silver+ Latin 30min", shipped)
+        self.assertNotIn("Silver+ Latin 30min Timed", shipped)
+
+    def test_the_latin_practice_plays_whole_songs(self):
+        """Timing the Latin blocks trimmed most songs short of the routine.
+
+        A 6:45 block holds two Latin songs and change, so a third was always
+        drawn and the overshoot shared across all three. Two whole songs per
+        dance is 25 minutes rather than 30, which is the trade that was made.
+        """
+        with open(app_paths.app_path("builtin_practice_types.json"), encoding="utf-8") as handle:
+            latin = json.load(handle)["Silver+ Latin 30min"]
+        self.assertNotIn("dance_minutes", latin)
+        self.assertEqual(latin["num_selections"], 2)
+        self.assertEqual(latin["dance_adjustments"]["PasoDoble"]["2"], 1)
+        self.assertEqual(latin["dance_max_playtimes"], {})
 
     def test_a_nonsense_order_does_not_break_loading(self):
         clean = MusicPlayer._normalize_practice_type("T", {"order": "last"})
