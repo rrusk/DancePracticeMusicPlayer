@@ -55,8 +55,9 @@ at a practice only needs to select the prepared practice type and control playba
 
 ### Changing the Practice Type
 
-Open **Music Settings** and select the required **Practice Type**. This changes the
-sequence and number of songs played to the prepared definition for that practice.
+Open **Music Settings**, click the current **Practice Type** value, and select the required
+type. This changes the sequence and number of songs played to the prepared definition for
+that practice. Click **Done — Return to Player** when finished.
 
 ---
 

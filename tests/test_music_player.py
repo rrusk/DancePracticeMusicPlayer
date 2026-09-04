@@ -13,8 +13,17 @@ os.environ["KIVY_NO_ARGS"] = "1"
 
 # Now we can safely import the application components
 # pylint: disable=wrong-import-position
-from music_player import MusicPlayer, MusicApp, PlayerConstants
+from music_player import (
+    EditableSettingNumeric,
+    EditableSettingOptions,
+    EditableSettingPath,
+    MusicPlayer,
+    MusicApp,
+    MusicSettings,
+    PlayerConstants,
+)
 from kivy.config import ConfigParser
+from kivy.uix.label import Label
 from song_cache import SongCache
 from tests.support import filesystem_is_case_sensitive
 import app_paths
@@ -2075,6 +2084,37 @@ class TestSettingsLifecycle(unittest.TestCase):
     def _set(self, **values):
         for key, value in values.items():
             self.app.config.set("user", key, str(value))
+
+    def test_settings_make_editing_and_returning_obvious(self):
+        settings = MusicSettings()
+        self.assertEqual(settings.interface.menu.close_button.text,
+                         "Done — Return to Player")
+        self.assertEqual(settings._types["editable_numeric"], EditableSettingNumeric)
+        self.assertEqual(settings._types["editable_path"], EditableSettingPath)
+        self.assertEqual(settings._types["editable_options"], EditableSettingOptions)
+
+        descriptions = MusicPlayer.settings_json
+        self.assertEqual(descriptions[0]["title"],
+                         "Click any setting below to change it")
+        self.assertEqual([item["type"] for item in descriptions[1:]], [
+            "editable_numeric", "editable_path", "editable_numeric", "editable_options"
+        ])
+
+        config = ConfigParser()
+        config.setdefaults("user", {
+            "volume": 0.7, "music_dir": "/music", "song_max_playtime": 210,
+            "practice_type": "60min",
+        })
+        panel = settings.create_json_panel(
+            "Music Player Settings", config, data=json.dumps(descriptions))
+        editable = [item for item in panel.children
+                    if isinstance(item, (EditableSettingNumeric,
+                                         EditableSettingPath,
+                                         EditableSettingOptions))]
+        self.assertEqual(len(editable), 4)
+        for item in editable:
+            self.assertIn("›", [child.text for child in item.content.children
+                                if isinstance(child, Label)])
 
     def test_settings_are_applied_at_startup(self):
         self._set(volume=0.4, music_dir="/music", song_max_playtime=180,

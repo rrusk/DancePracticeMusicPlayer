@@ -84,10 +84,17 @@ from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.slider import Slider
-from kivy.uix.settings import SettingsWithSpinner
+from kivy.uix.settings import (
+    SettingNumeric,
+    SettingOptions,
+    SettingPath,
+    SettingsWithSpinner,
+)
 from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.config import ConfigParser
+from kivy.graphics import Color, RoundedRectangle
 from kivy.logger import Logger
+from kivy.metrics import dp
 from tinytag import TinyTag, TinyTagException
 
 import app_paths
@@ -212,6 +219,54 @@ class RootManager(ScreenManager):
         App.get_running_app().destroy_settings()
 
 
+class EditableSettingMixin:
+    """Makes a Kivy setting value look like an interactive control."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.content.padding = (dp(8), 0)
+        with self.content.canvas.before:
+            Color(47 / 255, 167 / 255, 212 / 255, 0.18)
+            self._value_background = RoundedRectangle(radius=[dp(4)])
+        self.content.bind(pos=self._position_value_background,
+                          size=self._position_value_background)
+        self._position_value_background()
+        self.content.add_widget(Label(
+            text="›", size_hint_x=None, width=dp(28),
+            font_size="24sp", color=(47 / 255, 167 / 255, 212 / 255, 1)))
+
+    def _position_value_background(self, *_args) -> None:
+        self._value_background.pos = self.content.pos
+        self._value_background.size = self.content.size
+
+
+class EditableSettingNumeric(EditableSettingMixin, SettingNumeric):
+    """Numeric setting with an explicit visual affordance."""
+
+
+class EditableSettingPath(EditableSettingMixin, SettingPath):
+    """Path setting with an explicit visual affordance."""
+
+
+class EditableSettingOptions(EditableSettingMixin, SettingOptions):
+    """Options setting with an explicit visual affordance."""
+
+
+class MusicSettings(SettingsWithSpinner):
+    """Settings panel whose editable values and exit action look actionable."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.register_type("editable_numeric", EditableSettingNumeric)
+        self.register_type("editable_path", EditableSettingPath)
+        self.register_type("editable_options", EditableSettingOptions)
+
+        close_button = self.interface.menu.close_button
+        close_button.text = "Done — Return to Player"
+        close_button.background_normal = ""
+        close_button.background_color = (0.2, 0.6, 0.8, 1)
+
+
 class MusicPlayer(BoxLayout):
     """Main widget for the dance practice music player.
 
@@ -315,14 +370,18 @@ class MusicPlayer(BoxLayout):
 
     settings_json = [
         {
-            "type": "numeric",
+            "type": "title",
+            "title": "Click any setting below to change it",
+        },
+        {
+            "type": "editable_numeric",
             "title": "Volume",
             "desc": "Set the music volume; range is 0.0 to 1.0.",
             "section": "user",
             "key": "volume",
         },
         {
-            "type": "path",
+            "type": "editable_path",
             "title": "Music Directory",
             "desc": (
                 "Set the music directory. The directory must have sub-folders containing "
@@ -333,7 +392,7 @@ class MusicPlayer(BoxLayout):
             "key": "music_dir",
         },
         {
-            "type": "numeric",
+            "type": "editable_numeric",
             "title": "Max Playtime (Default)",
             "desc": (
                 "Set the default maximum playtime for a song in seconds. This can be "
@@ -345,7 +404,7 @@ class MusicPlayer(BoxLayout):
             "key": "song_max_playtime",
         },
         {
-            "type": "options",
+            "type": "editable_options",
             "title": "Practice Type",
             "desc": (
                 "Choose the practice type/length. Un-prefixed times are dances played in "
@@ -2972,7 +3031,7 @@ class MusicApp(App):
 
     def build(self) -> ScreenManager:
         """Creates and returns the root widget of the application."""
-        self.settings_cls = SettingsWithSpinner
+        self.settings_cls = MusicSettings
 
         # Create the screen manager
         self.manager = RootManager()
