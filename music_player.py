@@ -429,6 +429,7 @@ class MusicPlayer(BoxLayout):
     _current_button = None  # Internal variable for tracking active song button
     _song_buttons = []  # Internal list to store song buttons
     _playing_position = 0
+    _song_duration = 0.0  # Unrounded length of the current song, in seconds
     _total_time = 0
     _schedule_interval = 0.1
     _update_progress_event = None  # To hold the scheduled Clock event
@@ -483,6 +484,7 @@ class MusicPlayer(BoxLayout):
         self._current_button = None
         self._song_buttons = []
         self._playing_position = 0
+        self._song_duration = 0.0
         self._total_time = 0
         self._schedule_interval = 0.1
         self._update_progress_event = None
@@ -1129,7 +1131,8 @@ class MusicPlayer(BoxLayout):
 
         This creates a `Clock` event that fires at a regular interval (`_schedule_interval`),
         allowing the progress bar and time display to be updated smoothly during playback.
-        It also sets the `progress_max` value based on the song's actual duration.
+        It also records the song's duration: unrounded for deciding when the song
+        has ended, and rounded for the progress bar.
 
         Args:
             duration: The duration of the song in seconds.
@@ -1137,6 +1140,7 @@ class MusicPlayer(BoxLayout):
         self._update_progress_event = Clock.schedule_interval(
             self.update_progress, self._schedule_interval
         )
+        self._song_duration = float(duration)
         self.progress_max = round(duration)
 
     @staticmethod
@@ -1174,7 +1178,16 @@ class MusicPlayer(BoxLayout):
         return bool(self._safe_sound_call("stopping playback", stop, default=False))
 
     def _sound_unload(self, sound=None) -> bool:
-        """Unloads a sound, tolerating a backend failure. True if it succeeded."""
+        """Unloads a sound, tolerating a backend failure. True if it succeeded.
+
+        Kivy's GStreamer backend hands end-of-stream to the main thread by
+        scheduling the sound's `_on_gst_eos` on the Clock, and its `unload()`
+        drops the player without cancelling that. If the stream ended in the
+        same tick that unloads it, the orphaned callback then raises inside
+        `Clock.tick()`, which ends the application. Nothing more can be queued
+        once `unload()` has returned, so cancelling afterwards catches it all.
+        The other backends have no such attribute and need nothing.
+        """
         if (sound := sound or self.sound) is None:
             return False
 
@@ -1182,7 +1195,10 @@ class MusicPlayer(BoxLayout):
             sound.unload()
             return True
 
-        return bool(self._safe_sound_call("unloading the song", unload, default=False))
+        unloaded = bool(self._safe_sound_call("unloading the song", unload, default=False))
+        if (on_eos := getattr(sound, "_on_gst_eos", None)) is not None:
+            Clock.unschedule(on_eos)
+        return unloaded
 
     def _sound_state(self, sound=None, default: str = "stop") -> str:
         """Reads a sound's state, tolerating a backend failure.
@@ -1499,9 +1515,15 @@ class MusicPlayer(BoxLayout):
             fade: Length of the fade in seconds; 0 for a hard cut.
             margin: How far before the natural end to advance. Cues are timing
                 devices, so they use a tighter margin than music does.
+
+        The natural end is measured from the unrounded duration. Rounding it to
+        the progress bar's whole seconds can push the end past where the stream
+        actually stops -- an 8.7s announcement would not be advanced until 8.8s
+        -- and a song that is allowed to reach its real end races the backend's
+        own end-of-stream handling.
         """
         if (
-            self._playing_position >= self.progress_max - margin
+            self._playing_position >= self._song_duration - margin
             or self._playing_position >= max_playtime + fade
         ):
             self._advance_playlist()

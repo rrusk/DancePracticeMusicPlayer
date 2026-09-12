@@ -22,6 +22,7 @@ from music_player import (
     MusicSettings,
     PlayerConstants,
 )
+from kivy.clock import Clock
 from kivy.config import ConfigParser
 from kivy.uix.label import Label
 from song_cache import SongCache
@@ -525,7 +526,7 @@ class TestHardCutPlayback(unittest.TestCase):
         self.player.sound = MagicMock()
         self.player.sound.volume = 1.0
         self.player._schedule_interval = 0.1
-        self.player.progress_max = 200
+        self.player._song_duration = 200
         self.player._advance_playlist = MagicMock()
 
     def test_no_fade_applied_when_fade_is_zero(self):
@@ -554,13 +555,30 @@ class TestHardCutPlayback(unittest.TestCase):
 
     def test_cue_uses_tighter_end_margin(self):
         """A 20s gap should not be cut a whole second short."""
-        self.player.progress_max = 20
+        self.player._song_duration = 20
         self.player._playing_position = 19.5
         self.player._check_and_advance_song(20, fade=0, margin=PlayerConstants.CUE_END_MARGIN)
         self.player._advance_playlist.assert_not_called()
 
         self.player._playing_position = 19.85
         self.player._check_and_advance_song(20, fade=0, margin=PlayerConstants.CUE_END_MARGIN)
+        self.player._advance_playlist.assert_called_once()
+
+    def test_announcement_that_rounds_up_still_advances_before_its_end(self):
+        """An 8.664s announcement rounds to 9s on the progress bar. Measured
+        from that, the margin would not fire until 8.8s -- after the stream
+        has ended -- and the clip would only be advanced at its exact end,
+        racing the backend's own end-of-stream handling."""
+        duration = 8.664
+        self.player._song_duration = duration
+        self.player.progress_max = round(duration)
+
+        self.player._playing_position = 8.4
+        self.player._check_and_advance_song(duration, fade=0, margin=PlayerConstants.CUE_END_MARGIN)
+        self.player._advance_playlist.assert_not_called()
+
+        self.player._playing_position = 8.5
+        self.player._check_and_advance_song(duration, fade=0, margin=PlayerConstants.CUE_END_MARGIN)
         self.player._advance_playlist.assert_called_once()
 
 
@@ -1389,6 +1407,7 @@ class TestUnexpectedStop(unittest.TestCase):
         self.player.play_single_song = False
         self.player.play_pause_button = MagicMock()
         self.player.progress_max = 180
+        self.player._song_duration = 180
         self.player._playing_position = 0
         self.player._schedule_interval = 0.1
         self.player._total_time = "03:00"
@@ -1554,6 +1573,7 @@ class TestFailedStartRecovery(unittest.TestCase):
         self.player.play_single_song = False
         self.player.play_pause_button = MagicMock()
         self.player.progress_max = 180
+        self.player._song_duration = 180
         self.player._playing_position = 0
         self.player._schedule_interval = 0.1
         self.player._total_time = "03:00"
@@ -1691,6 +1711,28 @@ class TestBackendCallIsolation(unittest.TestCase):
         self.player.sound = None
         self.player._sound_unload()
         self.player._sound_stop()
+
+    def test_unload_cancels_the_backends_pending_end_of_stream_callback(self):
+        """Kivy's GStreamer backend queues its _on_gst_eos on the Clock from
+        GStreamer's thread and its unload() drops the player without cancelling
+        it. Left queued, the callback raises inside Clock.tick() and ends the
+        application; the same shape of object stands in for it here."""
+        class GstLikeSound:
+            def __init__(self):
+                self.player = MagicMock()
+
+            def unload(self):
+                self.player = None
+
+            def _on_gst_eos(self, *_dt):
+                self.player.stop()
+
+        sound = GstLikeSound()
+        Clock.schedule_once(sound._on_gst_eos, 0)   # what _on_gst_eos_sync does
+
+        self.assertTrue(self.player._sound_unload(sound))
+        Clock.tick()                                # raises if the callback survived
+        self.assertIsNone(sound.player)
 
     def test_setting_volume_survives_a_backend_exception(self):
         def boom(_value):
