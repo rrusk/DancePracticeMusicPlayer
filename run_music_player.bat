@@ -15,6 +15,9 @@ set "PATH=%KIVY_PATH%;%MUSIC_PLAYER_PATH%;%PATH%"
 cd /d "%KIVY_PATH%"
 call activate
 cd /d "%MUSIC_PLAYER_PATH%"
+:: Write startup and playlist-generation timings to the Kivy log
+:: (%USERPROFILE%\.kivy\logs), which is how slow laptops are diagnosed.
+set DPMP_TIMING=1
 python music_player.py
 :: pause shows startup errors if they occur
 :: pause

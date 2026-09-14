@@ -304,33 +304,49 @@ class TestDanceMinutesValidation(unittest.TestCase):
 
 
 class TestCandidateDrawing(unittest.TestCase):
-    """Drawing must not touch history until the block is settled."""
+    """Drawing reads history; only hearing a song writes it."""
+
+    ALL = ["a", "b", "c", "d"]
 
     def setUp(self):
         self.player = MusicPlayer.__new__(MusicPlayer)
 
     def test_draw_prefers_unplayed_and_mutates_nothing(self):
         history = {"Waltz": ["a", "b"]}
-        candidates = self.player._draw_candidates(["a", "b", "c", "d"], "Waltz", history)
+        candidates = self.player._draw_candidates(self.ALL, "Waltz", history)
 
         self.assertEqual(set(candidates[:2]), {"c", "d"})
         self.assertEqual(set(candidates[2:]), {"a", "b"})
         self.assertEqual(history, {"Waltz": ["a", "b"]})
 
-    def test_commit_appends_when_pool_not_exhausted(self):
-        history = {"Waltz": ["a"]}
-        MusicPlayer._commit_history(history, "Waltz", ["b", "c"])
-        self.assertEqual(history["Waltz"], ["a", "b", "c"])
-
-    def test_commit_restarts_cycle_when_pool_wraps(self):
+    def test_songs_already_in_the_playlist_come_last_but_are_not_dropped(self):
         history = {"Waltz": ["a", "b"]}
-        MusicPlayer._commit_history(history, "Waltz", ["c", "a"])
-        self.assertEqual(history["Waltz"], ["c", "a"])
+        candidates = self.player._draw_candidates(self.ALL, "Waltz", history, taken={"c", "a"})
+        self.assertEqual(candidates[0], "d")             # unplayed, not taken
+        self.assertEqual(candidates[1], "b")             # played, not taken
+        self.assertEqual(set(candidates[2:]), {"a", "c"})  # taken, whatever their history
 
-    def test_commit_of_nothing_is_a_no_op(self):
+    def test_sorted_order_also_puts_repeats_last(self):
+        self.assertEqual(MusicPlayer._sorted_candidates(["d", "b", "c", "a"], taken={"a"}),
+                         ["b", "c", "d", "a"])
+
+    def test_hearing_a_new_song_appends_it(self):
         history = {"Waltz": ["a"]}
-        MusicPlayer._commit_history(history, "Waltz", [])
-        self.assertEqual(history["Waltz"], ["a"])
+        MusicPlayer._record_in_history(history, "Waltz", "b", self.ALL, [])
+        self.assertEqual(history["Waltz"], ["a", "b"])
+
+    def test_hearing_a_replay_after_exhaustion_restarts_the_cycle(self):
+        """The songs of this playlist heard before the replay were the old
+        cycle's tail; they seed the new cycle so they do not come straight
+        round again."""
+        history = {"Waltz": ["a", "b", "c", "d"]}
+        MusicPlayer._record_in_history(history, "Waltz", "a", self.ALL, ["c", "d"])
+        self.assertEqual(history["Waltz"], ["c", "d", "a"])
+
+    def test_pool_that_cannot_be_read_leaves_the_cycle_alone(self):
+        history = {"Waltz": ["a", "b"]}
+        MusicPlayer._record_in_history(history, "Waltz", "a", [], ["b"])
+        self.assertEqual(history["Waltz"], ["a", "b"])
 
 
 class TestTimedBlockAssembly(unittest.TestCase):
@@ -385,17 +401,18 @@ class TestTimedBlockAssembly(unittest.TestCase):
         lengths = [round(self._playing_length(s), 3) for s in block[1:]]
         self.assertEqual(len(lengths), len(set(lengths)))
 
-    def test_only_songs_actually_used_are_recorded_in_history(self):
-        history = {}
+    def test_building_a_block_writes_nothing_to_history(self):
+        """Songs are recorded when heard, so a block that is never reached
+        does not burn its songs."""
+        history = {"Waltz": ["/m/Waltz/1.mp3"]}
         self.player._load_play_history = MagicMock(return_value=history)
 
         block = self.player._get_timed_songs_for_dance(
             "Waltz", list(self.DURATIONS), 13, randomize=True)
 
-        used = [song['path'] for song in block if song['dance'] != 'announce']
-        self.assertEqual(history.get("Waltz"), used)
-        # Metadata was read for at most one song beyond those kept.
-        self.assertLessEqual(len(used), len(self.DURATIONS))
+        self.assertTrue([song for song in block if song['dance'] != 'announce'])
+        self.assertEqual(history, {"Waltz": ["/m/Waltz/1.mp3"]})
+        self.player._save_play_history.assert_not_called()
 
     def test_per_dance_cap_limits_a_long_song(self):
         """A long track is capped, and the cap is what the budget counts."""
@@ -460,6 +477,19 @@ class TestSegmentValidation(unittest.TestCase):
     def test_cue_segment(self):
         result = MusicPlayer._validate_segments([{"cue": "round_gap", "label": "break"}])
         self.assertEqual(result, [{"cue": "round_gap", "label": "break"}])
+
+    def test_a_label_that_is_not_text_is_replaced_by_the_default(self):
+        """A label becomes a Kivy button's text, which accepts only a string;
+        letting a number through would raise on the UI thread."""
+        warnings = []
+        result = practice_type_rules.validate_segments(
+            [{"cue": "round_gap", "label": 123},
+             {"round": ["Waltz"], "count": 1, "clip_seconds": 90, "label": ["x"]},
+             {"cue": "round_gap", "label": None}],
+            warnings.append)
+        self.assertEqual([segment["label"] for segment in result], [None, None, None])
+        self.assertEqual(len(warnings), 2)
+        self.assertIn('"label" must be text', warnings[0])
 
     def test_round_segment_defaults(self):
         result = MusicPlayer._validate_segments([{"round": ["Waltz"], "clip_seconds": 90}])
@@ -582,6 +612,122 @@ class TestHardCutPlayback(unittest.TestCase):
         self.player._advance_playlist.assert_called_once()
 
 
+class TestPlayLength(unittest.TestCase):
+    """The progress line shows how long an item will play, not how long it is."""
+
+    def setUp(self):
+        self.player = MusicPlayer.__new__(MusicPlayer)
+        self.player.play_single_song = False
+        self.player.song_max_playtime = 210
+        self.player.current_dance_max_playtimes = {"Waltz": 150}
+
+    def test_a_song_within_its_allowance_plays_in_full(self):
+        song = {"dance": "Waltz", "duration": 150.0, "max_playtime": 210, "fade_seconds": 10}
+        self.assertEqual(self.player._play_length(song), 150.0)
+
+    def test_a_long_song_ends_after_its_cap_and_fade(self):
+        song = {"dance": "Waltz", "duration": 300.0, "max_playtime": 150, "fade_seconds": 10}
+        self.assertEqual(self.player._play_length(song), 160.0)
+
+    def test_a_round_clip_ends_at_its_clip_length(self):
+        """The fade is taken out of the clip, so max_playtime + fade is the clip."""
+        song = {"dance": "Waltz", "duration": 180.0, "max_playtime": 85, "fade_seconds": 5}
+        self.assertEqual(self.player._play_length(song), 90.0)
+
+    def test_a_hard_cut_ends_at_its_cap(self):
+        song = {"dance": "Waltz", "duration": 180.0, "max_playtime": 90, "fade_seconds": 0}
+        self.assertEqual(self.player._play_length(song), 90.0)
+
+    def test_an_announcement_plays_in_full(self):
+        song = {"dance": "announce", "duration": 8.664, "max_playtime": 8.664, "fade_seconds": 0}
+        self.assertEqual(self.player._play_length(song), 8.664)
+
+    def test_a_single_song_is_never_cut(self):
+        self.player.play_single_song = True
+        song = {"dance": "Waltz", "duration": 300.0, "max_playtime": 150, "fade_seconds": 10}
+        self.assertEqual(self.player._play_length(song), 300.0)
+
+    def test_a_song_dict_without_limits_uses_the_dance_cap(self):
+        song = {"dance": "Waltz", "duration": 300.0}
+        self.assertEqual(self.player._play_length(song), 150 + FADE)
+
+    def test_progress_bar_is_sized_to_the_play_length(self):
+        self.player._schedule_interval = 0.1
+        self.player.update_progress = MagicMock()
+        with patch.object(Clock, "schedule_interval"):
+            self.player._schedule_progress_update(300.0, 160.0)
+        self.assertEqual(self.player.progress_max, 160)
+        self.assertEqual(self.player._song_duration, 300.0)
+
+
+class TestMaxPlaytimeChange(unittest.TestCase):
+    """Changing the maximum playtime must reach the playlist already loaded."""
+
+    def setUp(self):
+        self.player = MusicPlayer.__new__(MusicPlayer)
+        self.player.play_single_song = False
+        self.player.song_max_playtime = 210
+        self.player.current_dance_max_playtimes = {"Tango": 120}
+        self.player.current_dance_minutes = {}
+        self.player.current_segments = []
+        self.player._generation_config = None
+        self.player._playlist_generation_in_progress = False
+        self.player.update_playlist = MagicMock()
+        self.player.playlist = [
+            {"path": "/a/Waltz.ogg", "dance": "announce", "duration": 9.0,
+             "max_playtime": 9.0, "fade_seconds": 0},
+            {"path": "/m/Waltz/a.mp3", "dance": "Waltz", "duration": 300.0,
+             "max_playtime": 210, "fade_seconds": FADE},
+            {"path": "/m/Tango/b.mp3", "dance": "Tango", "duration": 300.0,
+             "max_playtime": 120, "fade_seconds": FADE},
+        ]
+        self.player.playlist_idx = 1
+        self.player.sound = MagicMock()
+        self.player._total_time = "03:40"
+        self.player.progress_max = 220
+
+    def test_ordinary_songs_are_restamped_in_place(self):
+        self.player.song_max_playtime = 150
+        self.player.apply_max_playtime_change()
+        self.assertEqual(self.player.playlist[1]["max_playtime"], 150.0)
+        self.assertEqual(self.player.playlist[2]["max_playtime"], 120.0)   # per-dance override
+        self.assertEqual(self.player.playlist[0]["max_playtime"], 9.0)     # announcement
+        self.player.update_playlist.assert_not_called()
+
+    def test_the_current_songs_progress_line_follows(self):
+        self.player.song_max_playtime = 150
+        self.player.apply_max_playtime_change()
+        self.assertEqual(self.player._total_time, "02:40")
+        self.assertEqual(self.player.progress_max, 160)
+
+    def test_a_timed_practice_is_rebuilt(self):
+        """Its songs were chosen and trimmed against the old cap."""
+        self.player.current_dance_minutes = {"Waltz": 13}
+        self.player.apply_max_playtime_change()
+        self.player.update_playlist.assert_called_once()
+        self.assertEqual(self.player.playlist[1]["max_playtime"], 210)
+
+    def test_a_change_during_generation_is_queued_as_a_rebuild(self):
+        self.player._playlist_generation_in_progress = True
+        self.player.apply_max_playtime_change()
+        self.player.update_playlist.assert_called_once()
+
+    def test_clip_timed_round_songs_are_left_alone_but_untimed_ones_follow(self):
+        """A round with clip_seconds fixes each song's length; one without
+        plays songs under the ordinary cap, which is what just changed."""
+        self.player.current_segments = [{"round": ["Waltz"], "count": 1}]
+        self.player.playlist[1]["clip_seconds"] = 90          # FINAL: 90s clips
+        self.player.playlist[1]["max_playtime"] = 85
+        self.player.playlist[1]["fade_seconds"] = 5
+        self.player.playlist[2]["label_prefix"] = "Tango"    # round, no clip length
+        self.player.current_dance_max_playtimes = {}
+        self.player.song_max_playtime = 150
+        self.player.apply_max_playtime_change()
+        self.player.update_playlist.assert_not_called()
+        self.assertEqual(self.player.playlist[1]["max_playtime"], 85)
+        self.assertEqual(self.player.playlist[2]["max_playtime"], 150.0)
+
+
 class TestRoundAssembly(unittest.TestCase):
     """Building a round, with the filesystem mocked out."""
 
@@ -614,6 +760,55 @@ class TestRoundAssembly(unittest.TestCase):
                    "gap_seconds": 20, "announce": False, "label": "FINAL"}
         segment.update(overrides)
         return segment
+
+    def test_a_later_round_avoids_songs_already_in_the_playlist(self):
+        first = self.player._get_round_songs("/m", self._final(), randomize=True)
+        taken = {item['path'] for item in first}
+        second = self.player._get_round_songs("/m", self._final(), randomize=True, taken=taken)
+        self.assertFalse(taken & {item['path'] for item in second if item['dance'] != 'cue'})
+        self.player._save_play_history.assert_not_called()
+
+    def test_a_folder_too_small_to_avoid_a_repeat_repeats_rather_than_skips(self):
+        self.player._collect_music_files = MagicMock(
+            side_effect=lambda d, dance: [f"/m/{dance}/only.mp3"])
+        first = self.player._get_round_songs("/m", self._final(), randomize=True)
+        taken = {item['path'] for item in first}
+        second = self.player._get_round_songs("/m", self._final(), randomize=True, taken=taken)
+        self.assertEqual(len([i for i in second if i['dance'] != 'cue']), len(self.DANCES))
+
+    def test_a_round_short_of_unused_songs_fills_from_used_ones_rather_than_dropping_a_heat(self):
+        """Two heats wanted, two songs in the folder, one already used: the
+        round must still have two heats, the second a repeat."""
+        self.player._collect_music_files = MagicMock(
+            side_effect=lambda d, dance: [f"/m/{dance}/1.mp3", f"/m/{dance}/2.mp3"])
+        taken = {f"/m/{dance}/1.mp3" for dance in self.DANCES}
+        items = self.player._get_round_songs(
+            "/m", self._final(count=2), randomize=True, taken=taken)
+        songs = [i for i in items if i['dance'] != 'cue']
+        self.assertEqual(len(songs), 2 * len(self.DANCES))
+        waltzes = [i['path'] for i in songs if i['dance'] == 'Waltz']
+        self.assertEqual(waltzes[0], "/m/Waltz/2.mp3")     # the unused one first
+        self.assertEqual(waltzes[1], "/m/Waltz/1.mp3")     # then the repeat
+
+    def test_a_dance_listed_twice_in_one_round_gets_two_different_songs(self):
+        items = self.player._get_round_songs(
+            "/m", self._final(round=["Waltz", "Waltz"]), randomize=False)
+        waltzes = [i['path'] for i in items if i['dance'] == 'Waltz']
+        self.assertEqual(len(waltzes), 2)
+        self.assertNotEqual(waltzes[0], waltzes[1])
+
+    def test_a_used_full_length_song_beats_an_unused_one_too_short_for_the_clip(self):
+        durations = {"/m/Waltz/long.mp3": 180.0, "/m/Waltz/short.mp3": 60.0}
+        self.player._collect_music_files = MagicMock(return_value=list(durations))
+        self.player._create_song_info = MagicMock(
+            side_effect=lambda path, dance: {
+                'path': path, 'dance': dance, 'title': path, 'genre': '', 'artist': '',
+                'album': '', 'duration': durations.get(path, 20.0),
+                'max_playtime': 210, 'fade_seconds': FADE})
+        items = self.player._get_round_songs(
+            "/m", self._final(round=["Waltz"]), randomize=True, taken={"/m/Waltz/long.mp3"})
+        self.assertEqual([i['path'] for i in items if i['dance'] == 'Waltz'],
+                         ["/m/Waltz/long.mp3"])
 
     def test_final_structure_and_length(self):
         """Five dances, four gaps between them, 8:50 total."""
@@ -771,21 +966,100 @@ class TestRoundsRouting(unittest.TestCase):
 
     def test_segments_take_over(self):
         self.player.current_segments = [{"cue": "round_gap", "label": None}]
-        captured = {}
-        from kivy.clock import Clock
-        Clock.schedule_once = lambda cb, *a: captured.setdefault("scheduled", True)
-
-        self.player._generate_playlist_in_background("/m", ["Waltz"], 2, True, False)
+        with patch.object(Clock, "schedule_once"):
+            self.player._generate_playlist_in_background("/m", ["Waltz"], 2, True, False)
         self.player._build_segment_playlist.assert_called_once()
         self.player._get_songs_for_dance.assert_not_called()
 
     def test_without_segments_the_normal_path_runs(self):
-        from kivy.clock import Clock
-        Clock.schedule_once = lambda cb, *a: None
-
-        self.player._generate_playlist_in_background("/m", ["Waltz"], 2, True, False)
+        with patch.object(Clock, "schedule_once"):
+            self.player._generate_playlist_in_background("/m", ["Waltz"], 2, True, False)
         self.player._build_segment_playlist.assert_not_called()
         self.player._get_songs_for_dance.assert_called_once()
+
+    def test_a_dance_listed_twice_gets_different_songs(self):
+        """Drawing excludes what the playlist already holds, since history
+        cannot: nothing has been played yet."""
+        self.player.play_all_songs = False
+        self.player.play_single_song = False
+        self.player.current_dance_adjustments = {}
+        self.player.adjust_song_counts_for_playlist = False
+        self.player.current_dance_max_playtimes = {}
+        self.player._get_announce_path = MagicMock(return_value=None)
+        self.player._load_play_history = MagicMock(return_value={})
+        self.player._collect_music_files = MagicMock(
+            return_value=[f"/m/Waltz/{i}.mp3" for i in range(4)])
+        self.player._create_song_info = MagicMock(
+            side_effect=lambda path, dance: {
+                'path': path, 'dance': dance, 'title': path, 'duration': 180.0,
+                'max_playtime': 210, 'fade_seconds': FADE})
+        del self.player._get_songs_for_dance          # use the real one
+        self.player._finish_background_generation = MagicMock()
+
+        self.player._build_playlist_in_background("/m", ["Waltz", "Waltz"], 2, True, False)
+
+        playlist = self.player._finish_background_generation.call_args.args[0]
+        paths = [item['path'] for item in playlist]
+        self.assertEqual(len(paths), 4)
+        self.assertEqual(len(set(paths)), 4)
+
+class TestGenerationTiming(unittest.TestCase):
+    """With DPMP_TIMING set, the log says where playlist generation spent its time."""
+
+    def setUp(self):
+        self.player = MusicPlayer.__new__(MusicPlayer)
+        self.player.current_dance_minutes = {}
+        self.player.current_segments = []
+        self.player.practice_type = "test"
+        self.player.song_max_playtime = 210
+        self.player.current_dance_max_playtimes = {}
+        self.player.current_dance_adjustments = {}
+        self.player.adjust_song_counts_for_playlist = False
+        self.player.play_all_songs = False
+        self.player.play_single_song = False
+        self.player._get_announce_path = MagicMock(return_value=None)
+        self.player._load_play_history = MagicMock(return_value={})
+        self.player._collect_music_files = MagicMock(
+            side_effect=lambda d, dance: [f"/m/{dance}/{i}.mp3" for i in range(4)])
+        self.player._create_song_info = MagicMock(
+            side_effect=lambda path, dance: {
+                'path': path, 'dance': dance, 'title': path, 'duration': 180.0,
+                'max_playtime': 210, 'fade_seconds': FADE})
+        self.player._finish_background_generation = MagicMock()
+
+    def _marks(self):
+        import music_player
+        with patch.object(music_player, "TIMING_ENABLED", True), \
+                patch.object(music_player, "timing_mark") as mark:
+            self.player._build_playlist_in_background("/m", ["Waltz", "Tango"], 2, True, False)
+        return [call.args[0] for call in mark.call_args_list]
+
+    def test_each_dance_gets_a_line_with_its_song_and_tag_counts(self):
+        marks = self._marks()
+        self.assertTrue(any(m.startswith("  Waltz: 2 songs, tags ") for m in marks), marks)
+        self.assertTrue(any(m.startswith("  Tango: 2 songs, tags ") for m in marks), marks)
+
+    def test_tag_reads_are_split_into_cached_and_read_from_disk(self):
+        MusicPlayer._song_cache = MagicMock(hits=0, misses=0, stale=0)
+
+        def read(path, dance):
+            MusicPlayer._song_cache.misses += 1          # every song read from disk
+            return {'path': path, 'dance': dance, 'title': path, 'duration': 180.0,
+                    'max_playtime': 210, 'fade_seconds': FADE}
+        self.player._create_song_info = MagicMock(side_effect=read)
+        try:
+            marks = self._marks()
+        finally:
+            MusicPlayer._song_cache = None
+        self.assertIn("  Waltz: 2 songs, tags 0 cached / 2 read", marks)
+
+    def test_nothing_is_reported_when_timing_is_off(self):
+        import music_player
+        with patch.object(music_player, "TIMING_ENABLED", False), \
+                patch.object(music_player, "timing_mark") as mark:
+            self.player._build_playlist_in_background("/m", ["Waltz"], 2, True, False)
+        self.assertFalse([c for c in mark.call_args_list if c.args[0].startswith("  Waltz")])
+
 
 class TestMinimumSongLength(unittest.TestCase):
     """Count-based practice types should pass over very short tracks."""
@@ -849,23 +1123,26 @@ class TestHistoryCyclePreservation(unittest.TestCase):
 
     def test_cycle_kept_when_unplayed_songs_remain(self):
         history = {"Waltz": ["a", "b", "c"]}
-        MusicPlayer._commit_history(history, "Waltz", ["a"], self.ALL)
+        MusicPlayer._record_in_history(history, "Waltz", "a", self.ALL, [])
         self.assertEqual(history["Waltz"], ["a", "b", "c"])
 
     def test_cycle_restarts_only_when_the_pool_is_exhausted(self):
         history = {"Waltz": ["a", "b", "c", "d"]}
-        MusicPlayer._commit_history(history, "Waltz", ["a", "e"], self.ALL)
-        self.assertEqual(history["Waltz"], ["a", "e"])
+        MusicPlayer._record_in_history(history, "Waltz", "e", self.ALL, [])
+        self.assertEqual(history["Waltz"], ["a", "b", "c", "d", "e"])
 
-    def test_new_songs_are_appended_without_duplicates(self):
-        history = {"Waltz": ["a", "b"]}
-        MusicPlayer._commit_history(history, "Waltz", ["b", "c"], self.ALL)
-        self.assertEqual(history["Waltz"], ["a", "b", "c"])
+        MusicPlayer._record_in_history(history, "Waltz", "a", self.ALL, ["e"])
+        self.assertEqual(history["Waltz"], ["e", "a"])
 
-    def test_without_all_paths_a_replay_still_restarts_the_cycle(self):
+    def test_hearing_a_song_twice_in_a_cycle_does_not_duplicate_it(self):
         history = {"Waltz": ["a", "b"]}
-        MusicPlayer._commit_history(history, "Waltz", ["a"])
-        self.assertEqual(history["Waltz"], ["a"])
+        MusicPlayer._record_in_history(history, "Waltz", "b", self.ALL, ["a"])
+        self.assertEqual(history["Waltz"], ["a", "b"])
+
+    def test_restart_seed_has_no_duplicates(self):
+        history = {"Waltz": ["a", "b"]}
+        MusicPlayer._record_in_history(history, "Waltz", "a", ["a", "b"], ["b", "b"])
+        self.assertEqual(history["Waltz"], ["b", "a"])
 
 
 class TestSongCache(unittest.TestCase):
@@ -906,6 +1183,25 @@ class TestSongCache(unittest.TestCase):
             handle.write(b"x" * 200)
         self.assertIsNone(cache.get(self.song))
         self.assertEqual(cache.stale, 1)
+
+    def test_a_failed_save_is_reported_where_the_caller_can_see_it(self):
+        """On Windows the console is hidden, so print() would lose this and a
+        cache that never saves is rebuilt on every launch without anyone knowing."""
+        reported = []
+        cache = SongCache(os.path.join(self.tmp, "missing-dir", "cache.json"),
+                          report=reported.append)
+        cache.put(self.song, self.fields)
+        self.assertFalse(cache.save())
+        self.assertEqual(len(reported), 1)
+        self.assertIn("Could not save song cache", reported[0])
+
+    def test_an_unreadable_cache_is_reported(self):
+        with open(self.cache_path, "w", encoding="utf-8") as handle:
+            handle.write("{not json")
+        reported = []
+        SongCache(self.cache_path, report=reported.append)
+        self.assertEqual(len(reported), 1)
+        self.assertIn("unreadable", reported[0])
 
     def test_missing_file_is_not_a_hit(self):
         cache = SongCache(self.cache_path)
@@ -1452,6 +1748,122 @@ class TestUnexpectedStop(unittest.TestCase):
         self.player._advance_playlist.assert_not_called()
 
 
+class TestPlayIsRecordedWhenHeard(unittest.TestCase):
+    """A song enters the play history when it is heard, not when it is drawn."""
+
+    ALL = [f"/m/Waltz/{i}.mp3" for i in range(3)]
+
+    @staticmethod
+    def _song(path):
+        return {"path": path, "dance": "Waltz", "duration": 180,
+                "max_playtime": 210, "fade_seconds": 10}
+
+    def setUp(self):
+        self.player = MusicPlayer.__new__(MusicPlayer)
+        self.player.sound = MagicMock()
+        self.player.sound.state = "play"
+        self.player.sound.get_pos.return_value = 10.0
+        self.player.randomize_playlist = True
+        self.player.music_dir = "/m"
+        self.player.playlist = [
+            {"path": "/announce/Waltz.ogg", "dance": "announce", "duration": 9.0,
+             "max_playtime": 9.0, "fade_seconds": 0},
+            self._song(self.ALL[0]),
+            self._song(self.ALL[1]),
+        ]
+        self.player.playlist_idx = 1
+        self.player.play_single_song = False
+        self.player.play_pause_button = MagicMock()
+        self.player.progress_max = 180
+        self.player._song_duration = 180
+        self.player._playing_position = 0
+        self.player._schedule_interval = 0.1
+        self.player._total_time = "03:00"
+        self.player._playback_observed = False
+        self.player._last_recorded_item = None
+        self.player._played_this_playlist = {}
+        self.player._advance_playlist = MagicMock()
+        self.player._get_icon_path = MagicMock(return_value="play.png")
+        self.history = {}
+        self.player._load_play_history = MagicMock(side_effect=lambda: self.history)
+        self.player._save_play_history = MagicMock()
+        self.player._dance_pools = {"Waltz": list(self.ALL)}
+        self.player._collect_music_files = MagicMock(return_value=list(self.ALL))
+
+    def test_the_music_folder_is_not_scanned_on_the_ui_thread(self):
+        """The pool from the scan that built the playlist is enough to tell
+        whether a replay means the dance is exhausted."""
+        self.player.update_progress(0.1)
+        self.player._collect_music_files.assert_not_called()
+
+    def test_a_dance_with_no_remembered_pool_is_scanned(self):
+        self.player._dance_pools = {}
+        self.player.update_progress(0.1)
+        self.player._collect_music_files.assert_called_once_with("/m", "Waltz")
+
+    def test_first_tick_that_sees_playback_records_the_song(self):
+        self.player.update_progress(0.1)
+        self.assertEqual(self.history, {"Waltz": [self.ALL[0]]})
+        self.player._save_play_history.assert_called_once_with(self.history)
+
+    def test_later_ticks_do_not_record_again(self):
+        self.player.update_progress(0.1)
+        self.player.update_progress(0.1)
+        self.assertEqual(self.player._save_play_history.call_count, 1)
+
+    def test_pause_and_resume_do_not_record_twice(self):
+        self.player.update_progress(0.1)
+        self.player._playback_observed = False        # what pausing does
+        self.player.update_progress(0.1)
+        self.assertEqual(self.history, {"Waltz": [self.ALL[0]]})
+        self.assertEqual(self.player._save_play_history.call_count, 1)
+
+    def test_a_song_never_reached_is_not_in_history(self):
+        self.player.update_progress(0.1)
+        self.assertNotIn(self.ALL[1], self.history["Waltz"])
+
+    def test_announcements_are_not_recorded(self):
+        self.player.playlist_idx = 0
+        self.player.update_progress(0.1)
+        self.assertEqual(self.history, {})
+        self.player._save_play_history.assert_not_called()
+
+    def test_a_fixed_order_practice_does_not_record(self):
+        self.player.randomize_playlist = False
+        self.player.update_progress(0.1)
+        self.assertEqual(self.history, {})
+        self.player._save_play_history.assert_not_called()
+
+    def test_the_last_unplayed_song_then_a_replay_restarts_the_cycle_seeded(self):
+        """Two of three Waltzes have been heard; the playlist holds the third
+        and then a replay. Hearing the replay exhausts the pool, and the new
+        cycle starts with what this playlist has already played."""
+        self.history = {"Waltz": [self.ALL[0], self.ALL[1]]}
+        self.player.playlist[1:] = [self._song(self.ALL[2]), self._song(self.ALL[0])]
+
+        self.player.update_progress(0.1)
+        self.assertEqual(self.history["Waltz"], self.ALL)
+
+        self.player.playlist_idx = 2
+        self.player._playback_observed = False
+        self.player.update_progress(0.1)
+        self.assertEqual(self.history["Waltz"], [self.ALL[2], self.ALL[0]])
+
+    def test_a_new_playlist_forgets_what_this_one_played(self):
+        self.player.update_progress(0.1)
+        self.assertEqual(self.player._played_this_playlist, {"Waltz": [self.ALL[0]]})
+
+        self.player._display_playlist_buttons = MagicMock()
+        self.player.restart_playlist = MagicMock()
+        self.player._playlist_generation_in_progress = True
+        self.player._regeneration_pending = False
+        self.player._is_first_load = False
+        self.player._finish_playlist_generation([], False, 0)
+
+        self.assertEqual(self.player._played_this_playlist, {})
+        self.assertIsNone(self.player._last_recorded_item)
+
+
 class TestHistoryRobustness(unittest.TestCase):
     """Corrupt history must be discarded, and writes must be atomic."""
 
@@ -1890,6 +2302,27 @@ class TestSongCacheEntryValidation(unittest.TestCase):
         self._write({"mtime": 1.0, "duration": 100})
         self.assertIsNone(SongCache(self.cache_path).get(self.song))
 
+    def test_missing_duration_is_discarded(self):
+        self._write({"size": 100, "mtime": 1.0, "title": "T", "artist": "A",
+                     "album": "B", "genre": "G"})
+        self.assertIsNone(SongCache(self.cache_path).get(self.song))
+
+    def test_non_numeric_duration_is_discarded(self):
+        self._write({"size": 100, "mtime": 1.0, "duration": "long", "title": "T",
+                     "artist": "A", "album": "B", "genre": "G"})
+        self.assertIsNone(SongCache(self.cache_path).get(self.song))
+
+    def test_non_text_tag_field_is_discarded(self):
+        self._write({"size": 100, "mtime": 1.0, "duration": 100.0, "title": 123,
+                     "artist": "A", "album": "B", "genre": "G"})
+        self.assertIsNone(SongCache(self.cache_path).get(self.song))
+
+    def test_null_fields_are_what_an_untagged_file_produces_and_are_kept(self):
+        stat = os.stat(self.song)
+        self._write({"size": stat.st_size, "mtime": stat.st_mtime, "duration": None,
+                     "title": None, "artist": None, "album": None, "genre": None})
+        self.assertIsNotNone(SongCache(self.cache_path).get(self.song))
+
     def test_good_entries_survive_alongside_bad_ones(self):
         good = os.path.join(self.tmp, "good.mp3")
         with open(good, "wb") as handle:
@@ -1945,8 +2378,22 @@ class TestPlaySoundOrchestration(unittest.TestCase):
         self.player.play_sound()
         self.assertEqual(self.player.music_file, "/m/Waltz/a.mp3")
         self.player._sound_set_volume.assert_called_once_with(0.6)
-        self.player._schedule_progress_update.assert_called_once_with(150.0)
+        self.player._schedule_progress_update.assert_called_once_with(150.0, 150.0)
+        self.assertEqual(self.player._total_time, "02:30")
         self.player._apply_platform_specific_play.assert_called_once()
+
+    def test_the_progress_line_shows_how_long_a_cut_song_will_play(self):
+        """A 5:00 song capped at 2:30 plus a 10s fade ends at 2:40, and that is
+        what the bar and the total should say, so the display tells watchers
+        when the next song starts."""
+        self.player.playlist.append(
+            {"path": "/m/Waltz/long.mp3", "dance": "Waltz", "title": "L", "genre": "G",
+             "artist": "Ar", "album": "Al", "duration": 300.0, "max_playtime": 150,
+             "fade_seconds": 10})
+        self.player.playlist_idx = 2
+        self.player.play_sound()
+        self.player._schedule_progress_update.assert_called_once_with(300.0, 160.0)
+        self.assertEqual(self.player._total_time, "02:40")
 
     def test_the_pause_icon_is_shown_once_playing(self):
         self.player.play_sound()

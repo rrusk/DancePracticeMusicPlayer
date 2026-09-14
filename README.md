@@ -199,7 +199,7 @@ object or list in the editor:
 - `play_all_songs` (boolean, optional): If true, the player selects all available songs for a dance, ignoring num_selections Defaults to false
 - `auto_update (boolean):` If true, the playlist will automatically generate a new set of songs and restart when it reaches the end
 - `play_single_song (boolean):` If true, the player stops after playing one complete song rather than advancing. It does not change which songs are selected: the built-in `LineDance` type combines it with `play_all_songs` to list every song and play them one at a time. Stopping after each song prevents `auto_update` from regenerating the playlist.
-- `randomize_playlist (boolean):` If true, songs for each dance type are selected randomly without repeating recent selections. If false, they are displayed in a fixed order and selection history is not used.
+- `randomize_playlist (boolean):` If true, songs for each dance type are selected randomly, avoiding songs already heard until every song for that dance has been played. If false, they are displayed in a fixed order and play history is neither used nor updated.
 - `adjust_song_counts (boolean):` If true, the num_selections for certain dances will be adjusted based on predefined rules or dance_adjustments
 - `dance_adjustments (object, optional):` A dictionary specifying custom rules for adjusting num_selections for individual dances. If adjust_song_counts is true but dance_adjustments is not specified, a default set of adjustments will be applied (e.g., to reduce the number of songs for specific dances like Paso Doble, Viennese Waltz, Jive, WCS, JSlow, and VWSlow). These rules can be direct mappings (e.g., {"1": 0, "2": 1, "default": 2}) or string formulas (e.g., "n-1", "cap_at_1")
 - `dance_max_playtimes (object, optional):` A dictionary to override the global "Max Playtime" for specific dances. The keys are dance names (e.g., "VienneseWaltz") and the values are the maximum playtime in seconds.
@@ -213,18 +213,21 @@ that field, not a complete practice-type definition. For example, **Dance Max Pl
 can contain `{"VienneseWaltz": 120, "Jive": 150}`. The sections below give corresponding
 examples for **Dance Minutes**, **Dance Intros**, and **Segments**.
 
-### Playlist Selection History
+### Play History
 
-Randomized practice types remember which songs were selected for earlier playlists and
-prefer songs not selected recently. When every available song for a dance has been used,
-the player starts a new cycle automatically. This history applies to ordinary practices,
-timed blocks, and competition rounds; it records playlist selection rather than whether a
-song was actually heard.
+Randomized practice types remember which songs have been played and draw from the ones
+not yet heard. A song is recorded when it starts playing, not when it is put in a playlist,
+so the songs left in a playlist when a practice ends early -- or in a playlist that is
+generated and never used -- stay available. Announcements and cues are not recorded. When
+every available song for a dance has been heard, the player starts a new cycle
+automatically. This history applies to ordinary practices, timed blocks, and competition
+rounds alike; it is kept per dance, so a song used for a competition round clip counts as
+played for ordinary practices too.
 
-The **New Playlist** button creates another selection for the current practice type and
-updates this history. It is primarily useful while preparing or testing practices; venue
-operators normally use the playlist already generated when the practice type was selected.
-There is no need to edit `play_history.json` by hand.
+The **New Playlist** button creates another selection for the current practice type. It
+is primarily useful while preparing or testing practices; venue operators normally use the
+playlist already generated when the practice type was selected. Generating a playlist does
+not change the history, and there is no need to edit `play_history.json` by hand.
 
 ## Timed Practice Blocks
 
@@ -262,7 +265,8 @@ ignore budgets entirely.
    spoken announcement or no intro.
 2. **Songs are drawn one at a time** until their combined playing time reaches the budget.
    Selection is history-aware, so a block will not repeat a song the practice has already
-   used. Only the songs actually kept are written to `play_history.json`.
+   heard. Songs are written to `play_history.json` as they are played, not when the block
+   is built.
 3. **`dance_max_playtimes` still caps any one song**, and the cap is applied *before* the
    budget is worked out — a six-minute track counts as 3:40, so it cannot distort the rest
    of the block.
@@ -362,8 +366,8 @@ differently in four ways:
    so candidates shorter than the clip are passed over. If a folder has too few full-length
    tracks the longest available are used and a warning is printed.
 
-Songs still never repeat across the whole sequence — the rounds draw from the shared play
-history exactly as practice blocks do.
+Songs still never repeat across the whole sequence: each round is drawn from the songs not
+yet heard, leaving out anything an earlier round in the same sequence already holds.
 
 ### Segment format
 
@@ -479,27 +483,50 @@ songs that were in fact long enough. A lossless remux fixes such files:
 
 ---
 
-## Measuring Startup
+## Measuring Startup and Playlist Generation
 
-Set `DPMP_TIMING=1` to have the player report where its startup time goes:
+The launch scripts set `DPMP_TIMING=1`, which makes the player report where its startup
+and playlist-generation time goes. Running it by hand, set it yourself:
 
 ```bash
 DPMP_TIMING=1 python music_player.py
 ```
 
 ```text
-[Timing] 0.543s total  kivy and tinytag imported
-[Timing] 0.552s total  player widget built
-[Timing] 0.568s total  app.build() complete
-[Timing] 0.569s total  on_start complete (playlist generating in background)
-[Timing] 0.017s        playlist generated (34 items, song cache: 34 hits, 0 misses, ...)
-[Timing] 0.643s total  playlist displayed
-[Timing] 0.402s        first SoundLoader.load (audio backend init)
+[Timing]   0.476s total  kivy and tinytag imported
+[Timing]   0.485s total  player widget built
+[Timing]   0.504s total  app.build() complete
+[Timing]   0.504s total  on_start complete (playlist generating in background)
+[Timing]   0.004s         song cache loaded (1136 entries)
+[Timing]   0.001s             scanned Waltz: 100 files
+[Timing]   0.003s           Waltz: 3 songs, tags 4 cached / 0 read
+[Timing]   0.000s             scanned Tango: 96 files
+[Timing]   0.002s           Tango: 3 songs, tags 3 cached / 0 read
+...
+[Timing]   0.014s         playlist generated (34 items, song cache: 34 hits, 0 misses, ...)
+[Timing]   0.011s         playlist buttons built (34)
+[Timing]   0.587s total  playlist displayed
+[Timing]   0.402s         first SoundLoader.load (audio backend init)
 ```
 
 The measurements go through the Kivy logger rather than the console, so they are recorded
 in `~/.kivy/logs/` (`%USERPROFILE%\.kivy\logs\` on Windows) — which is the only way to get
 them back from a Windows machine, where the console window is hidden at startup.
+
+Reading a slow generation:
+
+- **`tags N cached / M read`** on a dance line: `read` means the file was opened and its
+  header parsed, because the song was missing from the cache or its entry was stale. On a
+  machine where the cache is working, `read` is 0 after the first playlist. If it is not,
+  the cache is either being rebuilt every launch — a `SongCache: Could not save` warning
+  in the same log says why — or its entries are stale because the music's timestamps
+  differ from when it was built (a FAT-formatted USB stick reports different times after
+  a clock-change, for instance). `utils/build_song_cache.py` rebuilds it on that machine.
+- **`scanned <dance>`** is the folder walk, once per dance per generation. It is
+  normally milliseconds; if it is not, the music is on slow storage.
+- **`playlist buttons built`** is the only step on the UI thread: one button per item,
+  each rendering its text. This comes after "playlist generated" but before anything
+  appears, so on a laptop it can be most of what the operator waits for.
 
 On a fast desktop nearly all of the time is the Kivy import and the audio backend, with
 playlist generation a small fraction. If a practice laptop shows a different balance, the

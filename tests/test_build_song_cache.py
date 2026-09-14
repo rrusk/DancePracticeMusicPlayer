@@ -243,7 +243,8 @@ class TestVerification(ScriptTestCase):
         self.assertIn("0 checked", " ".join(str(c) for c in printed.call_args_list))
 
     def test_verify_survives_a_malformed_cached_duration(self):
-        """--verify does arithmetic on the same field the audit reads."""
+        """A cache holding "duration": "long" is discarded entry by entry when
+        loaded, so --verify finds nothing to check rather than raising."""
         self.run_script()
         with open(self.cache_path, encoding="utf-8") as handle:
             data = json.load(handle)
@@ -255,10 +256,12 @@ class TestVerification(ScriptTestCase):
         with patch.object(script, "ffprobe_available", return_value=True), \
              patch.object(script, "ffprobe_duration", return_value=150.0), \
              patch("builtins.print") as printed:
-            script.verify(SongCache(self.cache_path), self.songs)   # must not raise
+            cache = SongCache(self.cache_path)
+            self.assertEqual(len(cache), 0)
+            script.verify(cache, self.songs)   # must not raise
 
         messages = " ".join(str(call) for call in printed.call_args_list)
-        self.assertIn("no readable duration", messages)
+        self.assertIn("0 checked", messages)
 
     def test_ffprobe_availability_survives_a_missing_binary(self):
         with patch.object(script.subprocess, "run", side_effect=OSError("not found")):
@@ -506,6 +509,19 @@ class TestCheckLibrary(ScriptTestCase):
                           {"round": ["Waltz"], "count": 1}]},
             "Waltz", [150.0])
         self.assertEqual(wanted, 3)
+
+    def test_a_dance_listed_twice_in_a_round_needs_two_songs(self):
+        wanted = script.songs_wanted(
+            {"segments": [{"round": ["Waltz", "Waltz"], "count": 1}]}, "Waltz", [150.0])
+        self.assertEqual(wanted, 2)
+
+    def test_a_dance_listed_twice_in_a_practice_needs_songs_for_both_blocks(self):
+        self.assertEqual(
+            script.songs_wanted({"dances": ["Waltz", "Tango", "Waltz"], "num_selections": 3},
+                                "Waltz", [150.0]), 6)
+        self.assertEqual(
+            script.songs_wanted({"dances": ["Waltz", "Waltz"], "dance_minutes": {"Waltz": 13}},
+                                "Waltz", [150.0] * 10), 12)
 
     def test_a_dance_a_practice_type_does_not_use_needs_nothing(self):
         self.assertEqual(

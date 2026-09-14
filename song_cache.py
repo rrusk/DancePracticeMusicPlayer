@@ -17,8 +17,10 @@ automatically. Entries for deleted files are harmless and are only removed by
 library and can tell a deleted file from one it simply did not visit.
 """
 import json
+import math
 import os
 import threading
+import typing
 
 CACHE_VERSION = 1
 DEFAULT_CACHE_FILE = "song_metadata_cache.json"
@@ -37,9 +39,18 @@ class SongCache:
         stale (int): Entries rejected because the file changed on disk.
     """
 
-    def __init__(self, path: str):
-        """Loads the cache from `path`, tolerating a missing or corrupt file."""
+    def __init__(self, path: str, report: typing.Callable[[str], None] = print):
+        """Loads the cache from `path`, tolerating a missing or corrupt file.
+
+        Args:
+            path: The cache file.
+            report: Where problems are reported. The default suits the command
+                line; the player passes its logger, because on Windows its
+                console is hidden and a cache that silently fails to save is
+                rebuilt from scratch on every launch.
+        """
         self.path = path
+        self._report = report
         self._songs: dict = {}
         self._dirty = False
         self._lock = threading.Lock()
@@ -57,11 +68,11 @@ class SongCache:
                 data = json.load(handle)
         except (OSError, json.JSONDecodeError) as error:
             # Worst case is one slow playlist while the cache is rebuilt.
-            print(f"Song cache unreadable ({error}); starting a fresh one.")
+            self._report(f"Song cache unreadable ({error}); starting a fresh one.")
             return
 
         if not isinstance(data, dict) or data.get("version") != CACHE_VERSION:
-            print("Song cache is from a different version; starting a fresh one.")
+            self._report("Song cache is from a different version; starting a fresh one.")
             return
 
         songs = data.get("songs")
@@ -75,20 +86,41 @@ class SongCache:
         self._songs = {path: entry for path, entry in songs.items()
                        if self._entry_is_usable(path, entry)}
         if len(self._songs) != len(songs):
-            print(f"Discarded {len(songs) - len(self._songs)} malformed song cache "
-                  "entries; they will be re-read.")
+            self._report(f"Discarded {len(songs) - len(self._songs)} malformed song "
+                         "cache entries; they will be re-read.")
             self._dirty = True
 
     @staticmethod
     def _entry_is_usable(path, entry) -> bool:
-        """Returns True if a cache entry has the shape lookups depend on."""
-        return (
-            isinstance(path, str)
-            and isinstance(entry, dict)
-            and isinstance(entry.get("size"), int)
-            and isinstance(entry.get("mtime"), (int, float))
-            and not isinstance(entry.get("mtime"), bool)
-        )
+        """Returns True if a cache entry has the shape and types lookups depend on.
+
+        A hit is handed straight to playlist generation as the song's tags, so
+        every cached field has to be what a tag read would have produced: the
+        duration a finite number, or None for a file whose length could not be
+        read; the text fields text, or None. Anything else -- a hand edit, a
+        cache from a different tool -- would raise inside generation on every
+        attempt, which is the opposite of the cache being safe to keep around.
+        """
+        if not (isinstance(path, str) and isinstance(entry, dict)):
+            return False
+        size, mtime = entry.get("size"), entry.get("mtime")
+        if isinstance(size, bool) or not isinstance(size, int):
+            return False
+        if isinstance(mtime, bool) or not isinstance(mtime, (int, float)):
+            return False
+        if any(field not in entry for field in CACHED_FIELDS):
+            return False
+        duration = entry["duration"]
+        if duration is not None:
+            if isinstance(duration, bool) or not isinstance(duration, (int, float)):
+                return False
+            try:
+                if not math.isfinite(duration):
+                    return False
+            except OverflowError:       # an int too large to be a float
+                return False
+        return all(entry[field] is None or isinstance(entry[field], str)
+                   for field in CACHED_FIELDS if field != "duration")
 
     def get(self, path: str) -> dict | None:
         """Returns cached metadata for `path`, or None if it must be read.
@@ -178,7 +210,7 @@ class SongCache:
                     json.dump(payload, handle)
                 os.replace(temporary, self.path)
             except OSError as error:
-                print(f"Could not save song cache: {error}")
+                self._report(f"Could not save song cache: {error}")
                 return False
             self._dirty = False
             return True

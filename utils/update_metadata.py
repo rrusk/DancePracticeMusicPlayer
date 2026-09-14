@@ -254,6 +254,12 @@ def rename_file_based_on_title(file_path, title):
 
     if new_filename != filename:
         new_path = os.path.join(directory, new_filename)
+        # os.rename replaces an existing file on POSIX, so two songs with the
+        # same title would collapse into one. Leave the second alone. A change
+        # of case only "exists" already on Windows, and is fine.
+        if os.path.exists(new_path) and not os.path.samefile(file_path, new_path):
+            print(f"  ✘ Not renaming {filename}: {new_filename} already exists")
+            return file_path
         try:
             os.rename(file_path, new_path)
             print(f"  ➜ Renamed: {filename} -> {new_filename}")
@@ -685,9 +691,9 @@ def apply_batch_updates(files, global_overrides, remove_art=False, auto_embed=Fa
             elif success:
                 print(f"Updated: {os.path.basename(file_path)}")
 
-        # 4. Rename File from Title
+        # 4. Rename File from Title, only when asked (--rename)
         # We do this AFTER saving so the file contains the correct tags before rename
-        if rename_files or current_tags['title']:
+        if rename_files and current_tags['title']:
             file_path = rename_file_based_on_title(file_path, current_tags['title'])
 
     return incident_log
@@ -830,9 +836,9 @@ def process_files_interactively(files, embed_mode='ask', rename_files=False):
                 if success and error_reason:
                     incident_log.append({'file': file_path, 'reason': error_reason})
                 
-                # Automatic Rename (No prompt)
-                # Renames happens after save to ensure safe state
-                if current_tags['title']:
+                # Rename from the title only when asked (--rename), without a
+                # further prompt. Happens after the save to ensure safe state.
+                if rename_files and current_tags['title']:
                     rename_file_based_on_title(file_path, current_tags['title'])
                 break 
                 

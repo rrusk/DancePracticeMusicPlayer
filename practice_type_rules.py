@@ -49,6 +49,20 @@ def strict_bool(value, default: bool, description: str, warn=_ignore) -> bool:
     return default
 
 
+def strict_label(value, description: str, warn=_ignore):
+    """Returns `value` if it is text, else None.
+
+    A label ends up as a Kivy button's text, which accepts only a string; a
+    number here would raise on the UI thread, outside the playlist worker's
+    error handling, and take the player down. Missing and null both mean "use
+    the default".
+    """
+    if value is None or isinstance(value, str):
+        return value
+    warn(f"{description} must be text, not {value!r}. Using the default label.")
+    return None
+
+
 def strict_number(value, description: str, warn=_ignore):
     """Returns `value` as a finite float, or None if it is not one.
 
@@ -238,7 +252,8 @@ def validate_segments(raw, warn=_ignore) -> list:
                 warn(f"{position}: \"cue\" must be the name of a file in cues/, "
                      f"not {cue!r}.")
                 continue
-            validated.append({"cue": cue, "label": segment.get("label")})
+            validated.append({"cue": cue, "label": strict_label(
+                segment.get("label"), f"{position}: \"label\"", warn)})
             continue
 
         dances = segment.get("round")
@@ -301,7 +316,7 @@ def validate_segments(raw, warn=_ignore) -> list:
             "fade_seconds": fade_seconds,
             "announce": strict_bool(segment.get("announce", False), False,
                                     f"{position}: \"announce\"", warn),
-            "label": segment.get("label"),
+            "label": strict_label(segment.get("label"), f"{position}: \"label\"", warn),
         })
 
     return validated

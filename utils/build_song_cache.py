@@ -212,11 +212,15 @@ def songs_wanted(practice_type: dict, dance: str, lengths: list) -> int:
     Returns:
         The number of songs needed, 0 if the practice type does not use it.
     """
+    # A dance listed more than once, in a round or in the dances list, is drawn
+    # once per listing, and the player avoids repeating a song within one
+    # playlist, so each listing needs its own songs.
     if segments := practice_type.get("segments"):
-        return sum(segment.get("count", 1) for segment in segments
-                   if dance in segment.get("round", []))
+        return sum(segment.get("count", 1) * segment.get("round", []).count(dance)
+                   for segment in segments)
 
-    if dance not in practice_type.get("dances", []):
+    listings = practice_type.get("dances", []).count(dance)
+    if not listings:
         return 0
 
     if minutes := practice_type.get("dance_minutes", {}).get(dance):
@@ -224,19 +228,19 @@ def songs_wanted(practice_type: dict, dance: str, lengths: list) -> int:
             dance, DEFAULT_MAX_PLAYTIME)
         typical = statistics.median(
             min(length, cap + FADE_SECONDS) for length in lengths) if lengths else 0
-        return math.ceil(minutes * 60 / typical) if typical else 0
+        return math.ceil(minutes * 60 / typical) * listings if typical else 0
 
     # Count-based. dance_adjustments only ever reduces the count, so the
     # unadjusted figure is the safe upper bound.
-    return practice_type.get("num_selections", 0)
+    return practice_type.get("num_selections", 0) * listings
 
 
 def usable_duration(value):
     """Returns `value` as a positive finite float, or None if it is not one.
 
-    Cache entries are validated for shape but not for the type of each field, so
-    a hand-edited or corrupted cache can hold "duration": "long". Comparing that
-    to a number raises, which would take the audit down.
+    The cache discards entries whose duration is not a number when it loads,
+    but the audit also judges whether a number is a plausible length, and it
+    reads durations from other sources (ffprobe, the tag reader) as well.
 
     Rejects anything that is not a plausible length: the wrong type, a boolean,
     a non-finite value, an integer too large to be a float, and anything longer
