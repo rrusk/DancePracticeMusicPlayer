@@ -1872,14 +1872,16 @@ class MusicPlayer(BoxLayout):
         # actually been painted -- the moment the operator sees it.
         Clock.schedule_once(lambda _dt: timing_mark("playlist on screen"), 0)
 
-        # Prime GStreamer on Windows after the very first playlist is loaded --
-        # but not until it has been drawn. The first SoundLoader.load of the
-        # process initialises GStreamer and its plugin registry, which takes
-        # seconds on some laptops, and done here it would hold back the frame
-        # that shows the playlist for that long.
+        # Prime GStreamer on Windows after the very first playlist is loaded.
+        # The first SoundLoader.load of the process loads GStreamer's plugins,
+        # which on a cold start can take tens of seconds. It is done here, before
+        # this frame is drawn, on purpose: the screen keeps showing "Generating
+        # new playlist, please wait..." with the controls disabled until it is
+        # over. Painting the playlist first and then blocking would leave live-
+        # looking buttons that do nothing, which reads as a broken player.
         if self._is_first_load and sys.platform == "win32":
+            self._prime_gstreamer()
             self._is_first_load = False
-            Clock.schedule_once(lambda _dt: self._prime_gstreamer(), 0)
 
     def _prime_gstreamer(self) -> None:
         """Workaround for GStreamer delay on Windows, called after first playlist is loaded."""
