@@ -160,6 +160,29 @@ python music_player.py
 
 Windows users can run the application by double-clicking on `run_music_player.bat`.
 
+#### Slow first launch on Windows
+
+The first launch after a reboot can take far longer than later ones -- tens of seconds
+before the window appears, and as long again before the playlist does -- while a launch a
+few minutes later takes two or three seconds. The player is doing the same work both
+times; the difference is Windows' real-time antivirus scanning. Kivy and GStreamer
+consist of several hundred DLLs under `kivy_venv`, and on the first launch after a boot
+each one is scanned as it is read. The scans are repeated at every cold start, because
+nothing about the files has changed.
+
+The remedy is to tell Windows Security that the checkout does not need scanning:
+**Windows Security → Virus & threat protection → Manage settings → Exclusions → Add or
+remove exclusions → Add an exclusion → Folder**, and choose the directory containing
+`music_player.py` (which also contains `kivy_venv`). The exclusion applies to that folder
+only; the rest of the machine is scanned as before.
+
+Whether it was needed, and whether it worked, can be read from the log (see
+[Measuring Startup and Playlist Generation](#measuring-startup-and-playlist-generation)):
+on a cold start, compare `kivy and tinytag imported` and `audio backend primed` before
+and after. Launching the player soon after booting, before it is needed, also moves the
+remaining cost -- reading those files from disk for the first time -- to a moment when
+nobody is waiting.
+
 ---
 
 ## Maintaining Practice Types
@@ -530,13 +553,19 @@ Reading a slow generation:
   a clock-change, for instance). `utils/build_song_cache.py` rebuilds it on that machine.
 - **`scanned <dance>`** is the folder walk, once per dance per generation. It is
   normally milliseconds; if it is not, the music is on slow storage.
-- **`playlist buttons built`** is the only step on the UI thread: one button per item,
-  each rendering its text. This comes after "playlist generated" but before anything
-  appears, so on a laptop it can be most of what the operator waits for.
+- **`playlist buttons built`** is the only generation step on the UI thread: one button
+  per item, each rendering its text. Normally well under a second.
+- **`audio backend primed (first SoundLoader.load)`** (Windows only) is the audio
+  backend loading its plugins, done once, right after the first playlist is built and
+  before it is drawn. Warm, it is under half a second; on a cold start it can be tens of
+  seconds, and the screen keeps saying "please wait" until it is over.
+- **`playlist on screen`** is when the first playlist can actually be seen, priming
+  included.
 
 On a fast desktop nearly all of the time is the Kivy import and the audio backend, with
-playlist generation a small fraction. If a practice laptop shows a different balance, the
-timings say so rather than leaving it to guesswork.
+playlist generation a small fraction. A cold start on a laptop can multiply the first two
+many times over; if it does, see
+[Slow first launch on Windows](#slow-first-launch-on-windows).
 
 ---
 
