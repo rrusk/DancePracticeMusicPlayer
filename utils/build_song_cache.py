@@ -35,6 +35,7 @@ sys.path.insert(0, REPO_DIR)
 
 # pylint: disable=wrong-import-position
 import app_paths
+app_paths.require_venv("tinytag")   # re-runs under kivy_venv, or says how to activate it
 import practice_type_rules
 from tinytag import TinyTag, TinyTagException
 from song_cache import SongCache, DEFAULT_CACHE_FILE, CACHED_FIELDS

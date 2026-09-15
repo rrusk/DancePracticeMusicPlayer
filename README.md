@@ -104,6 +104,12 @@ python -m pip install tinytag
 
 To exit the virtual environment, type `deactivate`.
 
+The launch scripts activate the environment themselves. The player and the
+utilities that need its packages (`utils/build_song_cache.py`,
+`utils/detect_duplicates.py`) also cope with being started outside it: if
+`kivy_venv` exists beside `music_player.py` they re-run themselves inside it,
+and if it does not they say so and point here.
+
 ### 3. Music Directory Setup
 
 The player assumes a specific music organization within your chosen `music_dir` folder. This directory should contain sub-folders, each named after a dance type, containing the corresponding music files:

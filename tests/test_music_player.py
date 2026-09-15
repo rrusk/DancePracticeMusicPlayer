@@ -2865,6 +2865,64 @@ class TestAppPathsPlatforms(unittest.TestCase):
                           app_paths.default_user_data_dir())
 
 
+class TestRequireVenv(unittest.TestCase):
+    """A script started outside kivy_venv gets into it, or is told how."""
+
+    def _run(self, missing=True, venv="/proj/kivy_venv/bin/python", inside=False, rerun=False):
+        find_spec = lambda name: None if missing else object()  # noqa: E731
+        env = {"DPMP_VENV_RERUN": "1"} if rerun else {}
+        prefix = "/proj/kivy_venv" if inside else "/usr"
+        with patch.object(app_paths.importlib.util, "find_spec", side_effect=find_spec), \
+                patch.object(app_paths, "venv_python", return_value=venv), \
+                patch.object(app_paths, "VENV_DIR", "/proj/kivy_venv"), \
+                patch.object(app_paths.sys, "prefix", prefix), \
+                patch.object(app_paths.sys, "argv", ["utils/build_song_cache.py", "--prune"]), \
+                patch.dict(app_paths.os.environ, env, clear=False), \
+                patch.object(app_paths.subprocess, "call", return_value=7) as call, \
+                patch("sys.stderr") as stderr:
+            if rerun:
+                app_paths.os.environ["DPMP_VENV_RERUN"] = "1"
+            else:
+                app_paths.os.environ.pop("DPMP_VENV_RERUN", None)
+            try:
+                app_paths.require_venv("tinytag")
+            except SystemExit as exit_:
+                return exit_.code, call, " ".join(str(c) for c in stderr.write.call_args_list)
+            return None, call, ""
+
+    def test_nothing_happens_when_the_package_is_importable(self):
+        code, call, _ = self._run(missing=False)
+        self.assertIsNone(code)
+        call.assert_not_called()
+
+    def test_outside_the_venv_the_script_is_rerun_inside_it(self):
+        code, call, _ = self._run()
+        self.assertEqual(code, 7)                       # the re-run's exit status
+        args, kwargs = call.call_args
+        self.assertEqual(args[0], ["/proj/kivy_venv/bin/python",
+                                   "utils/build_song_cache.py", "--prune"])
+        self.assertEqual(kwargs["env"]["DPMP_VENV_RERUN"], "1")
+
+    def test_inside_a_venv_that_lacks_the_package_says_what_to_install(self):
+        code, call, message = self._run(inside=True)
+        self.assertEqual(code, 1)
+        call.assert_not_called()
+        self.assertIn("pip install tinytag", message)
+
+    def test_a_rerun_does_not_rerun_again(self):
+        code, call, message = self._run(rerun=True)
+        self.assertEqual(code, 1)
+        call.assert_not_called()
+        self.assertIn("pip install tinytag", message)
+
+    def test_without_a_venv_the_message_points_at_the_readme(self):
+        code, call, message = self._run(venv=None)
+        self.assertEqual(code, 1)
+        call.assert_not_called()
+        self.assertIn("Set Up Python Environment", message)
+        self.assertIn("activate", message)
+
+
 class TestAppPathsFallbackFailures(unittest.TestCase):
     """What happens when even the fallback cannot be used."""
 

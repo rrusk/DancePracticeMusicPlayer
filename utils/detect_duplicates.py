@@ -13,8 +13,15 @@ For example, it can match "A Wink and a Smile" with
 import os
 import re
 import argparse
+import sys
 from collections import defaultdict
-from tinytag import TinyTag, TinyTagException
+
+# tinytag lives in the player's virtual environment; started outside it, the
+# script re-runs itself inside it, or says how to activate it.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import app_paths  # pylint: disable=wrong-import-position
+app_paths.require_venv("tinytag")
+from tinytag import TinyTag, TinyTagException  # pylint: disable=wrong-import-position
 
 # Supported audio file extensions
 AUDIO_EXTENSIONS = ('.mp3', '.flac', '.wav', '.m4a', '.ogg')

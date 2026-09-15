@@ -22,10 +22,16 @@ directory is protected it is the very operation antivirus software intercepts.
 
 Read-only assets -- `announce/`, `cues/`, `icons/`, `builtin_practice_types.json`
 -- always stay with the application and are reached with `app_path`.
+
+Also here, because it is the one module every script imports first:
+`require_venv`, which gets a script started outside the project's virtual
+environment into it, or says how.
 """
+import importlib.util
 import os
 import shutil
 import stat
+import subprocess
 import sys
 
 APP_NAME = "DancePracticeMusicPlayer"
@@ -33,6 +39,7 @@ APP_NAME = "DancePracticeMusicPlayer"
 # The directory the application was installed or checked out into. Under
 # PyInstaller this is the bundle directory, which is where `datas` are placed.
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
+VENV_DIR = os.path.join(APP_DIR, "kivy_venv")
 
 _state_dir = None  # Resolved once, on first use.
 
@@ -175,3 +182,64 @@ def reset() -> None:
     """Forgets the resolved directory. For tests."""
     global _state_dir  # pylint: disable=global-statement
     _state_dir = None
+
+
+
+def venv_python() -> str | None:
+    """The interpreter of the project's virtual environment, or None if there is none."""
+    for candidate in (os.path.join(VENV_DIR, "Scripts", "python.exe"),
+                      os.path.join(VENV_DIR, "bin", "python")):
+        if os.path.isfile(candidate):
+            return candidate
+    return None
+
+
+def require_venv(*modules: str) -> None:
+    """Makes sure the packages a script needs are importable before it imports them.
+
+    Everything the player needs is installed in `kivy_venv` beside this file
+    (see the README). A script started outside it -- a double-clicked file, a
+    plain `python utils/...` in a fresh terminal -- otherwise dies with an
+    ImportError in the middle of its imports, which says nothing about the fix.
+
+    If a package is missing and the virtual environment exists, the script is
+    run again with the environment's interpreter, and this process exits with
+    that run's result. If there is no environment, or it lacks the package, the
+    message says how to activate or complete it.
+
+    Args:
+        modules: Top-level names of the packages the script imports, e.g.
+            "kivy", "tinytag".
+    """
+    missing = [name for name in modules if importlib.util.find_spec(name) is None]
+    if not missing:
+        return
+
+    script = os.path.basename(sys.argv[0]) or "this script"
+    python = venv_python()
+    # sys.prefix is the environment's directory when running inside one. The
+    # interpreter's path would not do: a venv's python is usually a symlink to
+    # the system's, so two different environments resolve to the same binary.
+    inside_venv = os.path.realpath(sys.prefix) == os.path.realpath(VENV_DIR)
+
+    if python is not None and not inside_venv and not os.environ.get("DPMP_VENV_RERUN"):
+        # Re-run under the environment. The marker stops a second attempt if
+        # the environment turns out to lack the package too.
+        env = dict(os.environ, DPMP_VENV_RERUN="1")
+        sys.exit(subprocess.call([python, *sys.argv], env=env))
+
+    packages = ", ".join(missing)
+    if python is None:
+        activate = ("kivy_venv\\Scripts\\activate" if os.name == "nt"
+                    else "source kivy_venv/bin/activate")
+        print(f"{script} needs {packages}, which is not installed for\n"
+              f"  {sys.executable}\n"
+              f"and there is no kivy_venv in {APP_DIR}.\n"
+              f"Create it as described in the README under \"Set Up Python Environment\",\n"
+              f"then activate it ({activate}) and run the script again.", file=sys.stderr)
+    else:
+        print(f"{script} needs {packages}, which is not installed in the project's\n"
+              f"virtual environment, {VENV_DIR}.\n"
+              f"Activate it and run:  python -m pip install {' '.join(missing)}",
+              file=sys.stderr)
+    sys.exit(1)

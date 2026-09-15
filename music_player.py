@@ -57,6 +57,10 @@ from functools import partial
 _START_TIME = time.perf_counter()
 TIMING_ENABLED = bool(os.environ.get("DPMP_TIMING"))
 
+# Started outside kivy_venv, the player re-runs itself inside it, or explains how.
+import app_paths
+app_paths.require_venv("kivy", "tinytag")
+
 # IMPORTANT: Kivy Config.set for graphics must be called BEFORE importing any other Kivy modules.
 from kivy.config import Config
 
@@ -98,7 +102,6 @@ from kivy.logger import Logger
 from kivy.metrics import dp
 from tinytag import TinyTag, TinyTagException
 
-import app_paths
 import practice_type_rules
 from song_cache import SongCache
 
