@@ -1868,10 +1868,18 @@ class MusicPlayer(BoxLayout):
         if start_playback and self.playlist:
             self.play_sound()
 
-        # Prime GStreamer on Windows after the very first playlist is loaded
+        # Kivy draws at the end of the frame, so this runs after the playlist has
+        # actually been painted -- the moment the operator sees it.
+        Clock.schedule_once(lambda _dt: timing_mark("playlist on screen"), 0)
+
+        # Prime GStreamer on Windows after the very first playlist is loaded --
+        # but not until it has been drawn. The first SoundLoader.load of the
+        # process initialises GStreamer and its plugin registry, which takes
+        # seconds on some laptops, and done here it would hold back the frame
+        # that shows the playlist for that long.
         if self._is_first_load and sys.platform == "win32":
-            self._prime_gstreamer()
             self._is_first_load = False
+            Clock.schedule_once(lambda _dt: self._prime_gstreamer(), 0)
 
     def _prime_gstreamer(self) -> None:
         """Workaround for GStreamer delay on Windows, called after first playlist is loaded."""
@@ -1880,7 +1888,10 @@ class MusicPlayer(BoxLayout):
                 return
 
             print("Priming GStreamer audio backend silently...")
-            if (temp_sound := SoundLoader.load(self.playlist[0]['path'])):
+            load_started = time.perf_counter()
+            temp_sound = SoundLoader.load(self.playlist[0]['path'])
+            timing_mark("audio backend primed (first SoundLoader.load)", load_started)
+            if temp_sound:
                 # Set volume to 0 to make the priming inaudible
                 self._sound_set_volume(0, temp_sound)
                 self._safe_sound_call("priming the audio backend", temp_sound.play)

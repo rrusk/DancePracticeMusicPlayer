@@ -2550,6 +2550,27 @@ class TestGStreamerPriming(unittest.TestCase):
         with patch("music_player.SoundLoader.load", side_effect=OSError("no device")):
             self.player._prime_gstreamer()          # must not raise
 
+    def test_priming_waits_for_the_playlist_to_be_drawn(self):
+        """The first SoundLoader.load initialises GStreamer, seconds on some
+        laptops; run inline it would hold back the frame showing the playlist."""
+        import music_player
+        self.player._display_playlist_buttons = MagicMock()
+        self.player.restart_playlist = MagicMock()
+        self.player._prime_gstreamer = MagicMock()
+        self.player._playlist_generation_in_progress = True
+        self.player._regeneration_pending = False
+        self.player._is_first_load = True
+        scheduled = []
+        with patch.object(music_player.sys, "platform", "win32"), \
+                patch("music_player.Clock.schedule_once",
+                      side_effect=lambda cb, t=0: scheduled.append(cb)):
+            self.player._finish_playlist_generation([], False, 0)
+            self.player._prime_gstreamer.assert_not_called()   # not in this frame
+            for callback in scheduled:                          # the next frame
+                callback(0)
+        self.player._prime_gstreamer.assert_called_once()
+        self.assertFalse(self.player._is_first_load)
+
 
 class TestSettingsLifecycle(unittest.TestCase):
     """Loading settings at startup and applying them when they change."""
