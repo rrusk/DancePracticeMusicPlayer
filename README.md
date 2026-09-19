@@ -567,6 +567,27 @@ playlist generation a small fraction. A cold start on a laptop can multiply the 
 many times over; if it does, see
 [Slow first launch on Windows](#slow-first-launch-on-windows).
 
+### Reading the log after a hang
+
+Playback is otherwise silent in the log, so the player leaves a trace of its own, whether
+or not `DPMP_TIMING` is set:
+
+```text
+[MusicPlayer] audio: stopping Rumba-Song.mp3
+[MusicPlayer] audio: unloading Rumba-Song.mp3
+[MusicPlayer] audio: loading PasoDoble.ogg
+[MusicPlayer] playing 23/34 announce: PasoDoble.ogg [161 MB]
+[MusicPlayer] audio: starting PasoDoble.ogg
+```
+
+Every call into the audio backend is announced *before* it is made, and the `playing` line
+records each song's position in the playlist and the player's memory at that moment. If
+the player stops responding, the last line names the call that never returned -- a
+`stopping` or `unloading` that hangs means the audio device did not release the previous
+song; a `loading` or `starting` means it could not open the next -- and the `playing`
+lines say whether memory was climbing over the session. The Kivy log flushes each line, so
+this survives a forced power-off.
+
 ---
 
 ## Tests

@@ -900,6 +900,7 @@ class MusicPlayer(BoxLayout):
     def _load_sound(self, path: str) -> typing.Any:
         """Loads a sound file, returning None if the backend cannot handle it."""
         try:
+            Logger.info(f"MusicPlayer: audio: loading {os.path.basename(path)}")
             load_started = time.perf_counter()
             sound = SoundLoader.load(path)
             if self._is_first_load:
@@ -995,6 +996,14 @@ class MusicPlayer(BoxLayout):
 
         self._unschedule_progress_update()
         self._schedule_progress_update(current_song['duration'], play_length)
+
+        # Playback itself is silent in the log, so this is the trace of a
+        # practice: what started, when, and how much memory the player held.
+        memory = self._process_memory_mb()
+        Logger.info(
+            f"MusicPlayer: playing {self.playlist_idx + 1}/{len(self.playlist)} "
+            f"{current_song.get('dance', '?')}: {os.path.basename(current_song_path)}"
+            + (f" [{memory:.0f} MB]" if memory is not None else ""))
 
         self._playback_requested_at = time.perf_counter()
         self._apply_platform_specific_play()
@@ -1160,6 +1169,51 @@ class MusicPlayer(BoxLayout):
         self.progress_max = round(play_length)
 
     @staticmethod
+    def _sound_name(sound) -> str:
+        """The file name behind a sound object, for the log."""
+        source = getattr(sound, "source", None)
+        return os.path.basename(source) if isinstance(source, str) and source else "sound"
+
+    @staticmethod
+    def _process_memory_mb() -> typing.Optional[float]:
+        """This process's resident memory in MB, or None where it cannot be read.
+
+        Logged at every song start so that a two-hour practice leaves a memory
+        trace in the log, and a leak shows as a climbing figure without anyone
+        watching Task Manager.
+        """
+        try:
+            if sys.platform == "win32":
+                class Counters(ctypes.Structure):  # PROCESS_MEMORY_COUNTERS
+                    _fields_ = [("cb", ctypes.c_uint32), ("PageFaultCount", ctypes.c_uint32),
+                                ("PeakWorkingSetSize", ctypes.c_size_t),
+                                ("WorkingSetSize", ctypes.c_size_t),
+                                ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                                ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                                ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                                ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                                ("PagefileUsage", ctypes.c_size_t),
+                                ("PeakPagefileUsage", ctypes.c_size_t)]
+                counters = Counters()
+                counters.cb = ctypes.sizeof(Counters)
+                # Declared, because GetCurrentProcess returns the 64-bit pseudo
+                # handle -1, which ctypes would otherwise truncate to a C int.
+                kernel32, psapi = ctypes.windll.kernel32, ctypes.windll.psapi
+                kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+                psapi.GetProcessMemoryInfo.argtypes = [
+                    ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32]
+                psapi.GetProcessMemoryInfo.restype = ctypes.c_int
+                if not psapi.GetProcessMemoryInfo(
+                        kernel32.GetCurrentProcess(), ctypes.byref(counters), counters.cb):
+                    return None
+                return counters.WorkingSetSize / 1e6
+            with open("/proc/self/statm", encoding="ascii") as handle:
+                resident_pages = int(handle.read().split()[1])
+            return resident_pages * os.sysconf("SC_PAGE_SIZE") / 1e6
+        except Exception:  # pylint: disable=broad-except
+            return None
+
+    @staticmethod
     def _safe_sound_call(description: str, function, *args, default=None):
         """Calls into the audio backend, containing any exception it raises.
 
@@ -1191,6 +1245,9 @@ class MusicPlayer(BoxLayout):
             sound.stop()
             return True
 
+        # Announced before the call: a stop that never returns -- the audio
+        # device not releasing -- leaves this as the log's last line.
+        Logger.info(f"MusicPlayer: audio: stopping {self._sound_name(sound)}")
         return bool(self._safe_sound_call("stopping playback", stop, default=False))
 
     def _sound_unload(self, sound=None) -> bool:
@@ -1211,6 +1268,7 @@ class MusicPlayer(BoxLayout):
             sound.unload()
             return True
 
+        Logger.info(f"MusicPlayer: audio: unloading {self._sound_name(sound)}")
         unloaded = bool(self._safe_sound_call("unloading the song", unload, default=False))
         if (on_eos := getattr(sound, "_on_gst_eos", None)) is not None:
             Clock.unschedule(on_eos)
@@ -1282,6 +1340,7 @@ class MusicPlayer(BoxLayout):
         try:
             if position > 0:
                 sound.seek(position)
+            Logger.info(f"MusicPlayer: audio: starting {self._sound_name(sound)}")
             sound.play()
             if position > 0:
                 # Some backends ignore a seek made before playback has begun.
@@ -1890,6 +1949,8 @@ class MusicPlayer(BoxLayout):
                 return
 
             print("Priming GStreamer audio backend silently...")
+            Logger.info("MusicPlayer: audio: priming with "
+                        f"{os.path.basename(self.playlist[0]['path'])}")
             load_started = time.perf_counter()
             temp_sound = SoundLoader.load(self.playlist[0]['path'])
             timing_mark("audio backend primed (first SoundLoader.load)", load_started)

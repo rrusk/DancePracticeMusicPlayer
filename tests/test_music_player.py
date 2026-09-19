@@ -2124,6 +2124,33 @@ class TestBackendCallIsolation(unittest.TestCase):
         self.player._sound_unload()
         self.player._sound_stop()
 
+    def test_each_call_into_the_backend_is_logged_before_it_is_made(self):
+        """A call that never returns -- the audio device wedged -- leaves the
+        announcement as the log's last line, naming the call."""
+        self.player.sound.source = "/m/Rumba/last.mp3"
+        order = []
+        self.player.sound.stop.side_effect = lambda: order.append("stop-called")
+        self.player.sound.unload.side_effect = lambda: order.append("unload-called")
+        with patch("music_player.Logger.info", side_effect=lambda m: order.append(m)):
+            self.player._sound_stop()
+            self.player._sound_unload()
+            self.player._start_sound(self.player.sound, 0)
+        self.assertEqual(order[:4], [
+            "MusicPlayer: audio: stopping last.mp3", "stop-called",
+            "MusicPlayer: audio: unloading last.mp3", "unload-called"])
+        self.assertIn("MusicPlayer: audio: starting last.mp3", order)
+
+    def test_a_sound_without_a_source_still_logs(self):
+        self.player.sound.source = None
+        with patch("music_player.Logger.info") as info:
+            self.player._sound_stop()
+        self.assertEqual(info.call_args.args[0], "MusicPlayer: audio: stopping sound")
+
+    def test_process_memory_reads_as_a_positive_number_here(self):
+        memory = MusicPlayer._process_memory_mb()
+        self.assertIsInstance(memory, float)
+        self.assertGreater(memory, 0)
+
     def test_unload_cancels_the_backends_pending_end_of_stream_callback(self):
         """Kivy's GStreamer backend queues its _on_gst_eos on the Clock from
         GStreamer's thread and its unload() drops the player without cancelling
@@ -2399,6 +2426,22 @@ class TestPlaySoundOrchestration(unittest.TestCase):
         self.player.play_sound()
         self.assertEqual(self.player.play_pause_button.background_normal,
                          PlayerConstants.ICON_PAUSE)
+
+    def test_each_song_start_is_logged_with_position_and_memory(self):
+        """Playback is otherwise silent in the log; after a hang this is how
+        the last song started, and the memory held, are known."""
+        with patch("music_player.Logger.info") as info, \
+                patch.object(MusicPlayer, "_process_memory_mb", return_value=123.4):
+            self.player.play_sound()
+        lines = [call.args[0] for call in info.call_args_list]
+        self.assertIn("MusicPlayer: playing 1/2 Waltz: a.mp3 [123 MB]", lines)
+
+    def test_memory_is_left_out_when_it_cannot_be_read(self):
+        with patch("music_player.Logger.info") as info, \
+                patch.object(MusicPlayer, "_process_memory_mb", return_value=None):
+            self.player.play_sound()
+        lines = [call.args[0] for call in info.call_args_list]
+        self.assertIn("MusicPlayer: playing 1/2 Waltz: a.mp3", lines)
 
     def test_the_title_and_highlight_follow_the_song(self):
         self.player.playlist_idx = 1
