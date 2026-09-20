@@ -576,12 +576,13 @@ or not `DPMP_TIMING` is set:
 [MusicPlayer] audio: stopping Rumba-Song.mp3
 [MusicPlayer] audio: unloading Rumba-Song.mp3
 [MusicPlayer] audio: loading PasoDoble.ogg
-[MusicPlayer] playing 23/34 announce: PasoDoble.ogg [161 MB]
+[MusicPlayer] playing 23/34 announce: PasoDoble.ogg [161 MB] at 13:52:10 (+1:50:03)
 [MusicPlayer] audio: starting PasoDoble.ogg
 ```
 
 Every call into the audio backend is announced *before* it is made, and the `playing` line
-records each song's position in the playlist and the player's memory at that moment. If
+records each song's position in the playlist, the player's memory at that moment, the
+time of day and the time since launch (Kivy's log lines have no timestamp of their own). If
 the player stops responding, the last line names the call that never returned -- a
 `stopping` or `unloading` that hangs means the audio device did not release the previous
 song; a `loading` or `starting` means it could not open the next -- and the `playing`

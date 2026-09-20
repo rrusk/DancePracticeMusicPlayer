@@ -2434,14 +2434,17 @@ class TestPlaySoundOrchestration(unittest.TestCase):
                 patch.object(MusicPlayer, "_process_memory_mb", return_value=123.4):
             self.player.play_sound()
         lines = [call.args[0] for call in info.call_args_list]
-        self.assertIn("MusicPlayer: playing 1/2 Waltz: a.mp3 [123 MB]", lines)
+        line = next(l for l in lines if l.startswith("MusicPlayer: playing"))
+        self.assertRegex(line, r"^MusicPlayer: playing 1/2 Waltz: a\.mp3 \[123 MB\] "
+                               r"at \d\d:\d\d:\d\d \(\+\d\d:\d\d(:\d\d)?\)$")
 
     def test_memory_is_left_out_when_it_cannot_be_read(self):
         with patch("music_player.Logger.info") as info, \
                 patch.object(MusicPlayer, "_process_memory_mb", return_value=None):
             self.player.play_sound()
         lines = [call.args[0] for call in info.call_args_list]
-        self.assertIn("MusicPlayer: playing 1/2 Waltz: a.mp3", lines)
+        line = next(l for l in lines if l.startswith("MusicPlayer: playing"))
+        self.assertRegex(line, r"^MusicPlayer: playing 1/2 Waltz: a\.mp3 at \d\d:\d\d:\d\d ")
 
     def test_the_title_and_highlight_follow_the_song(self):
         self.player.playlist_idx = 1

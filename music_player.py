@@ -999,11 +999,16 @@ class MusicPlayer(BoxLayout):
 
         # Playback itself is silent in the log, so this is the trace of a
         # practice: what started, when, and how much memory the player held.
+        # Kivy's log lines carry no timestamp, so the time goes in the line:
+        # the clock, to match against what people remember and against the
+        # system's event log, and the time since launch.
         memory = self._process_memory_mb()
         Logger.info(
             f"MusicPlayer: playing {self.playlist_idx + 1}/{len(self.playlist)} "
             f"{current_song.get('dance', '?')}: {os.path.basename(current_song_path)}"
-            + (f" [{memory:.0f} MB]" if memory is not None else ""))
+            + (f" [{memory:.0f} MB]" if memory is not None else "")
+            + f" at {time.strftime('%H:%M:%S')} "
+            f"(+{self._secs_to_time_str(time.perf_counter() - _START_TIME)})")
 
         self._playback_requested_at = time.perf_counter()
         self._apply_platform_specific_play()
