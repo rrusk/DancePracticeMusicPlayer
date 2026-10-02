@@ -189,12 +189,13 @@
         "dance_max_playtimes": {
             "VienneseWaltz": 150
         },
+        "min_song_play_seconds": 120,
         "dance_minutes": {
-            "Waltz": 13,
-            "Tango": 13,
-            "VienneseWaltz": 8,
-            "Foxtrot": 13,
-            "QuickStep": 10
+            "Waltz": 13.68,
+            "Tango": 13.68,
+            "VienneseWaltz": 8.42,
+            "Foxtrot": 13.68,
+            "QuickStep": 10.54
         },
         "dance_intros": {
             "default": "gap_10"

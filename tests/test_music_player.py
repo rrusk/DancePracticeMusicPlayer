@@ -32,7 +32,7 @@ import practice_type_rules
 
 FADE = PlayerConstants.FADE_TIME
 MAX_TRIM = PlayerConstants.MAX_TRIM_SECONDS
-MIN_PLAY = PlayerConstants.MIN_SONG_PLAY_SECONDS
+MIN_PLAY = practice_type_rules.DEFAULT_MIN_SONG_PLAY_SECONDS
 
 
 class TestMusicPlayerLogic(unittest.TestCase):
@@ -129,7 +129,7 @@ class TestMusicPlayerLogic(unittest.TestCase):
 
     def test_set_practice_type_60min(self):
         """Tests that properties are set correctly for the '60min' practice type."""
-        self.player.set_practice_type(None, "60min")
+        self.player.set_practice_type(None, PlayerConstants.PRACTICE_TYPE_60_MIN)
 
         self.assertEqual(self.player.num_selections, 2)
         self.assertEqual(self.player.randomize_playlist, True)
@@ -140,7 +140,7 @@ class TestMusicPlayerLogic(unittest.TestCase):
 
     def test_set_practice_type_nc_60min(self):
         """Tests that properties are set correctly for the 'NC 60min' practice type."""
-        self.player.set_practice_type(None, "NC 60min")
+        self.player.set_practice_type(None, PlayerConstants.PRACTICE_TYPE_NC_60_MIN)
 
         self.assertEqual(self.player.num_selections, 2)
         self.assertEqual(self.player.dances, self.player.practice_dances["newcomer"])
@@ -363,7 +363,7 @@ class TestTimedBlockAssembly(unittest.TestCase):
 
     def setUp(self):
         self.player = MusicPlayer.__new__(MusicPlayer)
-        self.player.song_max_playtime = 210
+        self.player.song_max_playtime = PlayerConstants.DEFAULT_SONG_MAX_PLAYTIME
         self.player.current_dance_max_playtimes = {}
         self.player.current_dance_minutes = {"Waltz": 13}
         self.player.play_all_songs = False
@@ -618,7 +618,7 @@ class TestPlayLength(unittest.TestCase):
     def setUp(self):
         self.player = MusicPlayer.__new__(MusicPlayer)
         self.player.play_single_song = False
-        self.player.song_max_playtime = 210
+        self.player.song_max_playtime = PlayerConstants.DEFAULT_SONG_MAX_PLAYTIME
         self.player.current_dance_max_playtimes = {"Waltz": 150}
 
     def test_a_song_within_its_allowance_plays_in_full(self):
@@ -666,7 +666,7 @@ class TestMaxPlaytimeChange(unittest.TestCase):
     def setUp(self):
         self.player = MusicPlayer.__new__(MusicPlayer)
         self.player.play_single_song = False
-        self.player.song_max_playtime = 210
+        self.player.song_max_playtime = PlayerConstants.DEFAULT_SONG_MAX_PLAYTIME
         self.player.current_dance_max_playtimes = {"Tango": 120}
         self.player.current_dance_minutes = {}
         self.player.current_segments = []
@@ -735,7 +735,7 @@ class TestRoundAssembly(unittest.TestCase):
 
     def setUp(self):
         self.player = MusicPlayer.__new__(MusicPlayer)
-        self.player.song_max_playtime = 210
+        self.player.song_max_playtime = PlayerConstants.DEFAULT_SONG_MAX_PLAYTIME
         self.player.current_dance_max_playtimes = {}
         self.player.practice_type = "Comp Rounds"
         self.player._load_play_history = MagicMock(return_value={})
@@ -905,7 +905,7 @@ class TestFullRoundsPlaylist(unittest.TestCase):
             practice_types["Comp Rounds"]["segments"])
 
         self.player = MusicPlayer.__new__(MusicPlayer)
-        self.player.song_max_playtime = 210
+        self.player.song_max_playtime = PlayerConstants.DEFAULT_SONG_MAX_PLAYTIME
         self.player.current_dance_max_playtimes = {}
         self.player.practice_type = "Comp Rounds"
         self.player._load_play_history = MagicMock(return_value={})
@@ -960,7 +960,7 @@ class TestRoundsRouting(unittest.TestCase):
         self.player.current_dance_minutes = {}
         self.player.current_segments = []
         self.player.practice_type = "test"
-        self.player.song_max_playtime = 210
+        self.player.song_max_playtime = PlayerConstants.DEFAULT_SONG_MAX_PLAYTIME
         self.player._build_segment_playlist = MagicMock(return_value=["segmented"])
         self.player._get_songs_for_dance = MagicMock(return_value=["counted"])
 
@@ -1011,7 +1011,7 @@ class TestGenerationTiming(unittest.TestCase):
         self.player.current_dance_minutes = {}
         self.player.current_segments = []
         self.player.practice_type = "test"
-        self.player.song_max_playtime = 210
+        self.player.song_max_playtime = PlayerConstants.DEFAULT_SONG_MAX_PLAYTIME
         self.player.current_dance_max_playtimes = {}
         self.player.current_dance_adjustments = {}
         self.player.adjust_song_counts_for_playlist = False
@@ -1073,7 +1073,7 @@ class TestMinimumSongLength(unittest.TestCase):
 
     def setUp(self):
         self.player = MusicPlayer.__new__(MusicPlayer)
-        self.player.song_max_playtime = 210
+        self.player.song_max_playtime = PlayerConstants.DEFAULT_SONG_MAX_PLAYTIME
         self.player.current_dance_max_playtimes = {}
         self.player.current_dance_minutes = {}
         self.player.current_dance_adjustments = {}
@@ -1261,14 +1261,14 @@ class TestGenerationSnapshot(unittest.TestCase):
         self.player.current_dance_max_playtimes = {}
         self.player.current_dance_minutes = {}
         self.player.current_segments = []
-        self.player.song_max_playtime = 210
+        self.player.song_max_playtime = PlayerConstants.DEFAULT_SONG_MAX_PLAYTIME
         self.player._generation_config = None
 
     def tearDown(self):
         self.player._generation_config = None
 
     def test_live_values_are_used_when_nothing_is_generating(self):
-        self.assertEqual(self.player._setting('song_max_playtime'), 210)
+        self.assertEqual(self.player._setting('song_max_playtime'), PlayerConstants.DEFAULT_SONG_MAX_PLAYTIME)
         self.player.song_max_playtime = 150
         self.assertEqual(self.player._setting('song_max_playtime'), 150)
 
@@ -1281,7 +1281,7 @@ class TestGenerationSnapshot(unittest.TestCase):
         self.player.current_dance_minutes = {"Waltz": 13}
         self.player.play_all_songs = True
 
-        self.assertEqual(self.player._setting('song_max_playtime'), 210)
+        self.assertEqual(self.player._setting('song_max_playtime'), PlayerConstants.DEFAULT_SONG_MAX_PLAYTIME)
         self.assertEqual(self.player._setting('current_segments'), [])
         self.assertEqual(self.player._setting('current_dance_minutes'), {})
         self.assertFalse(self.player._setting('play_all_songs'))
@@ -1317,7 +1317,7 @@ class TestQueuedRegeneration(unittest.TestCase):
         for name in MusicPlayer.GENERATION_SETTINGS:
             if not hasattr(self.player, name):
                 setattr(self.player, name, {} if name.startswith("current") else False)
-        self.player.song_max_playtime = 210
+        self.player.song_max_playtime = PlayerConstants.DEFAULT_SONG_MAX_PLAYTIME
         self.player.practice_type = "60min"
 
     def test_request_during_generation_is_queued(self):
@@ -1586,7 +1586,7 @@ class TestWorkerFailureRecovery(unittest.TestCase):
     def setUp(self):
         self.player = MusicPlayer.__new__(MusicPlayer)
         self.player._playlist_generation_in_progress = True
-        self.player._generation_config = {"song_max_playtime": 210}
+        self.player._generation_config = {"song_max_playtime": PlayerConstants.DEFAULT_SONG_MAX_PLAYTIME}
         self.player._regeneration_pending = True
         self.player._regeneration_start_playback = True
         self.player.playlist = [{"path": "/m/keep.mp3", "dance": "Waltz"}]
@@ -1627,22 +1627,30 @@ class TestMalformedConfig(unittest.TestCase):
 
     def test_valid_values_are_read(self):
         self.app.config.set("user", "song_max_playtime", "150")
-        self.assertEqual(self.app._config_number("user", "song_max_playtime", int, 210), 150)
+        self.assertEqual(self.app._config_number(
+            "user", "song_max_playtime", int,
+            PlayerConstants.DEFAULT_SONG_MAX_PLAYTIME), 150)
 
     def test_malformed_value_falls_back_instead_of_raising(self):
         self.app.config.set("user", "song_max_playtime", "abc")
         self.app.config.write = MagicMock()
-        self.assertEqual(self.app._config_number("user", "song_max_playtime", int, 210), 210)
+        self.assertEqual(self.app._config_number(
+            "user", "song_max_playtime", int,
+            PlayerConstants.DEFAULT_SONG_MAX_PLAYTIME), 210)
 
     def test_malformed_value_is_repaired_in_the_file(self):
         self.app.config.set("user", "volume", "loud")
         self.app.config.write = MagicMock()
-        self.app._config_number("user", "volume", float, 0.7)
+        self.app._config_number(
+            "user", "volume", float, PlayerConstants.DEFAULT_VOLUME)
         self.app.config.write.assert_called_once()
-        self.assertEqual(self.app.config.get("user", "volume"), "0.7")
+        self.assertEqual(
+            self.app.config.get("user", "volume"),
+            str(PlayerConstants.DEFAULT_VOLUME))
 
     def test_missing_value_uses_the_default(self):
-        self.assertEqual(self.app._config_number("user", "volume", float, 0.7), 0.7)
+        self.assertEqual(self.app._config_number(
+            "user", "volume", float, PlayerConstants.DEFAULT_VOLUME), 0.7)
 
 
 class TestUnplayableSongs(unittest.TestCase):
@@ -1920,7 +1928,7 @@ class TestUndecodableFilesAreExcluded(unittest.TestCase):
     def setUp(self):
         self.player = MusicPlayer.__new__(MusicPlayer)
         self.player.current_dance_max_playtimes = {}
-        self.player.song_max_playtime = 210
+        self.player.song_max_playtime = PlayerConstants.DEFAULT_SONG_MAX_PLAYTIME
         self.player._generation_config = None
 
     def _with_duration(self, duration):
@@ -2186,7 +2194,9 @@ class TestBackendCallIsolation(unittest.TestCase):
         type(self.player.sound).volume = property(
             lambda self: (_ for _ in ()).throw(RuntimeError("backend gone")))
         try:
-            self.assertEqual(self.player._sound_volume(default=0.7), 0.7)
+            self.assertEqual(
+                self.player._sound_volume(default=PlayerConstants.DEFAULT_VOLUME),
+                PlayerConstants.DEFAULT_VOLUME)
         finally:
             del type(self.player.sound).volume
 
@@ -2271,7 +2281,9 @@ class TestPracticeTypeNormalisation(unittest.TestCase):
     def test_num_selections_is_coerced_and_floored(self):
         self.assertEqual(self._normalize({"num_selections": "3"})["num_selections"], 3)
         self.assertEqual(self._normalize({"num_selections": 0})["num_selections"], 1)
-        self.assertEqual(self._normalize({"num_selections": "many"})["num_selections"], 2)
+        self.assertEqual(
+            self._normalize({"num_selections": "many"})["num_selections"],
+            practice_type_rules.DEFAULT_NUM_SELECTIONS)
 
     def test_segments_not_a_list_becomes_empty(self):
         self.assertEqual(self._normalize({"segments": {}})["segments"], [])
@@ -2626,7 +2638,7 @@ class TestSettingsLifecycle(unittest.TestCase):
         self.player = MusicPlayer.__new__(MusicPlayer)
         self.player.volume_slider = MagicMock()
         self.player.settings_json = [{"key": "practice_type",
-                                      "options": ["60min", "Comp Rounds"]}]
+                                      "options": [PlayerConstants.PRACTICE_TYPE_60_MIN, "Comp Rounds"]}]
         self.player.update_settings_options = MagicMock()
         self.player.update_playlist = MagicMock()
         self.player.set_practice_type = MagicMock()
@@ -2654,7 +2666,8 @@ class TestSettingsLifecycle(unittest.TestCase):
 
         config = ConfigParser()
         config.setdefaults("user", {
-            "volume": 0.7, "music_dir": "/music", "song_max_playtime": 210,
+            "volume": PlayerConstants.DEFAULT_VOLUME, "music_dir": "/music",
+            "song_max_playtime": PlayerConstants.DEFAULT_SONG_MAX_PLAYTIME,
             "practice_type": "60min",
         })
         panel = settings.create_json_panel(
@@ -2679,7 +2692,8 @@ class TestSettingsLifecycle(unittest.TestCase):
 
     def test_an_unknown_practice_type_falls_back_and_is_rewritten(self):
         """A practice type deleted since last run, or one from the other fork."""
-        self._set(volume=0.7, music_dir="/music", song_max_playtime=210,
+        self._set(volume=PlayerConstants.DEFAULT_VOLUME, music_dir="/music",
+                  song_max_playtime=PlayerConstants.DEFAULT_SONG_MAX_PLAYTIME,
                   practice_type="Something Removed")
         self.app._load_config_settings()
         self.assertEqual(self.player.practice_type, PlayerConstants.PRACTICE_TYPE_60_MIN)
@@ -2700,9 +2714,9 @@ class TestSettingsLifecycle(unittest.TestCase):
         self.assertEqual(self.player.volume_slider.value, 0.25)
 
     def test_an_invalid_volume_is_ignored_rather_than_raising(self):
-        self.player.volume = 0.7
+        self.player.volume = PlayerConstants.DEFAULT_VOLUME
         self.app.on_config_change(self.app.config, "user", "volume", "loud")
-        self.assertEqual(self.player.volume, 0.7)
+        self.assertEqual(self.player.volume, PlayerConstants.DEFAULT_VOLUME)
 
     def test_changing_the_music_directory_rebuilds_the_playlist(self):
         self.app.on_config_change(self.app.config, "user", "music_dir", "/other")
@@ -2714,7 +2728,7 @@ class TestSettingsLifecycle(unittest.TestCase):
         self.assertEqual(self.player.song_max_playtime, 150)
 
     def test_an_invalid_max_playtime_is_ignored(self):
-        self.player.song_max_playtime = 210
+        self.player.song_max_playtime = PlayerConstants.DEFAULT_SONG_MAX_PLAYTIME
         self.app.on_config_change(self.app.config, "user", "song_max_playtime", "ages")
         self.assertEqual(self.player.song_max_playtime, 210)
 
@@ -3100,7 +3114,7 @@ class TestStrictSegmentBooleans(unittest.TestCase):
 
     def test_a_boolean_num_selections_is_rejected(self):
         clean = MusicPlayer._normalize_practice_type("T", {"num_selections": True})
-        self.assertEqual(clean["num_selections"], 2)
+        self.assertEqual(clean["num_selections"], practice_type_rules.DEFAULT_NUM_SELECTIONS)
 
     def test_a_boolean_clip_length_is_rejected(self):
         self.assertEqual(
@@ -3158,12 +3172,12 @@ class TestNonFiniteNumbers(unittest.TestCase):
         """int(inf) raises OverflowError, which used to escape validation."""
         clean = MusicPlayer._normalize_practice_type(
             "T", {"num_selections": float("inf")})
-        self.assertEqual(clean["num_selections"], 2)
+        self.assertEqual(clean["num_selections"], practice_type_rules.DEFAULT_NUM_SELECTIONS)
 
     def test_negative_infinity_and_nan_are_rejected(self):
         for value in (float("-inf"), float("nan")):
             clean = MusicPlayer._normalize_practice_type("T", {"num_selections": value})
-            self.assertEqual(clean["num_selections"], 2)
+            self.assertEqual(clean["num_selections"], practice_type_rules.DEFAULT_NUM_SELECTIONS)
 
     def test_an_infinite_count_rejects_the_segment(self):
         self.assertEqual(
@@ -3189,7 +3203,7 @@ class TestNonFiniteNumbers(unittest.TestCase):
         """json.loads accepts the literal Infinity, so this reaches validation."""
         data = json.loads('{"num_selections": Infinity, "dances": ["Waltz"]}')
         clean = MusicPlayer._normalize_practice_type("T", data)
-        self.assertEqual(clean["num_selections"], 2)
+        self.assertEqual(clean["num_selections"], practice_type_rules.DEFAULT_NUM_SELECTIONS)
 
 
 class TestFractionalNumbers(unittest.TestCase):
@@ -3206,7 +3220,7 @@ class TestFractionalNumbers(unittest.TestCase):
 
     def test_a_fractional_num_selections_is_rejected(self):
         clean = MusicPlayer._normalize_practice_type("T", {"num_selections": 3.5})
-        self.assertEqual(clean["num_selections"], 2)
+        self.assertEqual(clean["num_selections"], practice_type_rules.DEFAULT_NUM_SELECTIONS)
 
     def test_a_whole_number_written_as_a_float_is_accepted(self):
         clean = MusicPlayer._normalize_practice_type("T", {"num_selections": 4.0})
@@ -3400,7 +3414,7 @@ class TestDanceIntros(unittest.TestCase):
         self.player = MusicPlayer.__new__(MusicPlayer)
         self.player._generation_config = None
         self.player.current_dance_intros = {}
-        self.player.song_max_playtime = 210
+        self.player.song_max_playtime = PlayerConstants.DEFAULT_SONG_MAX_PLAYTIME
         self.player.current_dance_max_playtimes = {}
         self.player._get_announce_path = MagicMock(
             side_effect=lambda dance: f"/announce/{dance}.ogg")
@@ -3519,6 +3533,31 @@ class TestPracticeTypeMappingIsByName(unittest.TestCase):
         })
         self.player.merge_custom_practice_types()
 
+    def test_reload_removes_a_deleted_type_from_memory(self):
+        self.player.practice_dances["Gone"] = ["Foxtrot"]
+        self.player.custom_practice_mapping["Gone"] = {
+            "dance_type": "Gone", "dances": ["Foxtrot"]
+        }
+        self.player.settings_json[0]["options"].append("Gone")
+
+        self.player.load_custom_practice_types.return_value = {
+            "Mine": {"dances": ["Tango", "Jive"], "num_selections": 3}
+        }
+        self.player.merge_custom_practice_types()
+
+        self.assertNotIn("Gone", self.player.custom_practice_mapping)
+        self.assertNotIn("Gone", self.player.practice_dances)
+        self.assertNotIn("Gone", self.player.settings_json[0]["options"])
+        self.assertIn("Mine", self.player.custom_practice_mapping)
+
+    def test_reload_rebuilds_changed_definition(self):
+        self.player.load_custom_practice_types.return_value = {
+            "Mine": {"dances": ["Foxtrot"], "num_selections": 1}
+        }
+        self.player.merge_custom_practice_types()
+        self.assertEqual(self.player.practice_dances["Mine"], ["Foxtrot"])
+        self.assertEqual(self.player.custom_practice_mapping["Mine"]["num_selections"], 1)
+
     def test_every_field_reaches_the_player(self):
         self.player.set_practice_type(None, "Mine")
         self.assertEqual(self.player.num_selections, 3)
@@ -3551,6 +3590,13 @@ class TestPracticeTypeOrder(unittest.TestCase):
         self.player.load_custom_practice_types = MagicMock(return_value=types)
         self.player.update_settings_options()
         return self.player.settings_json[0]["options"]
+
+    def test_deleted_active_type_falls_back_to_builtin_default(self):
+        self.player.practice_type = "Gone"
+        self.player.load_custom_practice_types = MagicMock(return_value={"Still Here": {}})
+        self.player.update_settings_options()
+        self.assertEqual(self.player.practice_type, PlayerConstants.PRACTICE_TYPE_60_MIN)
+        self.assertNotIn("Gone", self.player.settings_json[0]["options"])
 
     def test_types_without_an_order_keep_their_file_position(self):
         options = self._options({"First": {}, "Second": {}, "Third": {}})
@@ -3609,7 +3655,7 @@ class TestPracticeTypeOrder(unittest.TestCase):
 
     def test_a_nonsense_order_does_not_break_loading(self):
         clean = MusicPlayer._normalize_practice_type("T", {"order": "last"})
-        self.assertEqual(clean["order"], 0)
+        self.assertEqual(clean["order"], practice_type_rules.DEFAULT_PRACTICE_TYPE_ORDER)
 
 
 class TestRoundFade(unittest.TestCase):
@@ -3623,7 +3669,7 @@ class TestRoundFade(unittest.TestCase):
 
     def setUp(self):
         self.player = MusicPlayer.__new__(MusicPlayer)
-        self.player.song_max_playtime = 210
+        self.player.song_max_playtime = PlayerConstants.DEFAULT_SONG_MAX_PLAYTIME
         self.player.current_dance_max_playtimes = {}
         self.player.practice_type = "Test"
         self.player._generation_config = None

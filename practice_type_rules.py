@@ -22,6 +22,12 @@ INTRO_NONE = "none"
 # The string formulas `_get_adjusted_song_count` understands.
 ADJUSTMENT_RULES = ("n-1", "cap_at_1", "cap_at_2")
 
+# Shared defaults for practice type definitions. Keeping these here gives the
+# player, editor, and tests one source of truth.
+DEFAULT_NUM_SELECTIONS = 2
+DEFAULT_PRACTICE_TYPE_ORDER = 0
+DEFAULT_MIN_SONG_PLAY_SECONDS = 90
+
 # Fields that must be true or false, with the value used when they are neither.
 BOOLEAN_DEFAULTS = {
     "play_all_songs": False,
@@ -358,22 +364,33 @@ def normalize_practice_type(name, data, warn=None):
         warn("'dances' contained entries that are not names; they were dropped.")
     clean["dances"] = valid_dances
 
-    selections = strict_int(clean.get("num_selections", 2), "'num_selections'")
+    selections = strict_int(
+        clean.get("num_selections", DEFAULT_NUM_SELECTIONS), "'num_selections'")
     if selections is None:
-        warn(f"'num_selections' is not a number ({clean.get('num_selections')!r}). Using 2.")
-        selections = 2
+        warn(f"'num_selections' is not a number ({clean.get('num_selections')!r}). "
+             f"Using {DEFAULT_NUM_SELECTIONS}.")
+        selections = DEFAULT_NUM_SELECTIONS
     if selections < 1:
         warn(f"'num_selections' must be at least 1 ({selections}). Using 1.")
         selections = 1
     clean["num_selections"] = selections
 
+    if "min_song_play_seconds" in clean:
+        min_play = strict_number(
+            clean["min_song_play_seconds"], "'min_song_play_seconds'", warn)
+        if min_play is None or min_play <= 0:
+            warn("'min_song_play_seconds' must be a positive number. Ignoring it.")
+            clean.pop("min_song_play_seconds", None)
+        else:
+            clean["min_song_play_seconds"] = min_play
+
     # Where this type sits in the practice type list. Everything defaults to 0
     # and keeps its position in the file; a higher number sinks to the bottom,
     # which is how the types actually in use are kept together at the end
     # whatever else has been added.
-    order = clean.get("order", 0)
+    order = clean.get("order", DEFAULT_PRACTICE_TYPE_ORDER)
     if (order := strict_int(order, "'order'", warn)) is None:
-        order = 0
+        order = DEFAULT_PRACTICE_TYPE_ORDER
     clean["order"] = order
 
     clean["dance_adjustments"] = validate_dance_adjustments(

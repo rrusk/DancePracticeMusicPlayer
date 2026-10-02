@@ -177,7 +177,7 @@ class PlayerConstants:
     MAX_CONSECUTIVE_START_FAILURES = 3
 
     MAX_TRIM_SECONDS = 45
-    MIN_SONG_PLAY_SECONDS = 60  # A song is never trimmed below this.
+    MIN_SONG_PLAY_SECONDS = practice_type_rules.DEFAULT_MIN_SONG_PLAY_SECONDS
 
     # --- Song selection ---
     # Songs shorter than this are passed over when a practice type picks a fixed
@@ -195,6 +195,11 @@ class PlayerConstants:
     # Practice Type Constants
     PRACTICE_TYPE_60_MIN = "60min"
     PRACTICE_TYPE_NC_60_MIN = "NC 60min"
+    BASE_PRACTICE_TYPES = (PRACTICE_TYPE_60_MIN, PRACTICE_TYPE_NC_60_MIN)
+
+    # User/config defaults
+    DEFAULT_VOLUME = 0.7
+    DEFAULT_SONG_MAX_PLAYTIME = 210
     
     # --- Competition rounds ---
     CUES_DIR = "cues"  # Folder holding gap/warning audio, see cues/make_cues.sh
@@ -318,7 +323,7 @@ class MusicPlayer(BoxLayout):
     # Kivy Properties
     sound = ObjectProperty(None, allownone=True)
     music_file = StringProperty(None)
-    volume = NumericProperty(0.7)
+    volume = NumericProperty(PlayerConstants.DEFAULT_VOLUME)
     music_dir = StringProperty("")
     progress_max = NumericProperty(100)
     progress_value = NumericProperty(0)
@@ -326,13 +331,15 @@ class MusicPlayer(BoxLayout):
     song_title = StringProperty(PlayerConstants.INIT_SONG_TITLE)
     play_single_song = BooleanProperty(False)
     play_all_songs = BooleanProperty(False)
-    song_max_playtime = NumericProperty(210)
+    song_max_playtime = NumericProperty(PlayerConstants.DEFAULT_SONG_MAX_PLAYTIME)
     auto_update_restart_playlist = BooleanProperty(False)
     randomize_playlist = BooleanProperty(True)
     adjust_song_counts_for_playlist = BooleanProperty(False)
     current_dance_adjustments = DictProperty({})
     current_dance_max_playtimes = DictProperty({})
     current_dance_minutes = DictProperty({})
+    current_min_song_play_seconds = NumericProperty(
+        PlayerConstants.MIN_SONG_PLAY_SECONDS)
     current_dance_intros = DictProperty({})
     current_segments = ListProperty([])
 
@@ -374,7 +381,7 @@ class MusicPlayer(BoxLayout):
     playlist_idx = NumericProperty(0)
     dances = ListProperty([])
     practice_type = StringProperty(PlayerConstants.PRACTICE_TYPE_60_MIN)
-    num_selections = NumericProperty(2)
+    num_selections = NumericProperty(practice_type_rules.DEFAULT_NUM_SELECTIONS)
 
     settings_json = [
         {
@@ -559,32 +566,37 @@ class MusicPlayer(BoxLayout):
 
     def merge_custom_practice_types(self) -> None:
         """
-        Merge all practice types (built-in + custom) into settings and internal mappings.
+        Reload all practice types (built-in + custom) into settings and internal mappings.
+
+        This is deliberately a rebuild rather than an incremental merge. If a custom
+        practice type was deleted from disk, keeping the previous in-memory mapping
+        would leave that deleted type selectable and usable until the application
+        restarted.
         """
         all_types = self._valid_practice_types()
-        if not all_types:
-            return
 
-        # 1. Update the 'Practice Type' dropdown options
+        # Remove every previously file-backed dance mapping before rebuilding it.
+        # The hard-coded "default" and "newcomer" mappings are not stored in
+        # custom_practice_mapping, so they are left untouched.
+        previous_names = set(getattr(self, "custom_practice_mapping", {}))
+        for name in previous_names:
+            self.practice_dances.pop(name, None)
+        self.custom_practice_mapping = {}
+
+        # Keep the settings options synchronized with the definitions that exist
+        # now. This also removes names that were deleted since the last reload.
         if (practice_type_setting := next(
             (item for item in self.settings_json if item.get("key") == "practice_type"), None
         )):
-            # Ensure we don't duplicate options that are already there
-            for name in all_types:
-                if name not in practice_type_setting["options"]:
-                    practice_type_setting["options"].append(name)
+            options = list(PlayerConstants.BASE_PRACTICE_TYPES)
+            for name in self._ordered_practice_types(all_types):
+                if name not in options:
+                    options.append(name)
+            practice_type_setting["options"] = options
 
-        # 2. Update internal mappings and practice_dances
-        if not hasattr(self, "custom_practice_mapping"):
-            self.custom_practice_mapping = {}
-            
+        # Rebuild the internal mappings from the current on-disk definitions.
         for name, data in self._ordered_practice_types(all_types).items():
-            # Update the list of dances for this practice type
             self.practice_dances[name] = data.get("dances", [])
-            
-            # Update the rules/adjustments mapping. The validated definition is
-            # stored as-is: this was a positional tuple, which had grown to
-            # eleven fields and one transposition away from a silent bug.
             self.custom_practice_mapping[name] = dict(data, dance_type=name)
 
     @staticmethod
@@ -619,7 +631,10 @@ class MusicPlayer(BoxLayout):
         where it was.
         """
         ordered = sorted(enumerate(all_types.items()),
-                         key=lambda item: (item[1][1].get("order", 0), item[0]))
+                         key=lambda item: (
+                             item[1][1].get(
+                                 "order", practice_type_rules.DEFAULT_PRACTICE_TYPE_ORDER),
+                             item[0]))
         return {name: data for _, (name, data) in ordered}
 
     def update_settings_options(self):
@@ -633,7 +648,7 @@ class MusicPlayer(BoxLayout):
             (item for item in self.settings_json if item.get("key") == "practice_type"), None
         )):
             # Start with the hardcoded base options
-            options = [PlayerConstants.PRACTICE_TYPE_60_MIN, PlayerConstants.PRACTICE_TYPE_NC_60_MIN]
+            options = list(PlayerConstants.BASE_PRACTICE_TYPES)
             
             # Append loaded types ONLY if they aren't already in the list.
             # This prevents "60min" from appearing twice (once as hardcoded base, once from JSON).
@@ -1729,6 +1744,7 @@ class MusicPlayer(BoxLayout):
         "current_dance_adjustments",
         "current_dance_max_playtimes",
         "current_dance_minutes",
+        "current_min_song_play_seconds",
         "current_dance_intros",
         "current_segments",
         "song_max_playtime",
@@ -2991,7 +3007,7 @@ class MusicPlayer(BoxLayout):
         planned = self._plan_timed_block(
             lengths, budget,
             PlayerConstants.MAX_TRIM_SECONDS,
-            PlayerConstants.MIN_SONG_PLAY_SECONDS,
+            self._setting('current_min_song_play_seconds'),
         )
         kept = drawn[:len(planned)]
 
@@ -3057,7 +3073,7 @@ class MusicPlayer(BoxLayout):
         elif shortfall < -1.0:
             print(f"    Warning: {dance} block is {-shortfall:.0f}s over. "
                   "Songs could not be trimmed further without going below "
-                  f"{PlayerConstants.MIN_SONG_PLAY_SECONDS}s.")
+                  f"{self._setting('current_min_song_play_seconds'):g}s.")
 
     def _get_songs_for_dance(
         self, directory: str, dance: str, num_selections: int, randomize: bool,
@@ -3144,7 +3160,8 @@ class MusicPlayer(BoxLayout):
             "JSlow": "cap_at_1", "VienneseWaltz": "n-1", "Jive": "n-1", "WCS": "cap_at_2"
         }
         builtin = {
-            "num_selections": 2, "adjust_song_counts": True,
+            "num_selections": practice_type_rules.DEFAULT_NUM_SELECTIONS,
+            "adjust_song_counts": True,
             "dance_adjustments": default_adjustments,
             "dance_max_playtimes": {"VienneseWaltz": 150},
         }
@@ -3162,7 +3179,8 @@ class MusicPlayer(BoxLayout):
             adj_dict = default_adjustments
 
         self.dances = self.get_dances(definition.get("dance_type", "default"))
-        self.num_selections = definition.get("num_selections", 2)
+        self.num_selections = definition.get(
+            "num_selections", practice_type_rules.DEFAULT_NUM_SELECTIONS)
         self.play_all_songs = definition.get("play_all_songs", False)
         self.auto_update_restart_playlist = definition.get("auto_update", False)
         self.play_single_song = definition.get("play_single_song", False)
@@ -3172,6 +3190,8 @@ class MusicPlayer(BoxLayout):
         self.current_dance_max_playtimes = definition.get("dance_max_playtimes", {})
         self.current_dance_minutes = self._validate_dance_minutes(
             definition.get("dance_minutes", {}), self.dances)
+        self.current_min_song_play_seconds = definition.get(
+            "min_song_play_seconds", PlayerConstants.MIN_SONG_PLAY_SECONDS)
         self.current_segments = self._validate_segments(definition.get("segments", []))
         self.current_dance_intros = practice_type_rules.validate_dance_intros(
             definition.get("dance_intros", {}), print)
@@ -3310,12 +3330,13 @@ class MusicApp(App):
         user_section = "user"
         if self.config.has_section(user_section):
             self.player_widget.volume = self._config_number(
-                user_section, "volume", float, 0.7)
+                user_section, "volume", float, PlayerConstants.DEFAULT_VOLUME)
             self.player_widget.music_dir = self.config.get(
                 user_section, "music_dir", fallback=""
             )
             self.player_widget.song_max_playtime = self._config_number(
-                user_section, "song_max_playtime", int, 210)
+                user_section, "song_max_playtime", int,
+                PlayerConstants.DEFAULT_SONG_MAX_PLAYTIME)
 
             self.player_widget.update_settings_options()
             practice_type_options = next(
@@ -3356,9 +3377,9 @@ class MusicApp(App):
         config.setdefaults(
             "user",
             {
-                "volume": 0.7,
+                "volume": PlayerConstants.DEFAULT_VOLUME,
                 "music_dir": self.DEFAULT_MUSIC_DIR,
-                "song_max_playtime": 210,
+                "song_max_playtime": PlayerConstants.DEFAULT_SONG_MAX_PLAYTIME,
                 "practice_type": PlayerConstants.PRACTICE_TYPE_60_MIN,
             },
         )

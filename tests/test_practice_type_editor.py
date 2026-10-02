@@ -23,6 +23,7 @@ os.environ["KIVY_NO_ARGS"] = "1"
 
 # pylint: disable=wrong-import-position
 from practice_type_editor import PracticeTypeEditorScreen
+import practice_type_rules
 
 BUILTIN = {
     "Silver+ Standard 60min": {
@@ -59,10 +60,16 @@ class EditorTestCase(unittest.TestCase):
         """The edit form, for filling in directly."""
         return self.screen.edit_form
 
-    def fill(self, name="New Practice", dances="Waltz, Tango", selections="2",
+    def fill(self, name="New Practice", dances="Waltz, Tango", selections=None,
              adjustments="", playtimes="", minutes="", segments="", intros="",
-             order="0"):
+             order=None, min_play=None):
         """Fills the form as a user would."""
+        if selections is None:
+            selections = str(practice_type_rules.DEFAULT_NUM_SELECTIONS)
+        if order is None:
+            order = str(practice_type_rules.DEFAULT_PRACTICE_TYPE_ORDER)
+        if min_play is None:
+            min_play = str(practice_type_rules.DEFAULT_MIN_SONG_PLAY_SECONDS)
         form = self.form()
         form.name_input.text = name
         form.dances_input.text = dances
@@ -74,6 +81,7 @@ class EditorTestCase(unittest.TestCase):
         form.adjust_song_counts_input.active = False
         form.dance_adjustments_input.text = adjustments
         form.dance_max_playtimes_input.text = playtimes
+        form.min_song_play_seconds_input.text = min_play
         form.dance_minutes_input.text = minutes
         form.segments_input.text = segments
         form.dance_intros_input.text = intros
@@ -137,6 +145,9 @@ class TestLoading(EditorTestCase):
         self.assertEqual(self.form().dances_input.text, "Waltz, Tango")
         self.assertEqual(self.form().num_selections_input.text, "4")
         self.assertIn("VienneseWaltz", self.form().dance_max_playtimes_input.text)
+        self.assertEqual(
+            self.form().min_song_play_seconds_input.text,
+            str(practice_type_rules.DEFAULT_MIN_SONG_PLAY_SECONDS))
 
 
 class TestSaving(EditorTestCase):
@@ -147,6 +158,11 @@ class TestSaving(EditorTestCase):
         self.screen.save_current_practice_type()
         self.assertIn("Evening Practice", self.saved())
         self.assertEqual(self.saved()["Evening Practice"]["dances"], ["Waltz", "Tango"])
+
+    def test_minimum_song_playtime_is_written(self):
+        self.fill(name="Timed Practice", min_play="120")
+        self.screen.save_current_practice_type()
+        self.assertEqual(self.saved()["Timed Practice"]["min_song_play_seconds"], 120.0)
 
     def test_saving_leaves_no_temporary_file(self):
         self.fill(name="Evening Practice")
@@ -216,6 +232,18 @@ class TestFieldValidation(EditorTestCase):
         self.assertEqual(self.popups[-1][0], "Invalid Practice Type")
         return self.popups[-1][1]
 
+    def test_zero_minimum_song_playtime_is_refused(self):
+        self.assertIn("positive", self._refused(min_play="0"))
+
+    def test_negative_minimum_song_playtime_is_refused(self):
+        self.assertIn("positive", self._refused(min_play="-1"))
+
+    def test_nan_minimum_song_playtime_is_refused(self):
+        self.assertIn("ordinary number", self._refused(min_play="nan"))
+
+    def test_infinite_minimum_song_playtime_is_refused(self):
+        self.assertIn("ordinary number", self._refused(min_play="inf"))
+
     def test_dance_max_playtimes_as_a_list_is_refused(self):
         self.assertIn("Dance Max Playtimes", self._refused(playtimes="[]"))
 
@@ -281,6 +309,14 @@ class TestDeleting(EditorTestCase):
         self.screen.current_practice_type_name = "Temporary"
         self.screen.delete_practice_type()
         self.assertNotIn("Temporary", self.saved())
+
+    def test_deleting_a_custom_type_marks_the_editor_changed(self):
+        self.fill(name="Temporary")
+        self.screen.save_current_practice_type()
+        self.screen.changes_saved_since_enter = False
+        self.screen.current_practice_type_name = "Temporary"
+        self.screen.delete_practice_type()
+        self.assertTrue(self.screen.changes_saved_since_enter)
 
     def test_deleting_an_override_restores_the_builtin(self):
         self.select("LineDance")
@@ -362,6 +398,19 @@ class TestReturningToThePlayer(EditorTestCase):
         self.screen.changes_saved_since_enter = True
         self.screen.go_back_to_player()
         self.manager.reload_custom_types.assert_called_once()
+
+    def test_deleting_a_type_then_returning_forces_a_reload(self):
+        self.fill(name="Temporary")
+        self.screen.save_current_practice_type()
+        self.screen.changes_saved_since_enter = False
+        self.screen.current_practice_type_name = "Temporary"
+        self.screen.delete_practice_type()
+
+        # delete_practice_type() clears the form, so no replacement type is selected.
+        self.assertIsNone(self.screen.current_practice_type_name)
+        self.screen.go_back_to_player()
+        self.manager.reload_custom_types.assert_called_once()
+        self.assertEqual(self.manager.current, "player")
 
     def test_looking_without_changing_anything_leaves_the_playlist_alone(self):
         self.screen.current_practice_type_name = "LineDance"

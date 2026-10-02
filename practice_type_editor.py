@@ -199,7 +199,8 @@ class PracticeTypeEditorScreen(Screen):
         self.edit_form.name_input.text = name
         self.edit_form.dances_input.text = ", ".join(data.get("dances", []))
         self.edit_form.num_selections_input.text = str(data.get("num_selections", 1))
-        self.edit_form.order_input.text = str(data.get("order", 0))
+        self.edit_form.order_input.text = str(
+            data.get("order", practice_type_rules.DEFAULT_PRACTICE_TYPE_ORDER))
         self.edit_form.play_all_songs_input.active = data.get("play_all_songs", False)
         self.edit_form.auto_update_input.active = data.get("auto_update", False)
         self.edit_form.play_single_song_input.active = data.get("play_single_song", False)
@@ -217,6 +218,10 @@ class PracticeTypeEditorScreen(Screen):
             self.edit_form.dance_max_playtimes_input.text = json.dumps(playtimes, indent=4)
         else:
             self.edit_form.dance_max_playtimes_input.text = ""
+
+        self.edit_form.min_song_play_seconds_input.text = str(
+            data.get("min_song_play_seconds",
+                     practice_type_rules.DEFAULT_MIN_SONG_PLAY_SECONDS))
 
         intros = data.get("dance_intros", {})
         if intros:
@@ -317,6 +322,12 @@ class PracticeTypeEditorScreen(Screen):
         if data["num_selections"] < 1:
             problems.append("Num Selections: must be at least 1.")
 
+        min_play = practice_type_rules.strict_number(
+            data.get("min_song_play_seconds"),
+            "Minimum Song Playtime", problems.append)
+        if min_play is not None and min_play <= 0:
+            problems.append("Minimum Song Playtime: must be positive.")
+
         for label, key in (("Dance Max Playtimes", "dance_max_playtimes"),
                            ("Dance Minutes", "dance_minutes")):
             value = data.get(key)
@@ -364,7 +375,9 @@ class PracticeTypeEditorScreen(Screen):
             new_data = {
                 "dances": [d.strip() for d in self.edit_form.dances_input.text.split(',')],
                 "num_selections": int(self.edit_form.num_selections_input.text),
-                "order": int(self.edit_form.order_input.text or 0),
+                "order": int(
+                    self.edit_form.order_input.text
+                    or practice_type_rules.DEFAULT_PRACTICE_TYPE_ORDER),
                 "play_all_songs": self.edit_form.play_all_songs_input.active,
                 "auto_update": self.edit_form.auto_update_input.active,
                 "play_single_song": self.edit_form.play_single_song_input.active,
@@ -374,6 +387,8 @@ class PracticeTypeEditorScreen(Screen):
                     self.edit_form.dance_adjustments_input.text or "{}"),
                 "dance_max_playtimes": json.loads(
                     self.edit_form.dance_max_playtimes_input.text or "{}"),
+                "min_song_play_seconds": float(
+                    self.edit_form.min_song_play_seconds_input.text),
                 "dance_minutes": json.loads(
                     self.edit_form.dance_minutes_input.text or "{}"),
                 "dance_intros": json.loads(
@@ -441,6 +456,12 @@ class PracticeTypeEditorScreen(Screen):
             del self.custom_types[name]
 
         if self.save_practice_types():
+            # A deletion changes the definitions available to the player just as
+            # a save does. Mark the editor dirty so Back to Player forces a full
+            # reload; otherwise an active deleted custom type can remain usable
+            # from the player's in-memory mappings.
+            self.changes_saved_since_enter = True
+
             # Check if we just deleted an override (meaning the built-in version reappears)
             if name in self.builtin_types:
                 self.show_popup("Reverted", f"Override for '{name}' deleted.\nReverted to built-in default.")
@@ -462,7 +483,7 @@ class PracticeTypeEditorScreen(Screen):
                 "Waltz", "Tango", "VWSlow", "VienneseWaltz", "Foxtrot", "QuickStep",
                 "WCS", "Samba", "ChaCha", "Rumba", "PasoDoble", "JSlow", "Jive"
             ],
-            "num_selections": 2,
+            "num_selections": practice_type_rules.DEFAULT_NUM_SELECTIONS,
             "play_all_songs": False,
             "auto_update": False,
             "play_single_song": False,
@@ -474,13 +495,15 @@ class PracticeTypeEditorScreen(Screen):
                 "VienneseWaltz": "n-1", "Jive": "n-1", "WCS": "cap_at_2"
             },
             "dance_max_playtimes": {"VienneseWaltz": 150},
+            "min_song_play_seconds": practice_type_rules.DEFAULT_MIN_SONG_PLAY_SECONDS,
             "dance_minutes": {}
         }
 
         self.edit_form.name_input.text = ""
         self.edit_form.dances_input.text = ", ".join(default_data["dances"])
         self.edit_form.num_selections_input.text = str(default_data["num_selections"])
-        self.edit_form.order_input.text = "0"
+        self.edit_form.order_input.text = str(
+            practice_type_rules.DEFAULT_PRACTICE_TYPE_ORDER)
         self.edit_form.play_all_songs_input.active = default_data["play_all_songs"]
         self.edit_form.auto_update_input.active = default_data["auto_update"]
         self.edit_form.play_single_song_input.active = default_data["play_single_song"]
@@ -490,6 +513,8 @@ class PracticeTypeEditorScreen(Screen):
             default_data["dance_adjustments"], indent=4)
         self.edit_form.dance_max_playtimes_input.text = json.dumps(
             default_data["dance_max_playtimes"], indent=4)
+        self.edit_form.min_song_play_seconds_input.text = str(
+            default_data["min_song_play_seconds"])
         self.edit_form.dance_minutes_input.text = ""
         self.edit_form.dance_intros_input.text = ""
         self.edit_form.segments_input.text = ""
@@ -576,7 +601,7 @@ Builder.load_string("""
     cols: 1
     size_hint_y: None
     height: self.minimum_height
-    padding: 10
+    padding: [10, 10, 26, 10]
     spacing: 10
 
     name_input: name_input
@@ -590,6 +615,7 @@ Builder.load_string("""
     adjust_song_counts_input: adjust_song_counts_input
     dance_adjustments_input: dance_adjustments_input
     dance_max_playtimes_input: dance_max_playtimes_input
+    min_song_play_seconds_input: min_song_play_seconds_input
     dance_minutes_input: dance_minutes_input
     dance_intros_input: dance_intros_input
     segments_input: segments_input
@@ -852,6 +878,34 @@ Builder.load_string("""
 
     BoxLayout:
         size_hint_y: None
+        height: '70dp'
+        BoxLayout:
+            orientation: 'vertical'
+            size_hint_x: 0.4
+            spacing: 2
+            Label:
+                text: 'Minimum Song Playtime (seconds):'
+                size_hint_y: None
+                height: self.texture_size[1]
+                text_size: self.width, None
+                halign: 'left'
+                valign: 'top'
+            Label:
+                text: 'Minimum total play time for a song in timed dance blocks. The player default is used unless a practice type overrides it.'
+                font_size: '11sp'
+                color: 0.7, 0.7, 0.7, 1
+                size_hint_y: None
+                height: self.texture_size[1]
+                text_size: self.width, None
+            Widget:
+        TextInput:
+            id: min_song_play_seconds_input
+            multiline: False
+            size_hint_x: 0.6
+            input_filter: 'float'
+
+    BoxLayout:
+        size_hint_y: None
         height: '120dp'
         BoxLayout:
             orientation: 'vertical'
@@ -981,6 +1035,11 @@ Builder.load_string("""
                 font_size: '18sp'
 
             ScrollView:
+                bar_width: '12dp'
+                bar_margin: '2dp'
+                bar_color: 0.8, 0.8, 0.8, 1
+                bar_inactive_color: 0.55, 0.55, 0.55, 0.9
+                scroll_type: ['bars', 'content']
                 EditForm:
                     id: edit_form
 
