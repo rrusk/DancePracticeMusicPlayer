@@ -219,9 +219,17 @@ class PracticeTypeEditorScreen(Screen):
         else:
             self.edit_form.dance_max_playtimes_input.text = ""
 
-        self.edit_form.min_song_play_seconds_input.text = str(
-            data.get("min_song_play_seconds",
-                     practice_type_rules.DEFAULT_MIN_SONG_PLAY_SECONDS))
+        # Blank unless the type sets its own; blank means the player default.
+        # A hand-edited file may hold it as a string, or as something unusable;
+        # show what is there so saving reports it.
+        min_play = data.get("min_song_play_seconds")
+        number = practice_type_rules.strict_number(min_play, "min_song_play_seconds")
+        if min_play is None:
+            self.edit_form.min_song_play_seconds_input.text = ""
+        elif number is None:
+            self.edit_form.min_song_play_seconds_input.text = str(min_play)
+        else:
+            self.edit_form.min_song_play_seconds_input.text = f"{number:g}"
 
         intros = data.get("dance_intros", {})
         if intros:
@@ -322,11 +330,12 @@ class PracticeTypeEditorScreen(Screen):
         if data["num_selections"] < 1:
             problems.append("Num Selections: must be at least 1.")
 
-        min_play = practice_type_rules.strict_number(
-            data.get("min_song_play_seconds"),
-            "Minimum Song Playtime", problems.append)
-        if min_play is not None and min_play <= 0:
-            problems.append("Minimum Song Playtime: must be positive.")
+        if "min_song_play_seconds" in data:
+            min_play = practice_type_rules.strict_number(
+                data["min_song_play_seconds"],
+                "Minimum Song Playtime", problems.append)
+            if min_play is not None and min_play <= 0:
+                problems.append("Minimum Song Playtime: must be positive.")
 
         for label, key in (("Dance Max Playtimes", "dance_max_playtimes"),
                            ("Dance Minutes", "dance_minutes")):
@@ -368,6 +377,11 @@ class PracticeTypeEditorScreen(Screen):
         if not name:
             self.show_popup("Error", "Practice Type name cannot be empty.")
             return
+        if name in practice_type_rules.RESERVED_PRACTICE_TYPE_NAMES:
+            self.show_popup(
+                "Error", f"'{name}' is reserved for one of the player's own dance "
+                         "lists.\nChoose another name.")
+            return
 
         old_name = self.current_practice_type_name
 
@@ -387,8 +401,6 @@ class PracticeTypeEditorScreen(Screen):
                     self.edit_form.dance_adjustments_input.text or "{}"),
                 "dance_max_playtimes": json.loads(
                     self.edit_form.dance_max_playtimes_input.text or "{}"),
-                "min_song_play_seconds": float(
-                    self.edit_form.min_song_play_seconds_input.text),
                 "dance_minutes": json.loads(
                     self.edit_form.dance_minutes_input.text or "{}"),
                 "dance_intros": json.loads(
@@ -396,7 +408,10 @@ class PracticeTypeEditorScreen(Screen):
                 "segments": json.loads(
                     self.edit_form.segments_input.text or "[]"),
             }
-            
+            # Left out when blank, so the type follows the player default.
+            if min_play_text := self.edit_form.min_song_play_seconds_input.text.strip():
+                new_data["min_song_play_seconds"] = float(min_play_text)
+
             if problems := self._validation_problems(new_data):
                 self.show_popup("Invalid Practice Type", "\n\n".join(problems))
                 return
@@ -495,7 +510,6 @@ class PracticeTypeEditorScreen(Screen):
                 "VienneseWaltz": "n-1", "Jive": "n-1", "WCS": "cap_at_2"
             },
             "dance_max_playtimes": {"VienneseWaltz": 150},
-            "min_song_play_seconds": practice_type_rules.DEFAULT_MIN_SONG_PLAY_SECONDS,
             "dance_minutes": {}
         }
 
@@ -513,8 +527,7 @@ class PracticeTypeEditorScreen(Screen):
             default_data["dance_adjustments"], indent=4)
         self.edit_form.dance_max_playtimes_input.text = json.dumps(
             default_data["dance_max_playtimes"], indent=4)
-        self.edit_form.min_song_play_seconds_input.text = str(
-            default_data["min_song_play_seconds"])
+        self.edit_form.min_song_play_seconds_input.text = ""
         self.edit_form.dance_minutes_input.text = ""
         self.edit_form.dance_intros_input.text = ""
         self.edit_form.segments_input.text = ""
@@ -549,7 +562,7 @@ class PracticeTypeEditorScreen(Screen):
     def go_back_to_player(self):
         """
         Switches back to the player. If a different practice type was chosen,
-        or if the current practice type was edited and saved, the playlist is
+        or if any practice type was saved or deleted, the playlist is
         regenerated. Otherwise, it returns without interruption.
         """
         player_widget = self._player_widget()
@@ -557,16 +570,16 @@ class PracticeTypeEditorScreen(Screen):
             self.manager.current = 'player'
             return
 
-        # Condition 1: A different practice type was selected.
-        if ((new_type := self.current_practice_type_name) and
-            new_type != player_widget.practice_type):
-            # Condition 1: A different practice type was selected.
-            # The property change will trigger the playlist reset automatically.
+        new_type = self.current_practice_type_name
+        if self.changes_saved_since_enter:
+            # Something was saved or deleted. Reload the definitions from disk
+            # before applying any type, so a deleted type does not stay
+            # selectable and an edited one is not applied from the old copy.
+            self.manager.reload_custom_types(new_type)
+        elif new_type and new_type != player_widget.practice_type:
+            # A different practice type was selected. The property change
+            # triggers the playlist reset automatically.
             player_widget.practice_type = new_type
-        elif self.changes_saved_since_enter:
-            # Condition 2: The current type's settings were saved.
-            # Force a full reload to apply the new settings from the JSON file.
-            self.manager.reload_custom_types()
 
         # If neither condition is met, no changes are made and the current
         # playlist is not interrupted.
@@ -596,6 +609,7 @@ Builder.load_string("""
 #:import Switch kivy.uix.switch.Switch
 #:import TextInput kivy.uix.textinput.TextInput
 #:import Widget kivy.uix.widget.Widget
+#:import practice_type_rules practice_type_rules
 
 <EditForm>:
     cols: 1
@@ -891,7 +905,7 @@ Builder.load_string("""
                 halign: 'left'
                 valign: 'top'
             Label:
-                text: 'Minimum total play time for a song in timed dance blocks. The player default is used unless a practice type overrides it.'
+                text: 'Minimum total play time for a song in timed dance blocks. Leave blank to use the player default.'
                 font_size: '11sp'
                 color: 0.7, 0.7, 0.7, 1
                 size_hint_y: None
@@ -901,6 +915,7 @@ Builder.load_string("""
         TextInput:
             id: min_song_play_seconds_input
             multiline: False
+            hint_text: 'Default: %g' % practice_type_rules.DEFAULT_MIN_SONG_PLAY_SECONDS
             size_hint_x: 0.6
             input_filter: 'float'
 

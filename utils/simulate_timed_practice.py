@@ -2,21 +2,18 @@
 """
 Simulate timed-practice playlist lengths from song_metadata_cache.json.
 
-Defaults model the current "Silver+ Std 60min Timed" practice type in
-DancePracticeMusicPlayer:
+The practice type is read from builtin_practice_types.json, overridden by the
+user's custom_practice_types.json as in the player, and defaults to
+"Silver+ Std 60min Timed". Its dance_minutes, dance_max_playtimes and
+min_song_play_seconds are used as they are; a dance without a
+dance_max_playtimes entry uses --default-cap.
 
-    Waltz             13 min
-    Tango             13 min
-    VienneseWaltz      8 min, 150 s max-playtime cap
-    Foxtrot           13 min
-    QuickStep         10 min
-
-Each block includes a 10-second gap cue.  The planner draws songs until the
-music portion of the block reaches its budget, then applies the same uniform
-trim algorithm as music_player.py:
+Each block includes a --intro-seconds cue.  The planner draws songs until the
+music portion of the block reaches its budget, then runs the player's own
+planner (timed_blocks.py):
 
   * maximum normal trim: 45 s/song;
-  * never trim a song below 60 s total playback;
+  * never trim a song below the practice type's minimum play time;
   * if the average trim would exceed 45 s/song, drop the final drawn song
     and allow the block to run short;
   * a song longer than its cap occupies cap + fade time (10 s);
@@ -30,7 +27,8 @@ Examples:
     ./simulate_timed_practice.py song_metadata_cache.json
     ./simulate_timed_practice.py song_metadata_cache.json --runs 100000 --seed 1234
     ./simulate_timed_practice.py song_metadata_cache.json --default-cap 180
-    ./simulate_timed_practice.py song_metadata_cache.json --min-play 90 --playlist-minutes 60
+    ./simulate_timed_practice.py song_metadata_cache.json --min-play 90 --playlist-minutes 57
+    ./simulate_timed_practice.py song_metadata_cache.json --practice-type "My Timed Type"
     ./simulate_timed_practice.py song_metadata_cache.json --compare
     ./simulate_timed_practice.py song_metadata_cache.json --csv results.csv
 """
@@ -46,29 +44,40 @@ import random
 import statistics
 import sys
 from dataclasses import dataclass
-from pathlib import PurePath
 from typing import Iterable
 
+# Import the player's modules regardless of where this is run from.
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_DIR = os.path.dirname(SCRIPT_DIR)
+sys.path.insert(0, REPO_DIR)
 
-PRACTICE_MINUTES = {
-    "Waltz": 13,
-    "Tango": 13,
-    "VienneseWaltz": 8,
-    "Foxtrot": 13,
-    "QuickStep": 10,
-}
+# pylint: disable=wrong-import-position
+import app_paths
+import practice_type_rules
+import timed_blocks
 
-DANCE_CAPS = {
-    "VienneseWaltz": 150.0,
-}
 
+DEFAULT_PRACTICE_TYPE = "Silver+ Std 60min Timed"
+
+# The player's own values, repeated here so this script does not have to import
+# music_player and with it the whole of Kivy. A test asserts they still agree.
 FADE_SECONDS = 10.0
-MAX_TRIM_SECONDS = 45.0
-DEFAULT_MIN_SONG_PLAY_SECONDS = 60.0
-DEFAULT_PLAYLIST_MINUTES = 57.0
 DEFAULT_GLOBAL_CAP = 210.0
+
 DEFAULT_INTRO_SECONDS = 10.0
 DEFAULT_RUNS = 10_000
+
+
+@dataclass
+class PracticeType:
+    name: str
+    dance_minutes: dict[str, float]
+    dance_caps: dict[str, float]
+    min_play: float
+
+    @property
+    def total_minutes(self) -> float:
+        return sum(self.dance_minutes.values())
 
 
 @dataclass
@@ -143,7 +152,54 @@ def dance_from_path(path: str, wanted: Iterable[str]) -> str | None:
     return None
 
 
-def load_pools(cache_path: str) -> dict[str, list[Song]]:
+def load_definitions(path: str) -> dict:
+    """The practice types in one JSON file, without comments. Missing is empty."""
+    if not os.path.isfile(path):
+        return {}
+    with open(path, "r", encoding="utf-8") as handle:
+        raw = json.load(handle)
+    if not isinstance(raw, dict):
+        raise ValueError(f"{path} must contain a JSON object.")
+    return {name: data for name, data in raw.items()
+            if not name.startswith("__COMMENT__")}
+
+
+def load_practice_type(name: str, builtin_path: str, custom_path: str) -> PracticeType:
+    """Reads one timed practice type, a custom definition overriding a built-in one."""
+    definitions = load_definitions(builtin_path) | load_definitions(custom_path)
+    if name not in definitions:
+        raise ValueError(f"No practice type named {name!r}.")
+    definition = practice_type_rules.normalize_practice_type(name, definitions[name])
+    if definition is None:
+        raise ValueError(f"Practice type {name!r} is not usable.")
+
+    # As the player does, only dances the type actually plays are timed.
+    dances = definition["dances"]
+
+    def positive_numbers(field: str) -> dict[str, float]:
+        values = {}
+        raw = definition.get(field, {})
+        for dance, amount in (raw.items() if isinstance(raw, dict) else ()):
+            if dance not in dances:
+                continue
+            number = practice_type_rules.strict_number(amount, f"{field}: {dance!r}")
+            if number is not None and number > 0:
+                values[dance] = number
+        return values
+
+    minutes = positive_numbers("dance_minutes")
+    if not minutes:
+        raise ValueError(f"Practice type {name!r} has no timed dances (dance_minutes).")
+    return PracticeType(
+        name=name,
+        dance_minutes=minutes,
+        dance_caps=positive_numbers("dance_max_playtimes"),
+        min_play=definition.get(
+            "min_song_play_seconds", practice_type_rules.DEFAULT_MIN_SONG_PLAY_SECONDS),
+    )
+
+
+def load_pools(cache_path: str, dances: Iterable[str]) -> dict[str, list[Song]]:
     with open(cache_path, "r", encoding="utf-8") as handle:
         raw = json.load(handle)
 
@@ -151,7 +207,7 @@ def load_pools(cache_path: str) -> dict[str, list[Song]]:
     if not isinstance(songs, dict):
         raise ValueError("Cache does not contain a top-level 'songs' object.")
 
-    pools = {dance: [] for dance in PRACTICE_MINUTES}
+    pools = {dance: [] for dance in dances}
     skipped = 0
 
     for path, metadata in songs.items():
@@ -184,54 +240,16 @@ def effective_length(duration: float, cap: float) -> float:
     return min(float(duration), cap + FADE_SECONDS)
 
 
-def apply_uniform_trim(
-    lengths: list[float], total_trim: float, min_play: float
-) -> list[float]:
-    # Mirrors MusicPlayer._apply_uniform_trim().
-    planned = [float(length) for length in lengths]
-    remaining = float(total_trim)
-    active = [i for i, length in enumerate(planned) if length > min_play]
-
-    while remaining > 0.5 and active:
-        share = remaining / len(active)
-        still_active = []
-        for i in active:
-            take = min(share, planned[i] - min_play)
-            planned[i] -= take
-            remaining -= take
-            if planned[i] > min_play + 0.5:
-                still_active.append(i)
-        active = still_active
-
-    return planned
-
-
-def plan_timed_block(
-    lengths: list[float],
-    budget: float,
-    max_trim: float = MAX_TRIM_SECONDS,
-    min_play: float = DEFAULT_MIN_SONG_PLAY_SECONDS,
-) -> tuple[list[float], bool]:
-    # Mirrors MusicPlayer._plan_timed_block().
-    kept = [float(length) for length in lengths]
-    original_count = len(kept)
-
-    while kept:
-        overshoot = sum(kept) - budget
-        if overshoot <= 0:
-            return kept, len(kept) < original_count
-
-        if overshoot / len(kept) <= max_trim or len(kept) == 1:
-            return (
-                apply_uniform_trim(kept, overshoot, min_play),
-                len(kept) < original_count,
-            )
-        kept.pop()
-
-    return [], original_count > 0
+def plan_timed_block(lengths: list[float], budget: float,
+                     min_play: float) -> tuple[list[float], bool]:
+    """The player's plan, and whether it dropped any of the drawn songs."""
+    planned = timed_blocks.plan_timed_block(
+        lengths, budget, timed_blocks.MAX_TRIM_SECONDS, min_play)
+    return planned, len(planned) < len(lengths)
 
 
 def simulate_block(
+    practice: PracticeType,
     dance: str,
     pool: list[Song],
     rng: random.Random,
@@ -240,10 +258,16 @@ def simulate_block(
     min_play: float,
     playlist_minutes: float,
 ) -> BlockResult:
-    scale = playlist_minutes / sum(PRACTICE_MINUTES.values())
-    target = PRACTICE_MINUTES[dance] * scale * 60.0
+    scale = playlist_minutes / practice.total_minutes
+    target = practice.dance_minutes[dance] * scale * 60.0
     music_budget = target - intro_seconds
-    cap = DANCE_CAPS.get(dance, global_cap)
+    cap = practice.dance_caps.get(dance, global_cap)
+
+    if music_budget <= 0:
+        # The player plays the intro alone when it fills the block.
+        return BlockResult(dance=dance, target_seconds=target,
+                           intro_seconds=intro_seconds, songs=[],
+                           dropped_last_song=False)
 
     candidates = pool[:]
     rng.shuffle(candidates)
@@ -260,7 +284,7 @@ def simulate_block(
         if total >= music_budget:
             break
 
-    planned, dropped = plan_timed_block(lengths, music_budget, min_play=min_play)
+    planned, dropped = plan_timed_block(lengths, music_budget, min_play)
     kept_songs = drawn[: len(planned)]
     kept_lengths = lengths[: len(planned)]
 
@@ -320,6 +344,9 @@ def pct(numerator: int, denominator: int) -> str:
 
 
 def summarize_song_lengths(label: str, songs: list[PlayedSong], min_play: float) -> None:
+    if not songs:
+        print(f"\n{label}\n  no songs: every block was its intro alone")
+        return
     lengths = [s.play_duration for s in songs]
     trimmed = [s for s in songs if s.trimmed]
     floors = [s for s in songs if s.floor_hit]
@@ -355,7 +382,7 @@ def write_csv(path: str, rows: list[dict]) -> None:
         "effective_duration",
         "play_duration",
         "trimmed",
-        "hit_60s_floor",
+        "hit_min_play_floor",
         "fade_start",
         "block_actual_seconds",
         "block_difference_seconds",
@@ -368,7 +395,8 @@ def write_csv(path: str, rows: list[dict]) -> None:
 
 
 
-def compact_scenario(pools, runs: int, seed: int, global_cap: float, intro_seconds: float, min_play: float, playlist_minutes: float):
+def compact_scenario(practice: PracticeType, pools, runs: int, seed: int, global_cap: float,
+                     intro_seconds: float, min_play: float, playlist_minutes: float):
     rng = random.Random(seed)
     all_songs = []
     playlist_lengths = []
@@ -380,9 +408,9 @@ def compact_scenario(pools, runs: int, seed: int, global_cap: float, intro_secon
     for _run in range(runs):
         playlist_total = 0.0
         playlist_song_count = 0
-        for dance in PRACTICE_MINUTES:
+        for dance in practice.dance_minutes:
             result = simulate_block(
-                dance, pools[dance], rng, global_cap, intro_seconds,
+                practice, dance, pools[dance], rng, global_cap, intro_seconds,
                 min_play, playlist_minutes
             )
             playlist_total += result.actual_seconds
@@ -401,35 +429,37 @@ def compact_scenario(pools, runs: int, seed: int, global_cap: float, intro_secon
     trimmed = [s for s in all_songs if s.trimmed]
     floors = [s for s in all_songs if s.floor_hit]
     target = playlist_minutes * 60.0
+    # Every block can be its intro alone, leaving no songs to measure.
+    song_count = len(all_songs)
     return {
         "min_play": min_play,
         "playlist_minutes": playlist_minutes,
-        "mean_song": statistics.fmean(lengths),
-        "median_song": statistics.median(lengths),
+        "mean_song": statistics.fmean(lengths) if lengths else math.nan,
+        "median_song": statistics.median(lengths) if lengths else math.nan,
         "p10_song": percentile(lengths, .10),
         "p90_song": percentile(lengths, .90),
-        "trim_pct": 100.0 * len(trimmed) / len(all_songs),
-        "floor_pct": 100.0 * len(floors) / len(all_songs),
+        "trim_pct": 100.0 * len(trimmed) / song_count if song_count else math.nan,
+        "floor_pct": 100.0 * len(floors) / song_count if song_count else math.nan,
         "mean_songs": statistics.fmean(song_counts),
         "mean_runtime": statistics.fmean(playlist_lengths),
         "p05_runtime": percentile(playlist_lengths, .05),
         "p95_runtime": percentile(playlist_lengths, .95),
         "short_playlist_pct": 100.0 * sum(x < target - 1.0 for x in playlist_lengths) / runs,
         "over_playlist_pct": 100.0 * sum(x > target + 1.0 for x in playlist_lengths) / runs,
-        "dropped_block_pct": 100.0 * dropped_blocks / (runs * len(PRACTICE_MINUTES)),
-        "short_block_pct": 100.0 * short_blocks / (runs * len(PRACTICE_MINUTES)),
-        "over_block_pct": 100.0 * over_blocks / (runs * len(PRACTICE_MINUTES)),
+        "dropped_block_pct": 100.0 * dropped_blocks / (runs * len(practice.dance_minutes)),
+        "short_block_pct": 100.0 * short_blocks / (runs * len(practice.dance_minutes)),
+        "over_block_pct": 100.0 * over_blocks / (runs * len(practice.dance_minutes)),
     }
 
 
-def print_comparison(pools, args):
+def print_comparison(practice: PracticeType, pools, args):
     floors = [60.0, 75.0, 90.0, 105.0, 120.0]
-    targets = [57.0, 60.0]
+    targets = sorted({practice.total_minutes, args.playlist_minutes})
     rows = []
     for target in targets:
         for floor in floors:
             rows.append(compact_scenario(
-                pools, args.runs, args.seed, args.default_cap,
+                practice, pools, args.runs, args.seed, args.default_cap,
                 args.intro_seconds, floor, target
             ))
 
@@ -451,18 +481,23 @@ def print_comparison(pools, args):
     print("Notes:")
     print("  * 'floor hits' = trimmed songs that land on the chosen minimum play time.")
     print("  * 'short'/'over' = total runtime more than 1 s below/above the requested target.")
-    print("  * The 60-minute target scales all five dance blocks proportionally from")
-    print("    the existing 13/13/8/13/10-minute pattern.")
+    print(f"  * {practice.total_minutes:g} minutes is {practice.name!r} as defined; any other")
+    print("    target scales every dance block in proportion to its dance_minutes.")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Monte Carlo simulation of the DancePracticeMusicPlayer "
-            "'Silver+ Std 60min Timed' playlist."
+            "Monte Carlo simulation of a DancePracticeMusicPlayer "
+            "timed practice type's playlist."
         )
     )
     parser.add_argument("cache", help="Path to song_metadata_cache.json")
+    parser.add_argument(
+        "--practice-type",
+        default=DEFAULT_PRACTICE_TYPE,
+        help=f"Practice type to simulate (default: {DEFAULT_PRACTICE_TYPE!r})",
+    )
     parser.add_argument(
         "--runs",
         type=int,
@@ -496,28 +531,27 @@ def main() -> int:
     parser.add_argument(
         "--min-play",
         type=float,
-        default=DEFAULT_MIN_SONG_PLAY_SECONDS,
         help=(
             "Minimum allowed total playback of a trimmed song, including fade "
-            f"(default: {DEFAULT_MIN_SONG_PLAY_SECONDS:g} s)"
+            "(default: the practice type's min_song_play_seconds, else "
+            f"{practice_type_rules.DEFAULT_MIN_SONG_PLAY_SECONDS:g} s)"
         ),
     )
     parser.add_argument(
         "--playlist-minutes",
         type=float,
-        default=DEFAULT_PLAYLIST_MINUTES,
         help=(
             "Target total playlist minutes. Dance block lengths are scaled "
-            "proportionally from the 13/13/8/13/10 pattern "
-            f"(default: {DEFAULT_PLAYLIST_MINUTES:g})"
+            "in proportion to the practice type's dance_minutes "
+            "(default: their total)"
         ),
     )
     parser.add_argument(
         "--compare",
         action="store_true",
         help=(
-            "Compare min-play floors 60,75,90,105,120 s at both 57 and 60 "
-            "playlist minutes, then exit."
+            "Compare min-play floors 60,75,90,105,120 s at the practice type's "
+            "own length and at --playlist-minutes, then exit."
         ),
     )
     parser.add_argument(
@@ -533,30 +567,44 @@ def main() -> int:
         parser.error("--default-cap must be positive")
     if args.intro_seconds < 0:
         parser.error("--intro-seconds cannot be negative")
-    if args.min_play <= 0:
+    if args.min_play is not None and args.min_play <= 0:
         parser.error("--min-play must be positive")
-    if args.playlist_minutes <= 0:
+    if args.playlist_minutes is not None and args.playlist_minutes <= 0:
         parser.error("--playlist-minutes must be positive")
 
-    pools = load_pools(args.cache)
+    try:
+        practice = load_practice_type(
+            args.practice_type,
+            app_paths.app_path("builtin_practice_types.json"),
+            app_paths.user_path("custom_practice_types.json", seed_from_app_dir=False))
+    except (OSError, ValueError) as error:
+        parser.error(str(error))
+    if args.min_play is None:
+        args.min_play = practice.min_play
+    if args.playlist_minutes is None:
+        args.playlist_minutes = practice.total_minutes
+
+    pools = load_pools(args.cache, practice.dance_minutes)
     if args.compare:
-        print_comparison(pools, args)
+        print_comparison(practice, pools, args)
         return 0
     rng = random.Random(args.seed)
 
     print("Timed-practice simulation")
     print("========================")
+    print(f"practice type      : {practice.name}")
     print(f"cache              : {args.cache}")
     print(f"simulated playlists: {args.runs:,}")
     print(f"random seed        : {args.seed}")
     print(f"global cap         : {args.default_cap:g} s + {FADE_SECONDS:g} s fade")
-    print(f"VW cap             : {DANCE_CAPS['VienneseWaltz']:g} s + {FADE_SECONDS:g} s fade")
+    for dance, cap in practice.dance_caps.items():
+        print(f"{dance + ' cap':19s}: {cap:g} s + {FADE_SECONDS:g} s fade")
     print(f"block intro        : {args.intro_seconds:g} s")
-    print(f"max uniform trim   : {MAX_TRIM_SECONDS:g} s/song")
+    print(f"max uniform trim   : {timed_blocks.MAX_TRIM_SECONDS:g} s/song")
     print(f"minimum play       : {args.min_play:g} s including fade")
     print(f"playlist target    : {args.playlist_minutes:g} min")
     print("\nUsable songs in cache:")
-    for dance in PRACTICE_MINUTES:
+    for dance in practice.dance_minutes:
         durations = [s.duration for s in pools[dance]]
         print(
             f"  {dance:16s} {len(durations):4d} songs; "
@@ -565,18 +613,19 @@ def main() -> int:
         )
 
     all_songs: list[PlayedSong] = []
-    songs_by_dance = {dance: [] for dance in PRACTICE_MINUTES}
-    block_actuals = {dance: [] for dance in PRACTICE_MINUTES}
-    block_differences = {dance: [] for dance in PRACTICE_MINUTES}
-    block_drops = {dance: 0 for dance in PRACTICE_MINUTES}
+    songs_by_dance = {dance: [] for dance in practice.dance_minutes}
+    block_actuals = {dance: [] for dance in practice.dance_minutes}
+    block_differences = {dance: [] for dance in practice.dance_minutes}
+    block_drops = {dance: 0 for dance in practice.dance_minutes}
     playlist_lengths: list[float] = []
     csv_rows: list[dict] = []
 
     for run in range(1, args.runs + 1):
         playlist_total = 0.0
 
-        for dance in PRACTICE_MINUTES:
+        for dance in practice.dance_minutes:
             result = simulate_block(
+                practice,
                 dance,
                 pools[dance],
                 rng,
@@ -605,7 +654,7 @@ def main() -> int:
                             "effective_duration": f"{song.effective_duration:.6f}",
                             "play_duration": f"{song.play_duration:.6f}",
                             "trimmed": int(song.trimmed),
-                            "hit_60s_floor": int(song.floor_hit),
+                            "hit_min_play_floor": int(song.floor_hit),
                             "fade_start": (
                                 "" if song.fade_start is None else f"{song.fade_start:.6f}"
                             ),
@@ -619,7 +668,7 @@ def main() -> int:
 
     print("\nPer-dance results")
     print("=================")
-    for dance in PRACTICE_MINUTES:
+    for dance in practice.dance_minutes:
         summarize_song_lengths(dance, songs_by_dance[dance], args.min_play)
         print(
             f"  mean songs per block   : "
@@ -666,10 +715,10 @@ def main() -> int:
         f"{fmt_time(min(playlist_lengths))} / "
         f"{fmt_time(max(playlist_lengths))}"
     )
-    over_57 = sum(1 for x in playlist_lengths if x > target_playlist + 1.0)
-    short_57 = sum(1 for x in playlist_lengths if x < target_playlist - 1.0)
-    print(f"  >target +1 s           : {over_57:,} ({pct(over_57, args.runs).strip()})")
-    print(f"  <target -1 s           : {short_57:,} ({pct(short_57, args.runs).strip()})")
+    over_target = sum(1 for x in playlist_lengths if x > target_playlist + 1.0)
+    short_target = sum(1 for x in playlist_lengths if x < target_playlist - 1.0)
+    print(f"  >target +1 s           : {over_target:,} ({pct(over_target, args.runs).strip()})")
+    print(f"  <target -1 s           : {short_target:,} ({pct(short_target, args.runs).strip()})")
 
     if args.csv:
         write_csv(args.csv, csv_rows)

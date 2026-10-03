@@ -21,6 +21,7 @@ from music_player import (
     MusicApp,
     MusicSettings,
     PlayerConstants,
+    RootManager,
 )
 from kivy.clock import Clock
 from kivy.config import ConfigParser
@@ -3550,6 +3551,20 @@ class TestPracticeTypeMappingIsByName(unittest.TestCase):
         self.assertNotIn("Gone", self.player.settings_json[0]["options"])
         self.assertIn("Mine", self.player.custom_practice_mapping)
 
+    def test_a_type_named_after_a_builtin_dance_list_is_ignored(self):
+        """Deleting it would otherwise remove the player's own "default" list."""
+        builtin_default = list(self.player.practice_dances["default"])
+        self.player.load_custom_practice_types.return_value = {
+            "default": {"dances": ["Jive"]},
+        }
+        self.player.merge_custom_practice_types()
+        self.assertEqual(self.player.practice_dances["default"], builtin_default)
+        self.assertNotIn("default", self.player.custom_practice_mapping)
+
+        self.player.load_custom_practice_types.return_value = {}
+        self.player.merge_custom_practice_types()
+        self.assertEqual(self.player.practice_dances["default"], builtin_default)
+
     def test_reload_rebuilds_changed_definition(self):
         self.player.load_custom_practice_types.return_value = {
             "Mine": {"dances": ["Foxtrot"], "num_selections": 1}
@@ -3570,6 +3585,36 @@ class TestPracticeTypeMappingIsByName(unittest.TestCase):
         self.player.set_practice_type(None, "No Such Type")
         self.assertEqual(self.player.dances, ["Waltz"])
         self.assertTrue(self.player.auto_update_restart_playlist)
+
+
+class TestReloadingFromTheEditor(unittest.TestCase):
+    """RootManager.reload_custom_types, which the editor calls on the way back."""
+
+    def setUp(self):
+        self.player = MagicMock()
+        self.player.practice_type = "Active"
+        self.manager = MagicMock()
+        self.manager.get_screen.return_value.children = [self.player]
+
+    def _reload(self, practice_type=None):
+        with patch("music_player.App.get_running_app"):
+            RootManager.reload_custom_types(self.manager, practice_type)
+
+    def test_without_a_new_type_the_active_one_is_reapplied(self):
+        self._reload()
+        self.player.merge_custom_practice_types.assert_called_once()
+        self.player.set_practice_type.assert_called_once_with(None, "Active")
+        self.assertEqual(self.player.practice_type, "Active")
+
+    def test_a_new_type_is_switched_to_after_the_definitions_reload(self):
+        seen = []
+        self.player.merge_custom_practice_types.side_effect = (
+            lambda: seen.append(self.player.practice_type))
+        self._reload("Other")
+        self.assertEqual(seen, ["Active"])     # reloaded before the switch
+        self.assertEqual(self.player.practice_type, "Other")
+        # The property change applies it; applying it here too would build twice.
+        self.player.set_practice_type.assert_not_called()
 
 
 class TestPracticeTypeOrder(unittest.TestCase):

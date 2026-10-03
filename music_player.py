@@ -103,6 +103,7 @@ from kivy.metrics import dp
 from tinytag import TinyTag, TinyTagException
 
 import practice_type_rules
+import timed_blocks
 from song_cache import SongCache
 
 # --- Imports for ScreenManager and the editor screen ---
@@ -166,17 +167,14 @@ class PlayerConstants:
 
     FADE_TIME = 10  # 10s fade out
 
-    # --- Timed practice blocks ---
-    # Largest uniform trim applied to each song to make a block fit its budget.
-    # If the trim would exceed this, the last song is dropped and the block runs
-    # short instead, rather than audibly chopping every song in the block.
     # How long a song may take to actually start playing before the attempt is
     # judged to have failed. Comfortably longer than the 0.1s Windows delay.
     PLAYBACK_START_GRACE = 2.0
     # Consecutive failed starts before giving up rather than walking the playlist.
     MAX_CONSECUTIVE_START_FAILURES = 3
 
-    MAX_TRIM_SECONDS = 45
+    # --- Timed practice blocks ---
+    MAX_TRIM_SECONDS = timed_blocks.MAX_TRIM_SECONDS
     MIN_SONG_PLAY_SECONDS = practice_type_rules.DEFAULT_MIN_SONG_PLAY_SECONDS
 
     # --- Song selection ---
@@ -217,18 +215,26 @@ class PlayerConstants:
 # --- Root ScreenManager Widget ---
 class RootManager(ScreenManager):
     """The root ScreenManager that holds the player and editor screens."""
-    def reload_custom_types(self):
+    def reload_custom_types(self, practice_type: typing.Optional[str] = None):
         """
         Finds the music player screen, tells it to reload its custom
-        playlist definitions, and reapplies the settings for the current
-        practice type.
+        playlist definitions, and applies a practice type from them.
+
+        Args:
+            practice_type: The type to switch to once the definitions are
+                reloaded. None, or the type already active, reapplies the
+                current one.
         """
         player_screen = self.get_screen('player')
         # The MusicPlayer widget is the first child of the Screen
         player_widget = player_screen.children[0]
         player_widget.merge_custom_practice_types()
         player_widget.update_settings_options()
-        player_widget.set_practice_type(None, player_widget.practice_type)
+        if practice_type and practice_type != player_widget.practice_type:
+            # on_practice_type_change applies it, now from the reloaded mappings.
+            player_widget.practice_type = practice_type
+        else:
+            player_widget.set_practice_type(None, player_widget.practice_type)
         App.get_running_app().destroy_settings()
 
 
@@ -577,7 +583,8 @@ class MusicPlayer(BoxLayout):
 
         # Remove every previously file-backed dance mapping before rebuilding it.
         # The hard-coded "default" and "newcomer" mappings are not stored in
-        # custom_practice_mapping, so they are left untouched.
+        # custom_practice_mapping: normalization refuses practice types with
+        # those names, so they are left untouched.
         previous_names = set(getattr(self, "custom_practice_mapping", {}))
         for name in previous_names:
             self.practice_dances.pop(name, None)
@@ -2891,66 +2898,14 @@ class MusicPlayer(BoxLayout):
     @staticmethod
     def _apply_uniform_trim(lengths: list[float], total_trim: float,
                             min_play: float) -> list[float]:
-        """Spreads `total_trim` seconds evenly across `lengths`.
-
-        Every song gives up the same number of seconds, so songs keep their
-        relative lengths -- a block is not a run of identical clips. A song is
-        never taken below `min_play`; whatever it cannot absorb is redistributed
-        over the songs that still have headroom.
-
-        Args:
-            lengths: Planned play length of each song, in seconds.
-            total_trim: Total seconds that must come out of the block.
-            min_play: Floor below which no song may be trimmed.
-
-        Returns:
-            The trimmed lengths. If the block cannot absorb the whole trim, the
-            result sums to more than the budget and the caller reports it.
-        """
-        planned = [float(length) for length in lengths]
-        remaining = float(total_trim)
-        active = [i for i, length in enumerate(planned) if length > min_play]
-
-        while remaining > 0.5 and active:
-            share = remaining / len(active)
-            still_active = []
-            for i in active:
-                take = min(share, planned[i] - min_play)
-                planned[i] -= take
-                remaining -= take
-                if planned[i] > min_play + 0.5:
-                    still_active.append(i)
-            active = still_active
-
-        return planned
+        """See `timed_blocks.apply_uniform_trim`."""
+        return timed_blocks.apply_uniform_trim(lengths, total_trim, min_play)
 
     @staticmethod
     def _plan_timed_block(lengths: list[float], budget: float,
                           max_trim: float, min_play: float) -> list[float]:
-        """Decides how long each song in a timed block should play.
-
-        `lengths` are the effective (cap-limited) lengths of the songs drawn for
-        the block, in play order, drawn until their total reached `budget`. The
-        overshoot is shared evenly across all of them so the block ends exactly on
-        budget. If that share would be a bigger cut than `max_trim`, the last song
-        is dropped and the block runs short instead.
-
-        Returns:
-            Planned play lengths for the songs that are kept -- always a prefix of
-            `lengths`, possibly empty.
-        """
-        kept = [float(length) for length in lengths]
-
-        while kept:
-            overshoot = sum(kept) - budget
-            if overshoot <= 0:
-                # Songs ran out before the budget was met: play them untrimmed.
-                return kept
-            if overshoot / len(kept) <= max_trim or len(kept) == 1:
-                return MusicPlayer._apply_uniform_trim(kept, overshoot, min_play)
-            kept.pop()
-
-        return []
+        """See `timed_blocks.plan_timed_block`."""
+        return timed_blocks.plan_timed_block(lengths, budget, max_trim, min_play)
 
     def _get_timed_songs_for_dance(
         self, dance: str, all_music_paths: list[str], minutes: float, randomize: bool,

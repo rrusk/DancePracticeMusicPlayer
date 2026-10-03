@@ -26,7 +26,14 @@ ADJUSTMENT_RULES = ("n-1", "cap_at_1", "cap_at_2")
 # player, editor, and tests one source of truth.
 DEFAULT_NUM_SELECTIONS = 2
 DEFAULT_PRACTICE_TYPE_ORDER = 0
+# Competition music runs at least 90 s, so a routine needs that long. A timed
+# block never trims a song below it.
 DEFAULT_MIN_SONG_PLAY_SECONDS = 90
+
+# The player's own dance lists, which practice types are looked up alongside. A
+# practice type with one of these names would replace that list, and deleting it
+# would leave the player without one.
+RESERVED_PRACTICE_TYPE_NAMES = ("default", "newcomer")
 
 # Fields that must be true or false, with the value used when they are neither.
 BOOLEAN_DEFAULTS = {
@@ -347,6 +354,11 @@ def normalize_practice_type(name, data, warn=None):
     if warn is None:
         def warn(message):
             print(f"Practice type '{name}': {message}")
+
+    if name in RESERVED_PRACTICE_TYPE_NAMES:
+        warn("this name is reserved for one of the player's own dance lists. "
+             "Skipping it.")
+        return None
 
     if not isinstance(data, dict):
         warn(f"definition must be a JSON object, not a {type(data).__name__}. "

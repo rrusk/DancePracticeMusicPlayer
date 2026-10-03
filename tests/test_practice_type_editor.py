@@ -62,14 +62,12 @@ class EditorTestCase(unittest.TestCase):
 
     def fill(self, name="New Practice", dances="Waltz, Tango", selections=None,
              adjustments="", playtimes="", minutes="", segments="", intros="",
-             order=None, min_play=None):
+             order=None, min_play=""):
         """Fills the form as a user would."""
         if selections is None:
             selections = str(practice_type_rules.DEFAULT_NUM_SELECTIONS)
         if order is None:
             order = str(practice_type_rules.DEFAULT_PRACTICE_TYPE_ORDER)
-        if min_play is None:
-            min_play = str(practice_type_rules.DEFAULT_MIN_SONG_PLAY_SECONDS)
         form = self.form()
         form.name_input.text = name
         form.dances_input.text = dances
@@ -145,9 +143,37 @@ class TestLoading(EditorTestCase):
         self.assertEqual(self.form().dances_input.text, "Waltz, Tango")
         self.assertEqual(self.form().num_selections_input.text, "4")
         self.assertIn("VienneseWaltz", self.form().dance_max_playtimes_input.text)
-        self.assertEqual(
-            self.form().min_song_play_seconds_input.text,
-            str(practice_type_rules.DEFAULT_MIN_SONG_PLAY_SECONDS))
+
+    def test_a_type_without_its_own_minimum_shows_a_blank_field(self):
+        """Blank means the player default; showing the default would save it."""
+        self.select("Silver+ Standard 60min")
+        self.assertEqual(self.form().min_song_play_seconds_input.text, "")
+
+    def test_a_minimum_written_as_a_string_is_shown(self):
+        """The player accepts "120"; the editor must not crash formatting it."""
+        with open(self.custom_path, "w", encoding="utf-8") as handle:
+            json.dump({"Timed": {"dances": ["Waltz"], "min_song_play_seconds": "120"}},
+                      handle)
+        self.screen.load_practice_types()
+        self.select("Timed")
+        self.assertEqual(self.form().min_song_play_seconds_input.text, "120")
+
+    def test_an_unusable_minimum_is_shown_as_written(self):
+        """Shown rather than hidden, so saving reports it."""
+        with open(self.custom_path, "w", encoding="utf-8") as handle:
+            json.dump({"Timed": {"dances": ["Waltz"], "min_song_play_seconds": "soon"}},
+                      handle)
+        self.screen.load_practice_types()
+        self.select("Timed")
+        self.assertEqual(self.form().min_song_play_seconds_input.text, "soon")
+
+    def test_a_type_with_its_own_minimum_shows_it(self):
+        with open(self.custom_path, "w", encoding="utf-8") as handle:
+            json.dump({"Timed": {"dances": ["Waltz"], "min_song_play_seconds": 120}},
+                      handle)
+        self.screen.load_practice_types()
+        self.select("Timed")
+        self.assertEqual(self.form().min_song_play_seconds_input.text, "120")
 
 
 class TestSaving(EditorTestCase):
@@ -163,6 +189,20 @@ class TestSaving(EditorTestCase):
         self.fill(name="Timed Practice", min_play="120")
         self.screen.save_current_practice_type()
         self.assertEqual(self.saved()["Timed Practice"]["min_song_play_seconds"], 120.0)
+
+    def test_a_reserved_name_is_refused(self):
+        """Saving "default" would replace the player's own dance list."""
+        for name in practice_type_rules.RESERVED_PRACTICE_TYPE_NAMES:
+            self.fill(name=name)
+            self.screen.save_current_practice_type()
+            self.assertNotIn(name, self.saved())
+            self.assertIn("reserved", self.popups[-1][1])
+
+    def test_a_blank_minimum_song_playtime_is_not_written(self):
+        """The type then follows the player default, even if that changes."""
+        self.fill(name="Timed Practice", min_play="")
+        self.screen.save_current_practice_type()
+        self.assertNotIn("min_song_play_seconds", self.saved()["Timed Practice"])
 
     def test_saving_leaves_no_temporary_file(self):
         self.fill(name="Evening Practice")
@@ -409,7 +449,20 @@ class TestReturningToThePlayer(EditorTestCase):
         # delete_practice_type() clears the form, so no replacement type is selected.
         self.assertIsNone(self.screen.current_practice_type_name)
         self.screen.go_back_to_player()
-        self.manager.reload_custom_types.assert_called_once()
+        self.manager.reload_custom_types.assert_called_once_with(None)
+        self.assertEqual(self.manager.current, "player")
+
+    def test_deleting_then_choosing_another_type_reloads_before_switching(self):
+        """Switching alone would leave the deleted type in the player's mappings."""
+        self.fill(name="Temporary")
+        self.screen.save_current_practice_type()
+        self.screen.changes_saved_since_enter = False
+        self.screen.current_practice_type_name = "Temporary"
+        self.screen.delete_practice_type()
+
+        self.select("Silver+ Standard 60min")
+        self.screen.go_back_to_player()
+        self.manager.reload_custom_types.assert_called_once_with("Silver+ Standard 60min")
         self.assertEqual(self.manager.current, "player")
 
     def test_looking_without_changing_anything_leaves_the_playlist_alone(self):
