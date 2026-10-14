@@ -218,6 +218,11 @@ The editor stores custom definitions in `custom_practice_types.json`, using a wr
 location selected by the application. This file is useful for backup and troubleshooting,
 but it normally should not be edited by hand.
 
+Saved custom overrides follow the matching built-in definition's JSON field order,
+including nested objects, so they are easy to compare or merge back into
+`builtin_practice_types.json`. Additional fields and new types use the usual practice
+field order; dance and segment sequences keep their configured order.
+
 ### Practice Type Fields
 
 The editor provides the following settings. Fields marked as JSON accept the indicated
@@ -258,6 +263,94 @@ is primarily useful while preparing or testing practices; venue operators normal
 playlist already generated when the practice type was selected. Generating a playlist does
 not change the history, and there is no need to edit `play_history.json` by hand.
 
+### Previewing Playlist Changes
+
+`utils/simulate_practice.py` compares a named practice with proposed parameter changes
+using `song_metadata_cache.json`. It reports the selection rule, average song count,
+average runtime, and P05–P95 runtime range for each dance and the whole playlist. The
+range describes variation between generated playlists. The saved practice definition,
+song cache, and play history are unchanged. It runs without Kivy or an audio backend.
+
+Run these commands from the project directory. List available names, then compare
+two default counts while setting exact counts for individual dances:
+
+```bash
+python utils/simulate_practice.py --list
+python utils/simulate_practice.py song_metadata_cache.json \
+  --practice-type "Silver+ Latin 30min" \
+  --selections 2 --selections 3 \
+  --dance-selections "Jive=2" --dance-selections "PasoDoble=1"
+```
+
+Each `--selections` value creates a separate changed scenario, compared with **As
+defined**. The practice's existing `dance_adjustments` still apply to the global
+count. An individual `--dance-selections DANCE=N` sets an exact count, bypassing that
+dance's adjustments and timed budget; `DANCE=0` omits its songs and intro. Dance names
+must match the named practice. Changing a global count switches a play-all practice
+to fixed counts; timed dances retain their budgets.
+
+`--list` offers supported practice types in the player's menu order, excluding
+competition segment playlists and unusable definitions.
+
+Timed and mixed practices are supported too:
+
+```bash
+python utils/simulate_practice.py --practice-type "Silver+ Std 60min Timed" \
+  --playlist-minutes 57 --min-play 90
+python utils/simulate_practice.py --practice-type "60min" \
+  --selections 3 --dance-minutes "Waltz=10" --dance-cap "Jive=150" \
+  --runs 1000 --seed 1234 --csv comparison.csv
+```
+
+`--dance-minutes` sets individual timed budgets. `--playlist-minutes` scales the
+active timed budgets proportionally; count-based dances add time beyond that target.
+Every occurrence of a repeated dance counts toward the timed target.
+Timed rows also report how often the planner falls short or runs over. Competition
+playlists defined with `segments` are not supported by this utility.
+
+Use `--show-playlist` to see one ordered example per scenario, including paths and
+planned play lengths. `--csv FILE` exports the comparison statistics. Other options
+include `--default-cap` to compare a global song cap, `--dance-intro-seconds DANCE=N`
+to compare an intro length, and `--builtin-types` / `--custom-types` to read specific
+definition files. Use `--help` for the full list.
+
+The baseline reads the global song cap from `music.ini` (210 seconds when the
+player has not saved one), plus the ten-second fade, with the named practice's
+per-dance overrides. Use `--config FILE` to read a different settings file; a file
+named this way must exist. A definitions file the player cannot read is skipped with
+a note, as the player skips it. An invalid song cap uses the default while retaining
+the configured music library. Fixed counts prefer songs at least 90
+seconds long, falling back to the longest shorter songs when necessary. Intro
+durations come from the exact local announcements/cues the player selects, using
+their current cache entries or TinyTag. Missing or unreadable files are skipped,
+including those whose current cache entry records no duration. Only when an intro
+exists but TinyTag and current cache metadata are unavailable does the script report
+an estimate using `--intro-seconds` (default 10). An intro configured as `none`
+contributes no time.
+
+Songs come from the dance folders of the player's `music_dir`, or of
+`--music-dir /path/to/library`. Each dance uses the one folder the player would read,
+and when the library is on this computer, cache entries for deleted files are left
+out. Changed files have their durations re-read with TinyTag without writing the cache.
+New songs in those folders are discovered recursively and read the same way; the
+preview reports how many were absent from the cache.
+If TinyTag is unavailable, run with the project's `kivy_venv` Python or rebuild the
+cache first. Dance names that resolve to the same folder each retain their own
+blocks. Pass `--music-dir` to preview a cache copied from another computer; when
+that library is unavailable locally, its cached durations are used.
+Without a configured library, only existing local cached paths are used; deleted
+files are skipped. To preview an unavailable copied library, pass its original root
+with `--music-dir`.
+
+Estimates use the full music pool rather than play history. They describe
+planned audio time, excluding playback end margins and manual pauses. In single-song
+mode, totals describe the generated list; the player stops after each song. Missing
+dance pools and insufficient song counts are reported. Populate
+the cache with `utils/build_song_cache.py` first if it does not cover the library.
+The existing `utils/simulate_timed_practice.py` remains available for its detailed
+trim-floor analysis. It reads the same library and simulates each listing of a
+repeated dance as its own block.
+
 ## Timed Practice Blocks
 
 A practice type can spend a set amount of *time* on a dance rather than a set number of
@@ -277,11 +370,14 @@ songs — "13 minutes of Waltz" instead of "4 Waltzes". List the dance in `dance
 }
 ```
 
-`Silver+ Std 60min Timed` ships in `builtin_practice_types.json` and runs 57
+`Silver+ Std 60min Timed` ships in `builtin_practice_types.json` and targets 60
 minutes. `Silver+ Latin 30min` is deliberately **not** timed: a Latin song is
 short enough that any block budget draws one song too many and then trims the
-overshoot off every song in the block, which cuts routines short. It plays two
-whole songs per dance instead, one for Paso Doble, and runs about 25 minutes.
+overshoot off every song in the block, which cuts routines short. It selects three
+Samba songs, two each for ChaCha, Rumba and Jive, and one for Paso Doble. Samba has
+a 150-second cap plus a ten-second fade; other dances use the global song cap.
+With the current library and a 210-second global cap, the preview averages about
+27½ minutes. Runtime depends on the selected tracks and settings.
 A dance **not** listed in `dance_minutes` uses `num_selections` and
 `dance_adjustments`, so the two styles can be mixed in one practice type. `play_all_songs` and `play_single_song`
 ignore budgets entirely.
@@ -334,20 +430,21 @@ announcement or `"none"` to start the music immediately.
 - **The trim would be too deep** — if sharing out the overshoot would cut more than
   `MAX_TRIM_SECONDS` (45s) from every song, the last song is dropped and the block runs
   short instead of audibly chopping the whole block.
-- **A song is already short** — no song is trimmed below `MIN_SONG_PLAY_SECONDS` (60s). Its
+- **A song is already short** — no song is trimmed below the practice's
+  `min_song_play_seconds` (90s by default, 120s for the built-in standard timed type). Its
   share of the trim is redistributed to the longer songs in the block.
 
-Both thresholds are in `PlayerConstants` in `music_player.py`. Raising
-`MIN_SONG_PLAY_SECONDS` protects short tracks more aggressively at the cost of trimming the
+The trim threshold is shared in `timed_blocks.py`; the minimum play time can be set
+per practice in the editor. Raising it protects short tracks more aggressively at the cost of trimming the
 long ones harder.
 
 Every generation of a timed playlist prints a per-block summary:
 
 ```text
 Building timed playlist for 'Silver+ Std 60min Timed':
-  Waltz: 5 songs, 13:00 of 13:00 (gap_10 10s)
+  Waltz: 5 songs, 13:40 of 13:40 (gap_10 10s)
   ...
-  Total: 57:00
+  Total: 01:00:00
 ```
 
 Note that each song's maximum playtime is now fixed when the playlist is generated rather

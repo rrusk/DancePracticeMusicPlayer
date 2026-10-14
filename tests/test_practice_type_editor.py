@@ -228,6 +228,53 @@ class TestSaving(EditorTestCase):
         with open(self.builtin_path, encoding="utf-8") as handle:
             self.assertEqual(json.load(handle)["LineDance"]["num_selections"], 1)
 
+    def test_saving_matches_builtin_field_order_and_preserves_nested_values(self):
+        template = {
+            "dances": ["Waltz", "Tango"],
+            "dance_intros": {"default": "none", "Waltz": "none"},
+            "num_selections": 2,
+            "dance_max_playtimes": {"Tango": 150, "Waltz": 180},
+            "dance_adjustments": {"Tango": {"1": 0, "default": 2}},
+            "order": 10,
+        }
+        with open(self.builtin_path, "w", encoding="utf-8") as handle:
+            json.dump({"Ordered": template}, handle)
+        self.screen.load_practice_types()
+        self.select("Ordered")
+        self.form().dance_intros_input.text = '{"Waltz": "none", "default": "none"}'
+        self.form().dance_max_playtimes_input.text = '{"Waltz": 190, "Tango": 160}'
+        self.form().dance_adjustments_input.text = '{"Tango": {"default": 3, "1": 1}}'
+        self.screen.save_current_practice_type()
+        saved = self.saved()["Ordered"]
+        self.assertEqual([key for key in saved if key in template], list(template))
+        self.assertEqual(list(saved["dance_intros"]), ["default", "Waltz"])
+        self.assertEqual(list(saved["dance_max_playtimes"]), ["Tango", "Waltz"])
+        self.assertEqual(list(saved["dance_adjustments"]["Tango"]), ["1", "default"])
+        self.assertEqual(saved["dance_max_playtimes"], {"Waltz": 190, "Tango": 160})
+        self.assertEqual(saved["dance_adjustments"], {"Tango": {"default": 3, "1": 1}})
+        self.assertEqual(saved["dances"], ["Waltz", "Tango"])
+        with open(self.custom_path, "rb") as handle:
+            first_save = handle.read()
+        self.screen.save_current_practice_type()
+        with open(self.custom_path, "rb") as handle:
+            self.assertEqual(handle.read(), first_save)
+
+    def test_saving_other_types_reorders_existing_overrides_without_losing_extra_fields(self):
+        custom = {"__COMMENT__ keep": {"note": "preserved"}, "LineDance": {
+            "future_setting": {"b": 2, "a": 1}, "num_selections": 3,
+            "dances": ["LineDance"], "segments": [{"cue": "round_gap", "label": "Rest"}],
+        }}
+        with open(self.custom_path, "w", encoding="utf-8") as handle:
+            json.dump(custom, handle)
+        self.screen.load_practice_types()
+        self.fill(name="Another")
+        self.screen.save_current_practice_type()
+        saved = self.saved()
+        self.assertEqual(saved["LineDance"], custom["LineDance"])
+        self.assertEqual(list(saved["LineDance"])[:2], ["dances", "num_selections"])
+        self.assertEqual(saved["__COMMENT__ keep"], custom["__COMMENT__ keep"])
+        self.assertEqual(list(saved["Another"])[-1], "order")
+
     def test_comments_in_the_custom_file_are_preserved(self):
         with open(self.custom_path, "w", encoding="utf-8") as handle:
             json.dump({"__COMMENT__ keep me": {"note": 1}}, handle)

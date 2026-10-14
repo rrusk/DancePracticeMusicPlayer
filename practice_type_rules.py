@@ -13,13 +13,14 @@ the editor passes a list's `append` and shows what was collected.
 
 import math
 import os
+from copy import deepcopy
 
 # What can precede a dance block. Either the spoken announcement, nothing at
 # all, or the name of a cue in cues/ -- normally a few seconds of silence.
 INTRO_ANNOUNCE = "announce"
 INTRO_NONE = "none"
 
-# The string formulas `_get_adjusted_song_count` understands.
+# The string formulas `adjusted_song_count` understands.
 ADJUSTMENT_RULES = ("n-1", "cap_at_1", "cap_at_2")
 
 # Shared defaults for practice type definitions. Keeping these here gives the
@@ -30,10 +31,119 @@ DEFAULT_PRACTICE_TYPE_ORDER = 0
 # block never trims a song below it.
 DEFAULT_MIN_SONG_PLAY_SECONDS = 90
 
+# Shared with offline playlist previews, which must not import Kivy.
+BASE_DANCE_LISTS = {
+    "default": [
+        "Waltz", "Tango", "VWSlow", "VienneseWaltz", "Foxtrot", "QuickStep",
+        "WCS", "Samba", "ChaCha", "Rumba", "PasoDoble", "JSlow", "Jive",
+    ],
+    "newcomer": [
+        "Waltz", "JSlow", "Jive", "Rumba", "Foxtrot", "ChaCha", "Tango",
+        "Samba", "QuickStep", "VWSlow", "VienneseWaltz", "WCS",
+    ],
+}
+DEFAULT_DANCE_ADJUSTMENTS = {
+    "PasoDoble": {"1": 0, "2": 1, "3": 1, "default": 2},
+    "VWSlow": "cap_at_1", "JSlow": "cap_at_1", "VienneseWaltz": "n-1",
+    "Jive": "n-1", "WCS": "cap_at_2",
+}
+
+# The player's built-in practice types and the dance list each plays.
+PRACTICE_TYPE_60_MIN = "60min"
+PRACTICE_TYPE_NC_60_MIN = "NC 60min"
+BASE_PRACTICE_TYPES = {PRACTICE_TYPE_60_MIN: "default", PRACTICE_TYPE_NC_60_MIN: "newcomer"}
+
+
+def base_practice_types():
+    """Fresh definitions for the player's two built-in dance lists."""
+    return {
+        name: {
+            "dances": list(BASE_DANCE_LISTS[dance_list]),
+            "dance_type": dance_list,
+            "num_selections": DEFAULT_NUM_SELECTIONS,
+            "adjust_song_counts": True,
+            "dance_adjustments": deepcopy(DEFAULT_DANCE_ADJUSTMENTS),
+            "dance_max_playtimes": {"VienneseWaltz": 150},
+        }
+        for name, dance_list in BASE_PRACTICE_TYPES.items()
+    }
+
+
+def dance_adjustments_in_use(definition):
+    """A practice's own adjustments, or the defaults when it adjusts counts without any."""
+    adjustments = definition.get("dance_adjustments", {})
+    if definition.get("adjust_song_counts", False) and not adjustments:
+        return deepcopy(DEFAULT_DANCE_ADJUSTMENTS)
+    return adjustments
+
+
+def ordered_practice_types(all_types):
+    """Stable menu order for validated definitions; equal orders retain file order."""
+    return dict(sorted(all_types.items(), key=lambda item: item[1].get(
+        "order", DEFAULT_PRACTICE_TYPE_ORDER)))
+
+
+def practice_block_rule(dance, count, *, play_all_songs=False, play_single_song=False,
+                        dance_minutes=None, adjust_song_counts=False, dance_adjustments=None):
+    """Resolve the player's precedence of timed, all-song, and fixed-count blocks."""
+    minutes = (dance_minutes or {}).get(dance)
+    if minutes and not play_all_songs and not play_single_song:
+        return "timed", minutes
+    if play_all_songs:
+        return "all", 0
+    return "count", adjusted_song_count(dance, count, adjust_song_counts, dance_adjustments or {})
+
+
+def order_practice_type_fields(data, builtin=None):
+    """Match a built-in's JSON field order without changing any values.
+
+    Fields absent from the built-in follow the usual practice definition order.
+    New types use that order throughout. Nested objects follow their built-in
+    counterparts where available; dance and segment lists retain their order.
+    """
+    usual_order = (
+        "dances", "num_selections", "play_all_songs", "auto_update",
+        "play_single_song", "randomize_playlist", "adjust_song_counts",
+        "dance_adjustments", "dance_max_playtimes", "min_song_play_seconds",
+        "dance_minutes", "dance_intros", "segments", "order",
+    )
+
+    def ordered_mapping(mapping, reference, extra_order=()):
+        keys = dict.fromkeys((*reference, *extra_order, *mapping))
+        result = {}
+        for key in keys:
+            if key not in mapping:
+                continue
+            value = mapping[key]
+            template = reference.get(key)
+            if isinstance(value, dict) and isinstance(template, dict):
+                value = ordered_mapping(value, template)
+            result[key] = value
+        return result
+
+    return ordered_mapping(data, builtin or {}, usual_order)
+
+
+def adjusted_song_count(dance, count, enabled, adjustments):
+    """Apply a validated practice's count rules, as the player does."""
+    if not enabled:
+        return count
+    rule = adjustments.get(dance)
+    if isinstance(rule, dict):
+        return rule.get(str(count), rule.get("default", count))
+    if rule == "n-1" and count > 1:
+        return count - 1
+    if rule == "cap_at_1" and count > 1:
+        return 1
+    if rule == "cap_at_2" and count > 2:
+        return 2
+    return count
+
+
 # The player's own dance lists, which practice types are looked up alongside. A
 # practice type with one of these names would replace that list, and deleting it
 # would leave the player without one.
-RESERVED_PRACTICE_TYPE_NAMES = ("default", "newcomer")
+RESERVED_PRACTICE_TYPE_NAMES = tuple(BASE_DANCE_LISTS)
 
 # Fields that must be true or false, with the value used when they are neither.
 BOOLEAN_DEFAULTS = {
@@ -169,12 +279,52 @@ def validate_dance_intros(raw, warn=_ignore) -> dict:
     return clean
 
 
+def validate_dance_minutes(raw, dances, warn=_ignore) -> dict:
+    """Returns the usable entries of a `dance_minutes` mapping.
+
+    Bad entries are dropped with a warning rather than raising, so a typo in a
+    JSON file degrades to the count-based behaviour for that dance instead of
+    breaking playlist generation.
+
+    Args:
+        raw: The value of the practice type's "dance_minutes" key.
+        dances: The dances actually included in the practice type.
+        warn: Called with a description of anything dropped.
+
+    Returns:
+        A dict of {dance: minutes} containing only valid, positive entries.
+    """
+    if not raw:
+        return {}
+    if not isinstance(raw, dict):
+        warn(f"'dance_minutes' must be a JSON object, got {type(raw).__name__}. Ignoring it.")
+        return {}
+
+    validated = {}
+    for dance, value in raw.items():
+        if dance not in dances:
+            warn(f"'dance_minutes' lists '{dance}', which is not in this practice type's "
+                 "dances. Ignoring it.")
+            continue
+        minutes = strict_number(value, f"'dance_minutes' value for '{dance}'")
+        if minutes is None:
+            warn(f"'dance_minutes' value for '{dance}' is not an ordinary number "
+                 f"({value!r}). Ignoring it.")
+            continue
+        if minutes <= 0:
+            warn(f"'dance_minutes' value for '{dance}' must be positive ({value!r}). "
+                 "Ignoring it.")
+            continue
+        validated[dance] = minutes
+    return validated
+
+
 def validate_dance_adjustments(raw, warn=_ignore) -> dict:
     """Returns the usable entries of a `dance_adjustments` mapping.
 
     A rule is either one of `ADJUSTMENT_RULES` or a mapping from a song count to
     the count to use instead. Only the outer type used to be checked, so a rule
-    like `{"2": "two"}` reached the arithmetic in `_get_adjusted_song_count`, and
+    like `{"2": "two"}` reached the arithmetic in `adjusted_song_count`, and
     a negative count made the selector walk the entire dance folder instead of
     rejecting the value.
 

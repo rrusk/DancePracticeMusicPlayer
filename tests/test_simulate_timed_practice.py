@@ -86,6 +86,38 @@ class TestLoadingThePracticeType(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.load("No Such Type")
 
+    def test_a_repeated_dance_is_a_block_per_listing(self):
+        self.write(self.custom_path, {
+            "Timed": {"dances": ["Waltz", "Tango", "Waltz"],
+                      "dance_minutes": {"Waltz": 5, "Tango": 5}},
+        })
+        practice = self.load()
+        self.assertEqual(practice.blocks, ["Waltz", "Tango", "Waltz"])
+        self.assertEqual(practice.block_labels, ["Waltz #1", "Tango", "Waltz #2"])
+        self.assertEqual(practice.total_minutes, 15)
+        pools = {dance: [script.Song(path=f"{dance}/{i}.mp3", duration=100.0) for i in range(12)]
+                 for dance in ("Waltz", "Tango")}
+        row = script.compact_scenario(practice, pools, 2, 1, 210.0, 0.0, 90, 20)
+        self.assertAlmostEqual(row["mean_runtime"], 1200.0)
+
+    def test_a_repeated_dance_draws_unused_songs_first(self):
+        practice = script.PracticeType(name="T", dance_minutes={"Waltz": 200 / 60},
+                                       dance_caps={}, min_play=90)
+        pool = [script.Song(path=f"Waltz/{i}.mp3", duration=100.0) for i in range(4)]
+        first = script.simulate_block(practice, "Waltz", pool, script.random.Random(1),
+                                      210.0, 0.0, 90, 200 / 60)
+        taken = {song.path for song in first.songs}
+        second = script.simulate_block(practice, "Waltz", pool, script.random.Random(1),
+                                       210.0, 0.0, 90, 200 / 60, taken)
+        self.assertFalse(taken & {song.path for song in second.songs})
+
+    def test_an_unreadable_custom_file_leaves_the_builtin_types(self):
+        with open(self.custom_path, "w", encoding="utf-8") as handle:
+            handle.write("{not json")
+        with contextlib.redirect_stderr(io.StringIO()) as errors:
+            self.assertEqual(self.load().dance_minutes, {"Waltz": 13.5, "Tango": 10.0})
+        self.assertIn("ignoring it", errors.getvalue())
+
     def test_the_default_type_is_shipped(self):
         practice = script.load_practice_type(
             script.DEFAULT_PRACTICE_TYPE,

@@ -122,6 +122,11 @@ class SongCache:
         return all(entry[field] is None or isinstance(entry[field], str)
                    for field in CACHED_FIELDS if field != "duration")
 
+    @staticmethod
+    def _matches_file(entry: dict, stat: os.stat_result) -> bool:
+        """True if the file is unchanged since a usable `entry` was cached for it."""
+        return entry["size"] == stat.st_size and abs(entry["mtime"] - stat.st_mtime) <= 0.001
+
     def get(self, path: str) -> dict | None:
         """Returns cached metadata for `path`, or None if it must be read.
 
@@ -144,8 +149,7 @@ class SongCache:
                 del self._songs[path]
                 self.misses += 1
                 return None
-            if (entry.get("size") != stat.st_size
-                    or abs(entry.get("mtime", -1.0) - stat.st_mtime) > 0.001):
+            if not self._matches_file(entry, stat):
                 self.stale += 1
                 return None
             self.hits += 1
@@ -222,3 +226,8 @@ class SongCache:
 
     def __len__(self) -> int:
         return len(self._songs)
+
+
+def current_entry(path: str, entry, stat: os.stat_result) -> bool:
+    """True if `entry` is what `SongCache.get` would return for the file as it is now."""
+    return SongCache._entry_is_usable(path, entry) and SongCache._matches_file(entry, stat)

@@ -20,7 +20,6 @@ arguments are needed.
 """
 import argparse
 import configparser
-import json
 import math
 import os
 import statistics
@@ -36,11 +35,13 @@ sys.path.insert(0, REPO_DIR)
 # pylint: disable=wrong-import-position
 import app_paths
 app_paths.require_venv("tinytag")   # re-runs under kivy_venv, or says how to activate it
+import playlist_rules
+import practice_cache
 import practice_type_rules
 from tinytag import TinyTag, TinyTagException
 from song_cache import SongCache, DEFAULT_CACHE_FILE, CACHED_FIELDS
 
-MUSIC_EXTENSIONS = (".mp3", ".ogg", ".m4a", ".flac", ".wav")
+MUSIC_EXTENSIONS = playlist_rules.MUSIC_EXTENSIONS
 
 
 def read_music_dir_from_config() -> str:
@@ -58,12 +59,7 @@ def read_music_dir_from_config() -> str:
 
 def collect_music_files(music_dir: str) -> list:
     """Returns every music file under `music_dir`."""
-    paths = []
-    for root, _, files in os.walk(music_dir):
-        paths.extend(
-            os.path.join(root, name) for name in files
-            if name.lower().endswith(MUSIC_EXTENSIONS))
-    return sorted(paths)
+    return sorted(playlist_rules.collect_music_files(music_dir))
 
 
 def read_tags(path: str) -> dict | None:
@@ -159,11 +155,10 @@ def verify(cache: SongCache, paths: list) -> None:
               "ffmpeg -i in.mp3 -c copy out.mp3")
 
 
-# The player's own values, repeated here so this script does not have to import
-# music_player and with it the whole of Kivy. A test asserts they still agree.
-MIN_SONG_LENGTH_SECONDS = 90
-DEFAULT_MAX_PLAYTIME = 210
-FADE_SECONDS = 10
+# The player's own values, from the modules it shares without Kivy.
+MIN_SONG_LENGTH_SECONDS = playlist_rules.MIN_COUNT_SONG_SECONDS
+DEFAULT_MAX_PLAYTIME = playlist_rules.DEFAULT_GLOBAL_CAP
+FADE_SECONDS = playlist_rules.FADE_SECONDS
 
 # Shorter than any real dance track, including the announcements and cues. A
 # file reporting less than this is damaged rather than short: TinyTag will
@@ -177,27 +172,17 @@ MAX_PLAUSIBLE_SECONDS = 24 * 60 * 60
 
 def load_practice_types() -> dict:
     """Returns the validated practice types the player would offer."""
-    types = {}
+    raw = {}
     for path in (app_paths.app_path("builtin_practice_types.json"),
                  app_paths.user_path("custom_practice_types.json",
                                      seed_from_app_dir=False)):
-        if not os.path.isfile(path):
-            continue
-        try:
-            with open(path, encoding="utf-8") as handle:
-                raw = json.load(handle)
-        except (OSError, json.JSONDecodeError) as error:
-            print(f"  could not read {os.path.basename(path)}: {error}")
-            continue
-        if not isinstance(raw, dict):
-            continue
-        for name, definition in raw.items():
-            if name.startswith("__COMMENT__"):
-                continue
-            clean = practice_type_rules.normalize_practice_type(
-                name, definition, warn=lambda _message: None)
-            if clean is not None:
-                types[name] = clean
+        raw |= practice_cache.load_definitions(path, warn=lambda message: print(f"  {message}"))
+    types = {}
+    for name, definition in raw.items():
+        clean = practice_type_rules.normalize_practice_type(
+            name, definition, warn=lambda _message: None)
+        if clean is not None:
+            types[name] = clean
     return types
 
 
@@ -220,20 +205,30 @@ def songs_wanted(practice_type: dict, dance: str, lengths: list) -> int:
         return sum(segment.get("count", 1) * segment.get("round", []).count(dance)
                    for segment in segments)
 
-    listings = practice_type.get("dances", []).count(dance)
+    dances = practice_type.get("dances", [])
+    listings = dances.count(dance)
     if not listings:
         return 0
 
-    if minutes := practice_type.get("dance_minutes", {}).get(dance):
+    mode, amount = practice_type_rules.practice_block_rule(
+        dance, practice_type.get("num_selections", practice_type_rules.DEFAULT_NUM_SELECTIONS),
+        play_all_songs=practice_type.get("play_all_songs", False),
+        play_single_song=practice_type.get("play_single_song", False),
+        dance_minutes=practice_type_rules.validate_dance_minutes(
+            practice_type.get("dance_minutes"), dances),
+        adjust_song_counts=practice_type.get("adjust_song_counts", False),
+        dance_adjustments=practice_type_rules.dance_adjustments_in_use(practice_type))
+    if mode == "timed":
         cap = practice_type.get("dance_max_playtimes", {}).get(
             dance, DEFAULT_MAX_PLAYTIME)
         typical = statistics.median(
-            min(length, cap + FADE_SECONDS) for length in lengths) if lengths else 0
-        return math.ceil(minutes * 60 / typical) * listings if typical else 0
-
-    # Count-based. dance_adjustments only ever reduces the count, so the
-    # unadjusted figure is the safe upper bound.
-    return practice_type.get("num_selections", 0) * listings
+            playlist_rules.effective_length(length, cap) for length in lengths) if lengths else 0
+        return math.ceil(amount * 60 / typical) * listings if typical else 0
+    if mode == "all":
+        # Every song plays once whatever the folder holds, so none is short.
+        return 0
+    # Adjustments can raise a count as well as lower it.
+    return amount * listings
 
 
 def usable_duration(value):
@@ -247,18 +242,8 @@ def usable_duration(value):
     a non-finite value, an integer too large to be a float, and anything longer
     than a day.
     """
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return None
-    try:
-        duration = float(value)
-    except OverflowError:
-        # A JSON integer too large to be a float. math.isfinite would raise on
-        # it just as readily, so the conversion has to be guarded rather than
-        # the check.
-        return None
-    if not math.isfinite(duration) or duration <= 0:
-        return None
-    if duration > MAX_PLAUSIBLE_SECONDS:
+    duration = practice_cache.usable_duration(value)
+    if duration is None or duration > MAX_PLAUSIBLE_SECONDS:
         return None
     return duration
 

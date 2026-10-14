@@ -3684,19 +3684,19 @@ class TestPracticeTypeOrder(unittest.TestCase):
         self.assertNotIn("Silver+ Standard 60min", shipped)
         self.assertNotIn("Silver+ Latin 30min Timed", shipped)
 
-    def test_the_latin_practice_plays_whole_songs(self):
-        """Timing the Latin blocks trimmed most songs short of the routine.
-
-        A 6:45 block holds two Latin songs and change, so a third was always
-        drawn and the overshoot shared across all three. Two whole songs per
-        dance is 25 minutes rather than 30, which is the trade that was made.
-        """
+    def test_the_latin_practice_uses_counts_with_three_capped_sambas(self):
+        """Latin routines use fixed counts rather than block-wide trimming."""
         with open(app_paths.app_path("builtin_practice_types.json"), encoding="utf-8") as handle:
             latin = json.load(handle)["Silver+ Latin 30min"]
-        self.assertNotIn("dance_minutes", latin)
+        self.assertFalse(latin.get("dance_minutes"))
         self.assertEqual(latin["num_selections"], 2)
         self.assertEqual(latin["dance_adjustments"]["PasoDoble"]["2"], 1)
-        self.assertEqual(latin["dance_max_playtimes"], {})
+        self.assertEqual(latin["dance_max_playtimes"], {"Samba": 150})
+        counts = [practice_type_rules.practice_block_rule(
+            dance, latin["num_selections"], adjust_song_counts=latin["adjust_song_counts"],
+            dance_adjustments=latin["dance_adjustments"], dance_minutes=latin.get("dance_minutes"))
+            for dance in latin["dances"]]
+        self.assertEqual(counts, [("count", 3), ("count", 2), ("count", 2), ("count", 1), ("count", 2)])
 
     def test_a_nonsense_order_does_not_break_loading(self):
         clean = MusicPlayer._normalize_practice_type("T", {"order": "last"})

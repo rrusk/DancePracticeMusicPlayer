@@ -523,6 +523,18 @@ class TestCheckLibrary(ScriptTestCase):
             script.songs_wanted({"dances": ["Waltz", "Waltz"], "dance_minutes": {"Waltz": 13}},
                                 "Waltz", [150.0] * 10), 12)
 
+    def test_an_adjustment_can_raise_the_count(self):
+        self.assertEqual(
+            script.songs_wanted({"dances": ["Samba"], "num_selections": 2,
+                                 "adjust_song_counts": True,
+                                 "dance_adjustments": {"Samba": {"default": 3}}},
+                                "Samba", [150.0]), 3)
+
+    def test_adjusting_without_rules_uses_the_players_defaults(self):
+        self.assertEqual(
+            script.songs_wanted({"dances": ["Jive"], "num_selections": 2,
+                                 "adjust_song_counts": True}, "Jive", [150.0]), 1)
+
     def test_a_dance_a_practice_type_does_not_use_needs_nothing(self):
         self.assertEqual(
             script.songs_wanted({"dances": ["Tango"], "num_selections": 4},

@@ -49,6 +49,7 @@ import sys
 import time
 import typing
 import threading
+from copy import deepcopy
 from functools import partial
 
 # Started before the Kivy imports so that startup timing includes them; they are
@@ -104,6 +105,7 @@ from tinytag import TinyTag, TinyTagException
 
 import practice_type_rules
 import timed_blocks
+import playlist_rules
 from song_cache import SongCache
 
 # --- Imports for ScreenManager and the editor screen ---
@@ -165,7 +167,7 @@ class PlayerConstants:
     VOLUME_LABEL_COLOR = (0.3, 0.8, 0.3, 1)
     SONG_TITLE_COLOR = (0, 1, 0, 1)  # Green text
 
-    FADE_TIME = 10  # 10s fade out
+    FADE_TIME = playlist_rules.FADE_SECONDS  # 10s fade out
 
     # How long a song may take to actually start playing before the attempt is
     # judged to have failed. Comfortably longer than the 0.1s Windows delay.
@@ -182,7 +184,7 @@ class PlayerConstants:
     # number of selections per dance, where a very short track would just make the
     # practice end early. Timed blocks are unaffected: a short song there simply
     # means one more song in the block, which still lands on its budget.
-    MIN_SONG_LENGTH_SECONDS = 90
+    MIN_SONG_LENGTH_SECONDS = playlist_rules.MIN_COUNT_SONG_SECONDS
 
     # Icon filenames as constants
     ICON_PLAY = "play.png"
@@ -191,13 +193,13 @@ class PlayerConstants:
     ICON_REPLAY = "replay.png"
 
     # Practice Type Constants
-    PRACTICE_TYPE_60_MIN = "60min"
-    PRACTICE_TYPE_NC_60_MIN = "NC 60min"
-    BASE_PRACTICE_TYPES = (PRACTICE_TYPE_60_MIN, PRACTICE_TYPE_NC_60_MIN)
+    PRACTICE_TYPE_60_MIN = practice_type_rules.PRACTICE_TYPE_60_MIN
+    PRACTICE_TYPE_NC_60_MIN = practice_type_rules.PRACTICE_TYPE_NC_60_MIN
+    BASE_PRACTICE_TYPES = tuple(practice_type_rules.BASE_PRACTICE_TYPES)
 
     # User/config defaults
     DEFAULT_VOLUME = 0.7
-    DEFAULT_SONG_MAX_PLAYTIME = 210
+    DEFAULT_SONG_MAX_PLAYTIME = playlist_rules.DEFAULT_GLOBAL_CAP
     
     # --- Competition rounds ---
     CUES_DIR = "cues"  # Folder holding gap/warning audio, see cues/make_cues.sh
@@ -349,39 +351,7 @@ class MusicPlayer(BoxLayout):
     current_dance_intros = DictProperty({})
     current_segments = ListProperty([])
 
-    practice_dances = DictProperty(
-        {
-            "default": [
-                "Waltz",
-                "Tango",
-                "VWSlow",
-                "VienneseWaltz",
-                "Foxtrot",
-                "QuickStep",
-                "WCS",
-                "Samba",
-                "ChaCha",
-                "Rumba",
-                "PasoDoble",
-                "JSlow",
-                "Jive",
-            ],
-            "newcomer": [
-                "Waltz",
-                "JSlow",
-                "Jive",
-                "Rumba",
-                "Foxtrot",
-                "ChaCha",
-                "Tango",
-                "Samba",
-                "QuickStep",
-                "VWSlow",
-                "VienneseWaltz",
-                "WCS",
-            ],
-        }
-    )
+    practice_dances = DictProperty(deepcopy(practice_type_rules.BASE_DANCE_LISTS))
 
     playlist = ListProperty([])
     playlist_idx = NumericProperty(0)
@@ -637,12 +607,7 @@ class MusicPlayer(BoxLayout):
         end of the list. An `order` of 0, which is the default, leaves a type
         where it was.
         """
-        ordered = sorted(enumerate(all_types.items()),
-                         key=lambda item: (
-                             item[1][1].get(
-                                 "order", practice_type_rules.DEFAULT_PRACTICE_TYPE_ORDER),
-                             item[0]))
-        return {name: data for _, (name, data) in ordered}
+        return practice_type_rules.ordered_practice_types(all_types)
 
     def update_settings_options(self):
         """
@@ -1524,10 +1489,8 @@ class MusicPlayer(BoxLayout):
         starts. A single song is never cut.
         """
         duration = float(song_info.get('duration', 0) or 0)
-        if self.play_single_song:
-            return duration
         max_playtime, fade, _ = self._playback_limits(song_info)
-        return min(duration, float(max_playtime) + float(fade))
+        return playlist_rules.play_length(duration, max_playtime, fade, self.play_single_song)
 
     def _reset_start_failures(self) -> None:
         """Forgets the run of failed starts.
@@ -2102,29 +2065,10 @@ class MusicPlayer(BoxLayout):
         Adjusts the number of songs for a dance based on rules defined in the
         current practice type's 'dance_adjustments' dictionary.
         """
-        adjustments = self._setting('current_dance_adjustments')
-        if not self._setting('adjust_song_counts_for_playlist') or dance not in adjustments:
-            return num_selections
-
-        rule = adjustments[dance]
-
-        # Rule is a direct mapping (e.g., {"1": 0, "2": 1, "default": 2})
-        if isinstance(rule, dict):
-            num_selections_str = str(num_selections)
-            if num_selections_str in rule:
-                return rule[num_selections_str]
-            return rule.get("default", num_selections)
-
-        # Rule is a string formula (e.g., "n-1", "cap_at_1")
-        if isinstance(rule, str):
-            if rule == "n-1" and num_selections > 1:
-                return num_selections - 1
-            if rule == "cap_at_1" and num_selections > 1:
-                return 1
-            if rule == "cap_at_2" and num_selections > 2:
-                return 2
-
-        return num_selections
+        return practice_type_rules.adjusted_song_count(
+            dance, num_selections,
+            self._setting('adjust_song_counts_for_playlist'),
+            self._setting('current_dance_adjustments'))
 
     def _get_song_cache(self) -> SongCache:
         """Returns the shared metadata cache, creating it on first use."""
@@ -2350,31 +2294,8 @@ class MusicPlayer(BoxLayout):
         Returns:
             The full path as it exists on disk, or None if there is no match.
         """
-        exact = os.path.join(folder, name)
-        check = os.path.isdir if want_dir else os.path.isfile
-        if check(exact):
-            return exact
-
-        try:
-            entries = os.listdir(folder)
-        except OSError:
-            return None
-
-        # casefold rather than lower: the stronger form for comparing names,
-        # identical for the ASCII names in use and correct if that ever changes.
-        wanted = name.casefold()
-        matches = sorted(entry for entry in entries
-                         if entry.casefold() == wanted and check(os.path.join(folder, entry)))
-        if not matches:
-            return None
-        if len(matches) > 1:
-            # Only reachable on a case-sensitive filesystem. Picking the first
-            # keeps the choice stable rather than depending on directory order.
-            Logger.warning(
-                f"MusicPlayer: {folder} contains {len(matches)} entries named "
-                f"'{name}' differing only in case: {', '.join(matches)}. "
-                f"Using '{matches[0]}'.")
-        return os.path.join(folder, matches[0])
+        return playlist_rules.entry_ignoring_case(
+            folder, name, want_dir, warn=lambda message: Logger.warning(f"MusicPlayer: {message}"))
 
     def _collect_music_files(self, directory: str, dance: str) -> list[str]:
         """Scans a directory for all valid music files.
@@ -2393,11 +2314,7 @@ class MusicPlayer(BoxLayout):
         if subdir is None:
             return []
 
-        music_paths = []
-        for root, _, files in os.walk(subdir):
-            music_paths.extend(
-                [os.path.join(root, file) for file in files if file.lower().endswith((
-                    ".mp3", ".ogg", ".m4a", ".flac", ".wav"))])
+        music_paths = playlist_rules.collect_music_files(subdir)
         timing_mark(f"    scanned {dance}: {len(music_paths)} files", started)
         # Kept for _record_play, which needs the pool to tell whether a replay
         # means the dance is exhausted. It runs on the UI thread at every song
@@ -2596,23 +2513,11 @@ class MusicPlayer(BoxLayout):
         candidates = (self._draw_candidates(all_music_paths, dance, history, taken)
                       if randomize else self._sorted_candidates(all_music_paths, taken))
 
-        chosen: list[dict] = []
-        too_short: list[dict] = []
-        for path in candidates:
-            if (song_info := self._create_song_info(path, dance)) is None:
-                continue
-            if not min_seconds or song_info['duration'] >= min_seconds:
-                chosen.append(song_info)
-                if len(chosen) == wanted:
-                    break
-            else:
-                too_short.append(song_info)
-
-        if len(chosen) < wanted and too_short:
-            # Not enough full-length tracks: use the longest of what is left.
-            too_short.sort(key=lambda info: -info['duration'])
-            shortfall = wanted - len(chosen)
-            chosen.extend(too_short[:shortfall])
+        song_infos = (info for path in candidates
+                      if (info := self._create_song_info(path, dance)) is not None)
+        chosen, shortfall = playlist_rules.select_count(
+            song_infos, wanted, min_seconds, lambda info: info['duration'])
+        if shortfall:
             print(f"    Warning: '{dance}' has too few songs of at least "
                   f"{self._secs_to_time_str(min_seconds)}; using the "
                   f"{shortfall} longest of the shorter ones.")
@@ -2788,7 +2693,7 @@ class MusicPlayer(BoxLayout):
         A song shorter than the cap plays out in full. A longer one is cut off at
         the cap and then fades, so it occupies `cap + FADE_TIME`.
         """
-        return min(float(duration), cap + PlayerConstants.FADE_TIME)
+        return playlist_rules.effective_length(duration, cap)
 
     @staticmethod
     def _validate_dance_minutes(raw: typing.Any, dances: list) -> dict:
@@ -2805,31 +2710,8 @@ class MusicPlayer(BoxLayout):
         Returns:
             A dict of {dance: minutes} containing only valid, positive entries.
         """
-        if not raw:
-            return {}
-        if not isinstance(raw, dict):
-            print(f"Warning: 'dance_minutes' must be a JSON object, got {type(raw).__name__}. "
-                  "Ignoring it.")
-            return {}
-
-        validated = {}
-        for dance, value in raw.items():
-            if dance not in dances:
-                print(f"Warning: 'dance_minutes' lists '{dance}', which is not in this "
-                      "practice type's dances. Ignoring it.")
-                continue
-            minutes = practice_type_rules.strict_number(
-                value, f"'dance_minutes' value for '{dance}'")
-            if minutes is None:
-                print(f"Warning: 'dance_minutes' value for '{dance}' is not an "
-                      f"ordinary number ({value!r}). Ignoring it.")
-                continue
-            if minutes <= 0:
-                print(f"Warning: 'dance_minutes' value for '{dance}' must be positive "
-                      f"({value!r}). Ignoring it.")
-                continue
-            validated[dance] = minutes
-        return validated
+        return practice_type_rules.validate_dance_minutes(
+            raw, dances, warn=lambda message: print(f"Warning: {message}"))
 
     def _draw_candidates(self, all_paths: list[str], dance: str, history: dict,
                          taken: typing.Container[str] = frozenset()) -> list[str]:
@@ -2847,20 +2729,17 @@ class MusicPlayer(BoxLayout):
         (`_record_play`), not when it is drawn, so a playlist that is abandoned
         or never reaches its end does not burn the songs left in it.
         """
-        played = set(history.get(dance, []))
-        unplayed = [p for p in all_paths if p not in played and p not in taken]
-        replayed = [p for p in all_paths if p in played and p not in taken]
-        repeated = [p for p in all_paths if p in taken]
-        for tier in (unplayed, replayed, repeated):
+        tiers = playlist_rules.candidate_tiers(all_paths, taken, set(history.get(dance, [])))
+        for tier in tiers:
             random.shuffle(tier)
-        return unplayed + replayed + repeated
+        return [path for tier in tiers for path in tier]
 
     @staticmethod
     def _sorted_candidates(all_paths: list[str],
                            taken: typing.Container[str] = frozenset()) -> list[str]:
         """Fixed-order counterpart of `_draw_candidates`: sorted, repeats last."""
-        return (sorted(p for p in all_paths if p not in taken)
-                + sorted(p for p in all_paths if p in taken))
+        unplayed, _replayed, repeated = playlist_rules.candidate_tiers(all_paths, taken)
+        return sorted(unplayed) + sorted(repeated)
 
     @staticmethod
     def _record_in_history(history: dict, dance: str, path: str,
@@ -2944,41 +2823,20 @@ class MusicPlayer(BoxLayout):
         candidates = (self._draw_candidates(all_music_paths, dance, history, taken)
                       if randomize else self._sorted_candidates(all_music_paths, taken))
 
-        # Draw songs one at a time, reading metadata only for the ones considered,
-        # until the running total reaches the budget.
-        drawn: list[dict] = []
-        lengths: list[float] = []
-        total = 0.0
-        for path in candidates:
-            if (song_info := self._create_song_info(path, dance)) is None:
-                continue
-            length = self._effective_length(song_info['duration'], cap)
-            drawn.append(song_info)
-            lengths.append(length)
-            total += length
-            if total >= budget:
-                break
-
-        planned = self._plan_timed_block(
-            lengths, budget,
-            PlayerConstants.MAX_TRIM_SECONDS,
-            self._setting('current_min_song_play_seconds'),
-        )
-        kept = drawn[:len(planned)]
-
+        song_infos = (info for path in candidates
+                      if (info := self._create_song_info(path, dance)) is not None)
+        kept, lengths, planned, dropped = playlist_rules.draw_timed(
+            song_infos, budget, cap, self._setting('current_min_song_play_seconds'),
+            lambda info: info['duration'])
         for song_info, full_length, play_length in zip(kept, lengths, planned):
-            if play_length < full_length - 0.5:
-                # Trimmed: fade so that playback ends exactly at play_length.
-                song_info['max_playtime'] = max(play_length - PlayerConstants.FADE_TIME, 1.0)
-            else:
-                # Untrimmed: leave the normal cap so a short song is not faded early.
-                song_info['max_playtime'] = cap
+            song_info['max_playtime'] = playlist_rules.timed_song_cap(
+                full_length, play_length, cap)
 
         # A shorter plan than the songs drawn means the planner dropped one
         # rather than trim the block too hard; anything else means the folder
         # ran out.
         self._report_timed_block(dance, minutes, announce_info, planned,
-                                 dropped=len(planned) < len(lengths))
+                                 dropped=dropped)
 
         return ([announce_info] if announce_info else []) + kept
 
@@ -3058,16 +2916,20 @@ class MusicPlayer(BoxLayout):
         if not all_music_paths:
             return []
 
-        # Timed block: fill by playing time rather than by song count. play_all_songs
-        # and play_single_song are deliberate "play the whole thing" modes, so a
-        # budget does not apply to them.
-        minutes = self._setting('current_dance_minutes').get(dance)
-        if minutes and not self._setting('play_all_songs') \
-                and not self._setting('play_single_song'):
+        mode, amount = practice_type_rules.practice_block_rule(
+            dance, num_selections,
+            play_all_songs=self._setting('play_all_songs'),
+            play_single_song=self._setting('play_single_song'),
+            dance_minutes=self._setting('current_dance_minutes'),
+            adjust_song_counts=self._setting('adjust_song_counts_for_playlist'),
+            dance_adjustments=self._setting('current_dance_adjustments'))
+        if not playlist_rules.block_is_played(mode, amount):
+            return []
+        if mode == 'timed':
             return self._get_timed_songs_for_dance(
-                dance, all_music_paths, minutes, randomize, taken)
+                dance, all_music_paths, amount, randomize, taken)
 
-        if self._setting('play_all_songs'):
+        if mode == 'all':
             # "Play everything" means everything: no minimum length is applied,
             # and history is only used to order what is already a full sweep.
             if randomize:
@@ -3081,10 +2943,7 @@ class MusicPlayer(BoxLayout):
                 if (song_info := self._create_song_info(path, dance)) is not None
             ]
         else:
-            adjusted_num_selections = self._get_adjusted_song_count(dance, num_selections)
-            if adjusted_num_selections == 0:
-                return []
-            num_to_sample = min(adjusted_num_selections, len(all_music_paths))
+            num_to_sample = min(amount, len(all_music_paths))
 
             # A fixed number of selections sets the length of the practice, so a
             # very short track just makes the practice end early. Pass those over.
@@ -3110,28 +2969,13 @@ class MusicPlayer(BoxLayout):
             _spinner_instance: The spinner widget that triggered the change (unused).
             text: The name of the selected practice type.
         """
-        default_adjustments = {
-            "PasoDoble": {"1": 0, "2": 1, "3": 1, "default": 2}, "VWSlow": "cap_at_1",
-            "JSlow": "cap_at_1", "VienneseWaltz": "n-1", "Jive": "n-1", "WCS": "cap_at_2"
-        }
-        builtin = {
-            "num_selections": practice_type_rules.DEFAULT_NUM_SELECTIONS,
-            "adjust_song_counts": True,
-            "dance_adjustments": default_adjustments,
-            "dance_max_playtimes": {"VienneseWaltz": 150},
-        }
-        mapping = {
-            PlayerConstants.PRACTICE_TYPE_60_MIN: dict(builtin, dance_type="default"),
-            PlayerConstants.PRACTICE_TYPE_NC_60_MIN: dict(builtin, dance_type="newcomer"),
-        }
+        mapping = practice_type_rules.base_practice_types()
 
         mapping |= getattr(self, "custom_practice_mapping", {})
         definition = mapping.get(text, {"dance_type": "default", "auto_update": True})
 
         adj_counts = definition.get("adjust_song_counts", False)
-        adj_dict = definition.get("dance_adjustments", {})
-        if adj_counts and not adj_dict:
-            adj_dict = default_adjustments
+        adj_dict = practice_type_rules.dance_adjustments_in_use(definition)
 
         self.dances = self.get_dances(definition.get("dance_type", "default"))
         self.num_selections = definition.get(

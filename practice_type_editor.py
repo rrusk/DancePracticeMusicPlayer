@@ -131,7 +131,8 @@ class PracticeTypeEditorScreen(Screen):
 
             # 2. Update only the non-comment keys based on self.custom_types
             for key in self.custom_types:
-                current_file_data[key] = self.custom_types[key]
+                current_file_data[key] = practice_type_rules.order_practice_type_fields(
+                    self.custom_types[key], self.builtin_types.get(key))
 
             # 3. Find keys to delete (present in file but removed from our active custom dict)
             # We ignore __COMMENT__ keys so they aren't deleted
@@ -149,6 +150,7 @@ class PracticeTypeEditorScreen(Screen):
             temporary = f"{self.custom_path}.tmp"
             with open(temporary, 'w', encoding='utf-8') as f:
                 json.dump(current_file_data, f, indent=4)
+                f.write("\n")
             os.replace(temporary, self.custom_path)
             
             # Reload to ensure the merged view (self.practice_types) is perfectly synced
