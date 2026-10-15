@@ -5,6 +5,8 @@ import contextlib
 import csv
 import io
 import json
+import os
+from pathlib import Path
 import unittest
 from unittest.mock import patch
 
@@ -131,6 +133,55 @@ class TestDefinitionExport(unittest.TestCase):
 
 
 class TestExportWorkflow(PracticePreviewFixture, unittest.TestCase):
+    def setUp(self):
+        super().setUp()
+        previous_directory = os.getcwd()
+        os.chdir(self.root)
+        self.addCleanup(os.chdir, previous_directory)
+
+    def test_preview_without_export_options_does_not_write_a_file(self):
+        self.run_script("--selections", "2")
+        self.assertFalse((self.root / "export.json").exists())
+
+    def test_export_json_defaults_to_source_name_and_overwrites_default_file(self):
+        path = self.root / "export.json"
+        before = self.builtin.read_bytes()
+        for option in (["--export-json"], ["--export-json", "export.json"],
+                       ["--export-json", str(path)]):
+            with self.subTest(option=option):
+                path.write_text("previous export")
+                self.run_script(*option, "--selections", "3")
+                payload = json.loads(path.read_text())
+                self.assertEqual(list(payload), ["Example"])
+                self.assertEqual(payload["Example"]["num_selections"], 3)
+        self.assertEqual(self.builtin.read_bytes(), before)
+
+    def test_export_name_alone_uses_default_file(self):
+        path = self.root / "export.json"
+        path.write_text("previous export")
+        self.run_script("--export-name", "Saved Practice")
+        self.assertEqual(list(json.loads(path.read_text())), ["Saved Practice"])
+
+    def test_export_json_custom_path_defaults_to_source_name(self):
+        path = self.root / "saved.json"
+        self.run_script("--export-json", str(path))
+        self.assertEqual(list(json.loads(path.read_text())), ["Example"])
+        self.assertFalse((self.root / "export.json").exists())
+
+    def test_explicit_source_name_is_allowed(self):
+        path = self.root / "saved.json"
+        self.run_script("--export-name", "Example", "--export-json", str(path))
+        self.assertEqual(list(json.loads(path.read_text())), ["Example"])
+
+    def test_failed_default_replacement_keeps_previous_file_and_removes_temporary_file(self):
+        path = self.root / "export.json"
+        path.write_text("previous export")
+        with patch.object(Path, "replace", side_effect=OSError("replacement failed")), \
+                contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            self.run_script("--export-json")
+        self.assertEqual(path.read_text(), "previous export")
+        self.assertEqual(list(self.root.glob(".practice-export-*")), [])
+
     def test_exported_file_reproduces_the_changed_preview_and_preserves_inputs(self):
         before = {p: p.read_bytes() for p in (self.builtin, self.custom, self.cache, self.config)}
         export_path = self.root / "export.json"
@@ -157,8 +208,7 @@ class TestExportWorkflow(PracticePreviewFixture, unittest.TestCase):
     def test_ambiguous_or_simulation_only_export_options_fail_without_writing(self):
         path = self.root / "export.json"
         export = ["--export-name", "Saved", "--export-json", str(path)]
-        cases = [(["--export-name", "Saved"], "must be used together"),
-                 (export + ["--selections", "2", "--selections", "3"], "requires one scenario"),
+        cases = [(export + ["--selections", "2", "--selections", "3"], "requires one scenario"),
                  (export + ["--dance-intro-seconds", "Waltz=5"], "simulation-only"),
                  (export + ["--csv", str(path)], "different files"),
                  (export + ["--list"], "cannot be combined")]
@@ -171,7 +221,7 @@ class TestExportWorkflow(PracticePreviewFixture, unittest.TestCase):
                 self.assertFalse(path.exists())
 
     def test_existing_files_are_not_overwritten(self):
-        path = self.root / "export.json"
+        path = self.root / "saved.json"
         path.write_text("keep this file")
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             self.run_script("--export-name", "Saved", "--export-json", str(path))
@@ -184,7 +234,7 @@ class TestExportWorkflow(PracticePreviewFixture, unittest.TestCase):
         builtins["Silver+ Latin 30min"] = {"dances": ["Waltz"]}
         self.builtin.write_text(json.dumps(builtins))
         path = self.root / "export.json"
-        for name in ("Example", "Silver+ Latin 30min", "60min", "NC 60min", "Custom Practice"):
+        for name in ("Silver+ Latin 30min", "60min", "NC 60min", "Custom Practice"):
             with self.subTest(name=name), \
                     patch.object(script, "load_cache", side_effect=AssertionError("must fail early")), \
                     contextlib.redirect_stdout(io.StringIO()) as output, \

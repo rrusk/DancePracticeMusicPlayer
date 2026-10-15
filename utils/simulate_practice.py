@@ -17,6 +17,7 @@ from pathlib import Path
 import random
 import statistics
 import sys
+import tempfile
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_DOWN
 
@@ -273,10 +274,22 @@ def export_definition(name, scenario, counts, global_cap, reference):
     return definition
 
 
-def write_export(path, name, definition):
-    """Write a new standalone JSON object without replacing an existing file."""
+def write_export(path, name, definition, overwrite=False):
+    """Write standalone JSON, replacing the default export atomically when allowed."""
     text = json.dumps({name: definition}, indent=4, ensure_ascii=False, allow_nan=False) + "\n"
     path = Path(path)
+    if overwrite:
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                             prefix=".practice-export-", delete=False) as handle:
+                temporary = Path(handle.name)
+                handle.write(text)
+            temporary.replace(path)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+        return
     created = False
     try:
         with path.open("x", encoding="utf-8") as handle:
@@ -370,22 +383,25 @@ def main(argv=None):
     parser.add_argument("--seed", type=int, default=20261014, help="Reproducible random seed")
     parser.add_argument("--show-playlist", action="store_true", help="Show each scenario's first playlist")
     parser.add_argument("--csv", metavar="FILE", help="Write per-dance and total comparison statistics")
-    parser.add_argument("--export-name", metavar="NAME", help="Name for an exported practice entry")
-    parser.add_argument("--export-json", metavar="FILE",
-                        help="Write one scenario as a new JSON file in built-in field order; "
-                             "requires --export-name and at most one --selections value")
+    parser.add_argument("--export-name", metavar="NAME",
+                        help="Export entry name (default: --practice-type); enables export")
+    parser.add_argument("--export-json", nargs="?", const="export.json", metavar="FILE",
+                        help="Export one scenario in built-in field order (default: export.json); "
+                             "export.json in the current directory may be overwritten. "
+                             "Use at most one --selections value")
     args = parser.parse_args(argv)
-    if (args.export_name is None) != (args.export_json is None):
-        parser.error("--export-name and --export-json must be used together")
-    if args.export_name is not None:
-        args.export_name = args.export_name.strip()
+    overwrite_export = False
+    if args.export_name is not None or args.export_json is not None:
+        args.export_name = (args.practice_type if args.export_name is None else args.export_name).strip()
+        args.export_json = args.export_json if args.export_json is not None else "export.json"
+        overwrite_export = Path(args.export_json).resolve() == Path("export.json").resolve()
         if args.list:
             parser.error("--list cannot be combined with export")
         if len(args.selections) > 1:
             parser.error("Export requires one scenario; specify --selections at most once")
         if args.dance_intro_seconds:
             parser.error("Intro-duration overrides are simulation-only; export preserves existing intros")
-        if Path(args.export_json).exists():
+        if Path(args.export_json).exists() and not overwrite_export:
             parser.error(f"Export file already exists: {args.export_json}. Choose a new file.")
         if not Path(args.export_json).parent.is_dir():
             parser.error(f"Export folder does not exist or is not a directory: {Path(args.export_json).parent}")
@@ -409,7 +425,8 @@ def main(argv=None):
         if not Path(args.builtin_types).is_file():
             raise ValueError(f"Built-in definitions file does not exist: {args.builtin_types}")
         definitions = load_types(args.builtin_types, custom)
-        if args.export_name is not None and args.export_name in definitions:
+        if (args.export_name is not None and args.export_name != args.practice_type
+                and args.export_name in definitions):
             raise ValueError(f"Practice type {args.export_name!r} already exists. Choose a new export name.")
         if args.list:
             print("\n".join(preview_names(definitions)))
@@ -515,7 +532,7 @@ def main(argv=None):
         print(f"\nWrote comparison statistics to {args.csv}")
     if args.export_name is not None:
         try:
-            write_export(args.export_json, args.export_name, exported)
+            write_export(args.export_json, args.export_name, exported, overwrite=overwrite_export)
         except (OSError, ValueError) as error:
             parser.error(str(error))
         print(f"\nExported practice {args.export_name!r} to {args.export_json}")

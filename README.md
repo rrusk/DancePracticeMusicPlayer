@@ -314,20 +314,26 @@ include `--default-cap` to compare a global song cap, `--dance-intro-seconds DAN
 to compare an intro length, and `--builtin-types` / `--custom-types` to read specific
 definition files. Use `--help` for the full list.
 
-To turn one preview into a named practice definition, add `--export-name` and
-`--export-json`:
+To export one preview as a practice definition, add `--export-json`:
 
 ```bash
 python utils/simulate_practice.py --practice-type "Silver+ Latin 30min" \
   --dance-selections "Samba=4" --dance-cap "Samba=150" \
-  --export-name "Latin with Four Sambas" --export-json new-practice.json
+  --export-json
 ```
 
-The new file contains a complete JSON object with that named entry, using the
+This writes `export.json` in the current directory, replacing any previous
+`export.json`. The entry name defaults to `--practice-type`. Use
+`--export-name "Latin with Four Sambas"` to change the name, or
+`--export-json new-practice.json` to change the file. Either option enables export;
+`--export-name` alone also writes `export.json`. A preview without either export
+option does not write JSON.
+
+The file contains a complete JSON object with that named entry, using the
 built-in field order and four-space indentation. You can inspect it and merge its
 entry into `builtin_practice_types.json` or `custom_practice_types.json`. To preview
-the exported entry directly, use `--custom-types new-practice.json --practice-type
-"Latin with Four Sambas"`.
+the exported entry directly, use `--custom-types export.json --practice-type
+"Silver+ Latin 30min"`.
 
 Exports support default and individual selection counts (including zero), song
 caps, timed budgets and their minimum play time. Exact individual counts become
@@ -341,9 +347,10 @@ fallback estimate is not saved.
 
 Use at most one `--selections` value when exporting. Individual count overrides
 on a play-all practice require `--selections` to switch it to fixed counts. The
-export requires a new practice name and an existing output folder. It is written
-to a new file; an existing file is never replaced. The source
-practice definitions, settings, cache and history are unchanged.
+export requires an existing output folder. You can reuse the source practice's
+name; another existing practice name is refused. Output files other than the
+current directory's `export.json` must be new. The source practice definitions,
+settings, cache and history are unchanged.
 
 The baseline reads the global song cap from `music.ini` (210 seconds when the
 player has not saved one), plus the ten-second fade, with the named practice's
