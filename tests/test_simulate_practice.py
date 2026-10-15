@@ -12,14 +12,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from utils import simulate_practice as script
-
-
-def practice(**changes):
-    return script.load_practice("Example", {"Example": {
-        "dances": ["Waltz", "Jive"], "num_selections": 2,
-        "randomize_playlist": False, "dance_intros": {"default": "none"},
-        **changes,
-    }})
+from tests.support import PracticePreviewFixture, preview_practice as practice
 
 
 def cache_entry(path, duration):
@@ -234,36 +227,7 @@ class TestCacheAndDefinitions(unittest.TestCase):
                 script.assignments(assignments, ["Waltz"], "count", integer=True, allow_zero=True)
 
 
-class TestCommandLine(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.root = Path(self.tmp.name)
-        self.builtin = self.root / "builtin.json"
-        self.custom = self.root / "custom.json"
-        self.cache = self.root / "cache.json"
-        self.config = self.root / "music.ini"
-        self.remote_library = self.root / "unavailable"
-        self.builtin.write_text(json.dumps({"Example": {
-            "dances": ["Waltz", "Jive"], "num_selections": 1,
-            "dance_intros": {"default": "none"}, "randomize_playlist": False,
-        }}))
-        self.custom.write_text("{}")
-        self.config.write_text(f"[user]\nmusic_dir = {self.remote_library}\n")
-        self.cache.write_text(json.dumps({"songs": {
-            str(self.remote_library / dance / f"{i}.mp3"): {"duration": 300}
-            for dance in ("Waltz", "Jive") for i in range(3)
-        }}))
-        self.args = [str(self.cache), "--builtin-types", str(self.builtin),
-                     "--custom-types", str(self.custom), "--config", str(self.config),
-                     "--practice-type", "Example", "--runs", "2"]
-
-    def run_script(self, *extra):
-        with contextlib.redirect_stdout(io.StringIO()) as output:
-            result = script.main(self.args + list(extra))
-        self.assertEqual(result, 0)
-        return output.getvalue()
-
+class TestCommandLine(PracticePreviewFixture, unittest.TestCase):
     def test_compare_global_counts_individual_overrides_and_csv_without_changing_inputs(self):
         before = {p: p.read_bytes() for p in (self.builtin, self.custom, self.cache, self.config)}
         output_path = self.root / "results.csv"
@@ -318,17 +282,25 @@ class TestCommandLine(unittest.TestCase):
         self.builtin.write_text(json.dumps({"Example": {
             "dances": ["Waltz", "Jive", "Waltz"], "dance_minutes": {"Waltz": 5, "Jive": 5},
             "dance_intros": {"default": "none"}, "randomize_playlist": False}}))
+        # Rounding up to 6.667 minutes used to draw a fifth 100s song,
+        # whose minimum play length pushed each block to 450s.
         self.cache.write_text(json.dumps({"songs": {
             str(self.remote_library / dance / f"{i}.mp3"): {"duration": 100}
             for dance in ("Waltz", "Jive") for i in range(12)}}))
         output_path = self.root / "results.csv"
-        self.run_script("--playlist-minutes", "20", "--csv", str(output_path))
+        export_path = self.root / "export.json"
+        self.run_script("--playlist-minutes", "20", "--csv", str(output_path),
+                        "--export-name", "Repeated 20min", "--export-json", str(export_path))
+        self.assertEqual(json.loads(export_path.read_text())["Repeated 20min"]["dance_minutes"],
+                         {"Waltz": 6.666, "Jive": 6.666})
         with output_path.open(newline="") as handle:
             rows = list(csv.DictReader(handle))
         changed_total = [row for row in rows if row["scenario"] == "Changed" and row["dance"] == "TOTAL"][0]
-        self.assertEqual(float(changed_total["mean_seconds"]), 1200)
+        self.assertAlmostEqual(float(changed_total["mean_seconds"]), 1200, delta=3 * 0.06)
         changed_blocks = [row for row in rows if row["scenario"] == "Changed" and row["dance"] != "TOTAL"]
-        self.assertEqual([float(row["mean_seconds"]) for row in changed_blocks], [400, 400, 400])
+        self.assertEqual([float(row["mean_songs"]) for row in changed_blocks], [4, 4, 4])
+        for row in changed_blocks:
+            self.assertAlmostEqual(float(row["mean_seconds"]), 400, delta=0.06)
 
     def test_play_all_can_be_changed_to_counts_and_timed_blocks_in_one_command(self):
         definition = json.loads(self.builtin.read_text())

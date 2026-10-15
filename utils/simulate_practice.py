@@ -11,12 +11,14 @@ import argparse
 import copy
 import configparser
 import csv
+import json
 import math
 from pathlib import Path
 import random
 import statistics
 import sys
 from dataclasses import dataclass
+from decimal import Decimal, ROUND_DOWN
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -212,6 +214,80 @@ def assignments(items, dances, label, integer=False, allow_zero=False):
     return result
 
 
+def export_definition(name, scenario, counts, global_cap, reference):
+    """Encode a preview scenario using only fields the player already supports."""
+    if not name.strip() or name in rules.RESERVED_PRACTICE_TYPE_NAMES or name.startswith("__COMMENT__"):
+        raise ValueError("Export name must be nonempty and cannot be a reserved or comment name.")
+    if counts and scenario["play_all_songs"]:
+        raise ValueError("Exporting individual counts from a play-all practice requires --selections "
+                         "to switch it to fixed counts.")
+    definition = copy.deepcopy(scenario)
+    definition.pop("dance_type", None)  # Internal name of the base player's dance list.
+    if counts:
+        # Enabling adjustments must not activate previously dormant rules.
+        adjustments = definition["dance_adjustments"] if definition["adjust_song_counts"] else {}
+        adjustments.update({dance: {"default": count} for dance, count in counts.items()})
+        definition["dance_adjustments"] = adjustments
+        definition["adjust_song_counts"] = True
+        for dance in counts:
+            definition["dance_minutes"].pop(dance, None)
+    # Keep ordinary exports following the player's global setting. Only an
+    # explicit global override needs to be encoded as per-dance caps.
+    if global_cap is not None:
+        definition["dance_max_playtimes"].update({
+            dance: definition["dance_max_playtimes"].get(dance, global_cap)
+            for dance in dict.fromkeys(definition["dances"])
+        })
+    problems = []
+    clean = rules.normalize_practice_type(name, definition, warn=problems.append)
+    rules.validate_dance_minutes(definition.get("dance_minutes"), definition["dances"], problems.append)
+    if clean is None or problems:
+        raise ValueError("Cannot export this practice: " + "; ".join(problems))
+    if definition.get("order") == rules.DEFAULT_PRACTICE_TYPE_ORDER:
+        definition.pop("order")
+    for field in ("dance_minutes", "segments"):
+        if not definition[field]:
+            definition.pop(field)
+    for field in ("dance_adjustments", "dance_intros"):
+        if not definition[field] and field not in reference:
+            definition.pop(field)
+    if (not definition.get("dance_minutes") and "min_song_play_seconds" not in reference
+            and definition["min_song_play_seconds"] == rules.DEFAULT_MIN_SONG_PLAY_SECONDS):
+        definition.pop("min_song_play_seconds")
+    # Whole seconds/minutes use the same compact numeric form as the built-ins.
+    for field in ("dance_max_playtimes", "dance_minutes"):
+        for dance, value in definition.get(field, {}).items():
+            if float(value).is_integer():
+                definition[field][dance] = int(value)
+    if "min_song_play_seconds" in definition:
+        value = definition["min_song_play_seconds"]
+        if float(value).is_integer():
+            definition["min_song_play_seconds"] = int(value)
+    definition = rules.order_practice_type_fields(definition, reference)
+    # Validate both JSON syntax and the rules the player sees after loading it.
+    payload = json.loads(json.dumps({name: definition}, allow_nan=False))
+    reloaded = load_practice(name, payload)
+    for dance in definition["dances"]:
+        if block_mode(reloaded, dance, {}) != block_mode(scenario, dance, counts):
+            raise ValueError(f"Export changes the selection rule for {dance!r}.")
+    return definition
+
+
+def write_export(path, name, definition):
+    """Write a new standalone JSON object without replacing an existing file."""
+    text = json.dumps({name: definition}, indent=4, ensure_ascii=False, allow_nan=False) + "\n"
+    path = Path(path)
+    created = False
+    try:
+        with path.open("x", encoding="utf-8") as handle:
+            created = True
+            handle.write(text)
+    except OSError:
+        if created:
+            path.unlink(missing_ok=True)
+        raise
+
+
 def report(label, definition, pools, intros, counts, cap, runs, seed, show_playlist):
     samples = [generate(definition, pools, intros, counts, cap, seed + run) for run in range(runs)]
     rows = []
@@ -294,7 +370,27 @@ def main(argv=None):
     parser.add_argument("--seed", type=int, default=20261014, help="Reproducible random seed")
     parser.add_argument("--show-playlist", action="store_true", help="Show each scenario's first playlist")
     parser.add_argument("--csv", metavar="FILE", help="Write per-dance and total comparison statistics")
+    parser.add_argument("--export-name", metavar="NAME", help="Name for an exported practice entry")
+    parser.add_argument("--export-json", metavar="FILE",
+                        help="Write one scenario as a new JSON file in built-in field order; "
+                             "requires --export-name and at most one --selections value")
     args = parser.parse_args(argv)
+    if (args.export_name is None) != (args.export_json is None):
+        parser.error("--export-name and --export-json must be used together")
+    if args.export_name is not None:
+        args.export_name = args.export_name.strip()
+        if args.list:
+            parser.error("--list cannot be combined with export")
+        if len(args.selections) > 1:
+            parser.error("Export requires one scenario; specify --selections at most once")
+        if args.dance_intro_seconds:
+            parser.error("Intro-duration overrides are simulation-only; export preserves existing intros")
+        if Path(args.export_json).exists():
+            parser.error(f"Export file already exists: {args.export_json}. Choose a new file.")
+        if not Path(args.export_json).parent.is_dir():
+            parser.error(f"Export folder does not exist or is not a directory: {Path(args.export_json).parent}")
+        if args.csv and Path(args.csv).resolve() == Path(args.export_json).resolve():
+            parser.error("--csv and --export-json must use different files")
     if args.runs < 1:
         parser.error("--runs must be positive")
     if any(n < 1 for n in args.selections):
@@ -313,6 +409,8 @@ def main(argv=None):
         if not Path(args.builtin_types).is_file():
             raise ValueError(f"Built-in definitions file does not exist: {args.builtin_types}")
         definitions = load_types(args.builtin_types, custom)
+        if args.export_name is not None and args.export_name in definitions:
+            raise ValueError(f"Practice type {args.export_name!r} already exists. Choose a new export name.")
         if args.list:
             print("\n".join(preview_names(definitions)))
             return 0
@@ -353,9 +451,28 @@ def main(argv=None):
         if args.playlist_minutes is not None:
             if not changed["dance_minutes"] or changed["play_all_songs"] or changed["play_single_song"]:
                 raise ValueError("--playlist-minutes needs active timed dances; use --dance-minutes first.")
-            total_minutes = sum(changed["dance_minutes"].get(dance, 0) for dance in dances)
-            scale = args.playlist_minutes / total_minutes
-            changed["dance_minutes"] = {d: m * scale for d, m in changed["dance_minutes"].items()}
+            total_minutes = sum(Decimal(str(changed["dance_minutes"].get(dance, 0)))
+                                for dance in dances)
+            target_minutes = Decimal(str(args.playlist_minutes))
+            # Round down before planning, so a rounded-up remainder cannot draw
+            # another song. Decimal keeps exact milliminute values from losing
+            # a digit to binary floating-point noise.
+            changed["dance_minutes"] = {
+                d: float((Decimal(str(m)) * target_minutes * 1000 / total_minutes)
+                         .to_integral_value(rounding=ROUND_DOWN) / 1000)
+                for d, m in changed["dance_minutes"].items()
+            }
+            if any(value <= 0 for value in changed["dance_minutes"].values()):
+                raise ValueError("Scaled dance budgets must be at least 0.001 minutes.")
+        if args.export_name is not None:
+            exported_scenario = copy.deepcopy(changed)
+            if args.selections:
+                exported_scenario["num_selections"] = args.selections[0]
+            reference = load_definitions(args.builtin_types).get(
+                args.practice_type, definitions[args.practice_type])
+            exported = export_definition(
+                args.export_name, exported_scenario, counts,
+                args.default_cap, reference)
     except (OSError, ValueError) as error:
         parser.error(str(error))
 
@@ -396,6 +513,12 @@ def main(argv=None):
         except OSError as error:
             parser.error(str(error))
         print(f"\nWrote comparison statistics to {args.csv}")
+    if args.export_name is not None:
+        try:
+            write_export(args.export_json, args.export_name, exported)
+        except (OSError, ValueError) as error:
+            parser.error(str(error))
+        print(f"\nExported practice {args.export_name!r} to {args.export_json}")
     return 0
 
 

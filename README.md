@@ -314,6 +314,37 @@ include `--default-cap` to compare a global song cap, `--dance-intro-seconds DAN
 to compare an intro length, and `--builtin-types` / `--custom-types` to read specific
 definition files. Use `--help` for the full list.
 
+To turn one preview into a named practice definition, add `--export-name` and
+`--export-json`:
+
+```bash
+python utils/simulate_practice.py --practice-type "Silver+ Latin 30min" \
+  --dance-selections "Samba=4" --dance-cap "Samba=150" \
+  --export-name "Latin with Four Sambas" --export-json new-practice.json
+```
+
+The new file contains a complete JSON object with that named entry, using the
+built-in field order and four-space indentation. You can inspect it and merge its
+entry into `builtin_practice_types.json` or `custom_practice_types.json`. To preview
+the exported entry directly, use `--custom-types new-practice.json --practice-type
+"Latin with Four Sambas"`.
+
+Exports support default and individual selection counts (including zero), song
+caps, timed budgets and their minimum play time. Exact individual counts become
+`dance_adjustments` rules. Per-dance caps stay sparse, so other dances keep following
+the player's Song Max Playtime setting. An explicit `--default-cap` override is
+recorded as caps for those other dances. Scaled timed budgets are rounded down to
+0.001 minutes before both simulation and export, reducing each block's budget by
+less than 0.06 seconds. Existing intros are preserved;
+`--dance-intro-seconds` overrides are simulation-only, and the `--intro-seconds`
+fallback estimate is not saved.
+
+Use at most one `--selections` value when exporting. Individual count overrides
+on a play-all practice require `--selections` to switch it to fixed counts. The
+export requires a new practice name and an existing output folder. It is written
+to a new file; an existing file is never replaced. The source
+practice definitions, settings, cache and history are unchanged.
+
 The baseline reads the global song cap from `music.ini` (210 seconds when the
 player has not saved one), plus the ten-second fade, with the named practice's
 per-dance overrides. Use `--config FILE` to read a different settings file; a file
