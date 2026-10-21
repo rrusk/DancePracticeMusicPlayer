@@ -5,7 +5,12 @@ set -Eeuo pipefail
 REPO_URL='https://github.com/rrusk/DancePracticeMusicPlayer.git'
 PROJECT_DIR="$HOME/git/DancePracticeMusicPlayer"
 VENV_DIR="$PROJECT_DIR/kivy_venv"
-CHROMEOS_DATA='/mnt/chromeos/MyFiles/LinuxData'
+# Where Linux sees My files/LinuxData once it is shared; which one exists depends on
+# the Linux environment's shared-folder layout.
+CHROMEOS_DATA_PATHS=(
+    '/mnt/chromeos/shared/MyFiles/LinuxData'
+    '/mnt/chromeos/MyFiles/LinuxData'
+)
 LINUX_DATA_LINK="$HOME/LinuxData"
 
 log() { printf '\n==> %s\n' "$*"; }
@@ -25,22 +30,46 @@ sudo apt-get update
 # are the system libraries (beyond glibc) they link against on x86-64 and ARM64.
 # GLib's package is libglib2.0-0t64 from Debian 13 on.
 glib_pkg=libglib2.0-0
-# madison lists only installable versions; `apt-cache show` also succeeds for a
+# madison lists available versions; `apt-cache show` also succeeds for a
 # name that other packages merely refer to.
 if [[ -n "$(apt-cache madison libglib2.0-0t64 2>/dev/null)" ]]; then
     glib_pkg=libglib2.0-0t64
 fi
 sudo apt-get install -y git ca-certificates python3 python3-venv \
-    libgl1 libx11-6 libxrender1 "$glib_pkg" libexpat1 zlib1g libstdc++6 libgcc-s1
+    libgl1 libx11-6 libxrender1 "$glib_pkg" libexpat1 zlib1g libstdc++6 libgcc-s1 \
+    pulseaudio-utils
+
+log 'Setting default Linux audio output to 100%'
+# This sets the shared Linux output, not just the player's own volume.
+# Use the user's audio session, without sudo, and never boost above 100%.
+linux_volume_status='Not changed: the Linux audio server is unavailable.'
+if pactl info >/dev/null 2>&1; then
+    if pactl set-sink-volume @DEFAULT_SINK@ 100%; then
+        linux_volume_status='Default Linux audio output set to 100%.'
+        pactl get-sink-volume @DEFAULT_SINK@ || true
+    else
+        linux_volume_status='Not changed: could not set the default Linux audio output to 100%.'
+        warn "$linux_volume_status"
+    fi
+else
+    warn "$linux_volume_status Start the Linux audio session and retry the command printed below."
+fi
 
 log 'Connecting ChromeOS-shared storage'
-if [[ -d "$CHROMEOS_DATA" ]]; then
+CHROMEOS_DATA=''
+for candidate in "${CHROMEOS_DATA_PATHS[@]}"; do
+    if [[ -d "$candidate" ]]; then
+        CHROMEOS_DATA="$candidate"
+        break
+    fi
+done
+if [[ -L "$LINUX_DATA_LINK" && -d "$LINUX_DATA_LINK" ]]; then
+    CHROMEOS_DATA="$(readlink -f "$LINUX_DATA_LINK")"
+    log "Existing ~/LinuxData link works: $CHROMEOS_DATA"
+elif [[ -n "$CHROMEOS_DATA" ]]; then
     if [[ -L "$LINUX_DATA_LINK" ]]; then
-        if [[ "$(readlink "$LINUX_DATA_LINK")" == "$CHROMEOS_DATA" ]]; then
-            log 'Existing ~/LinuxData link is already correct'
-        else
-            warn "~/LinuxData is a symlink to $(readlink "$LINUX_DATA_LINK"); leaving it unchanged."
-        fi
+        warn "~/LinuxData is a symlink to $(readlink "$LINUX_DATA_LINK"); leaving it unchanged."
+        warn "To link $CHROMEOS_DATA instead, run rm ~/LinuxData (it removes only the link) and rerun this script."
     elif [[ -e "$LINUX_DATA_LINK" ]]; then
         warn '~/LinuxData already exists and is not a symlink; leaving it unchanged.'
     else
@@ -48,9 +77,17 @@ if [[ -d "$CHROMEOS_DATA" ]]; then
         log "Created ~/LinuxData -> $CHROMEOS_DATA"
     fi
 else
-    warn "$CHROMEOS_DATA is not available."
-    warn 'In ChromeOS Files, create My files/LinuxData if necessary and select Share with Linux.'
+    looked=$(printf '%s, ' "${CHROMEOS_DATA_PATHS[@]}")
+    warn "No shared LinuxData folder found (looked for ${looked%, })."
+    warn 'In ChromeOS Files, create My files/LinuxData if necessary, select Share with Linux, then rerun this script.'
     warn 'The application can install without it, but music in ChromeOS storage will not yet be accessible.'
+fi
+
+# The player's default music directory is ~/Music. Preserve any existing path,
+# including a dangling symlink; shared music is selected in Music Settings.
+if [[ ! -e "$HOME/Music" && ! -L "$HOME/Music" ]]; then
+    mkdir -p "$HOME/Music"
+    log 'Created ~/Music for the default music directory'
 fi
 
 log 'Installing application source'
@@ -113,12 +150,16 @@ launch the player once and play an MP3 and an OGG song to finish checking.
 Application: $PROJECT_DIR
 Virtual env: $VENV_DIR
 
+Linux audio: $linux_volume_status
+To set the default Linux output to 100% later:
+    pactl set-sink-volume @DEFAULT_SINK@ 100%
+
 Launch with:
     cd "$PROJECT_DIR"
     bash ./run_music_player.sh
 
 Shared ChromeOS data (when enabled):
-    $CHROMEOS_DATA
+    ${CHROMEOS_DATA:-not found; see the warning above}
 
 In the player, choose the music directory using Music Settings.
 The historical paths were ~/LinuxData/Music and ~/LinuxData/MUSICCOMP.
