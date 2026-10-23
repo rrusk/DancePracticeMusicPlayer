@@ -35,7 +35,7 @@ glib_pkg=libglib2.0-0
 if [[ -n "$(apt-cache madison libglib2.0-0t64 2>/dev/null)" ]]; then
     glib_pkg=libglib2.0-0t64
 fi
-sudo apt-get install -y git ca-certificates python3 python3-venv \
+sudo apt-get install -y git ca-certificates python3 python3-venv xsel xclip \
     libgl1 libx11-6 libxrender1 "$glib_pkg" libexpat1 zlib1g libstdc++6 libgcc-s1 \
     pulseaudio-utils
 
